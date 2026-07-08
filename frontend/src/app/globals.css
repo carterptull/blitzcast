@@ -1,0 +1,200 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ------------------------------------------------------------------ */
+/* Theme tokens. Light = day game; dark = night game under the lights. */
+/* ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: light;
+  --canvas: #f3f7f0;
+  --surface: #fdfef9;
+  --ink: #10241c;
+  --ink-soft: #4f6459;
+  --edge: #dde6d8;
+  --gold: #b9822e; /* decorative accent */
+  --gold-text: #8a5f1a; /* small-text gold, AA on canvas */
+  --gold-turf: #e9b84d; /* gold on turf, both themes */
+  --stripe-a: #1b4332;
+  --stripe-b: #2e6f4c;
+  --chalk: #f3f7f0;
+  --chalk-soft: rgba(243, 247, 240, 0.72);
+  --hash: rgba(243, 247, 240, 0.16);
+  --yard: rgba(243, 247, 240, 0.07);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0b120e;
+  --surface: #131c15;
+  --ink: #e8f0e8;
+  --ink-soft: #9db3a5;
+  --edge: #263528;
+  --gold: #e9b84d;
+  --gold-text: #e9b84d;
+  --gold-turf: #f0c464;
+  --stripe-a: #0f2a1d;
+  --stripe-b: #18402c;
+  --chalk: #eef4ec;
+  --chalk-soft: rgba(238, 244, 236, 0.7);
+  --hash: rgba(238, 244, 236, 0.14);
+  --yard: rgba(238, 244, 236, 0.06);
+}
+
+/* System preference is the default when no explicit choice is stored. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --canvas: #0b120e;
+    --surface: #131c15;
+    --ink: #e8f0e8;
+    --ink-soft: #9db3a5;
+    --edge: #263528;
+    --gold: #e9b84d;
+    --gold-text: #e9b84d;
+    --gold-turf: #f0c464;
+    --stripe-a: #0f2a1d;
+    --stripe-b: #18402c;
+    --chalk: #eef4ec;
+    --chalk-soft: rgba(238, 244, 236, 0.7);
+    --hash: rgba(238, 244, 236, 0.14);
+    --yard: rgba(238, 244, 236, 0.06);
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-edge: var(--edge);
+  --color-gold: var(--gold);
+  --color-gold-text: var(--gold-text);
+  --color-gold-turf: var(--gold-turf);
+  --color-stripe-a: var(--stripe-a);
+  --color-stripe-b: var(--stripe-b);
+  --color-chalk: var(--chalk);
+  --color-chalk-soft: var(--chalk-soft);
+  --font-display: var(--font-anton), "Arial Narrow", sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, serif;
+  --font-mono: var(--font-plex-mono), "Courier New", monospace;
+}
+
+/* ------------------------------------------------------------------ */
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-newsreader), Georgia, serif;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--gold);
+  color: #10241c;
+}
+
+/* Mown turf: alternating stripes + hash marks + faint yard lines. */
+.turf {
+  position: relative;
+  background-color: var(--stripe-a);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--stripe-a) 0 72px,
+    var(--stripe-b) 72px 144px
+  );
+  color: var(--chalk);
+}
+
+.turf::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(90deg, var(--hash) 0 3px, transparent 3px 26px),
+    repeating-linear-gradient(90deg, var(--hash) 0 3px, transparent 3px 26px),
+    repeating-linear-gradient(90deg, var(--yard) 0 2px, transparent 2px 144px);
+  background-size:
+    100% 10px,
+    100% 10px,
+    100% 100%;
+  background-position:
+    6px 22%,
+    6px 78%,
+    0 0;
+  background-repeat: no-repeat, no-repeat, repeat;
+}
+
+.turf > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Night game: a soft stadium-lights wash from the top. */
+:root[data-theme="dark"] .turf::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 80% at 50% -20%,
+    rgba(240, 196, 100, 0.14),
+    transparent 60%
+  );
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .turf::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      120% 80% at 50% -20%,
+      rgba(240, 196, 100, 0.14),
+      transparent 60%
+    );
+  }
+}
+
+/* Diagonal chalk hatch for "prediction pending" bars. */
+.hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--hash) 0 6px,
+    transparent 6px 14px
+  );
+}
+
+/* Theme toggle icon swap (attribute-driven; no hydration state needed). */
+.icon-sun {
+  display: none;
+}
+:root[data-theme="dark"] .icon-sun {
+  display: block;
+}
+:root[data-theme="dark"] .icon-moon {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .icon-sun {
+    display: block;
+  }
+  :root:not([data-theme="light"]) .icon-moon {
+    display: none;
+  }
+}
+
+/* Hide horizontal scrollbar on the week selector while keeping scroll. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

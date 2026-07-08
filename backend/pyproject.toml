@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Depends() in argument defaults is the documented FastAPI pattern.
+"app/routers/*" = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
