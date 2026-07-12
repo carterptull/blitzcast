@@ -1,6 +1,8 @@
-// Fixture data for NEXT_PUBLIC_USE_MOCK=1 — a realistic fake 2026 Week 1
+// Fixture data for NEXT_PUBLIC_USE_MOCK=1 — a realistic fake NFL 2026 Week 1
 // slate with full predictions, plus generated schedule-only weeks 2–18.
+// Sport-keyed dispatch: CFB fixtures live in mockCfb.ts.
 
+import { cfbMockGames, cfbMockMatchup, cfbMockSchedule, cfbMockTeams } from "./mockCfb";
 import { TEAMS, TEAM_ABBRS, logoUrl } from "./teams";
 import type {
   Factor,
@@ -8,6 +10,7 @@ import type {
   MatchupDetail,
   Odds,
   Schedule,
+  Sport,
   Team,
   Weather,
 } from "./types";
@@ -299,6 +302,7 @@ function week1Games(): GameSummary[] {
     is_primetime: !!s.primetime,
     status: "scheduled",
     has_prediction: s.homeProb !== null,
+    sport: "NFL",
     home_win_prob: s.homeProb,
   }));
 }
@@ -343,14 +347,16 @@ function generatedWeekGames(week: number): GameSummary[] {
       is_primetime: primetime,
       status: "scheduled",
       has_prediction: false,
+      sport: "NFL",
       home_win_prob: null,
     });
   }
-  games.sort((x, y) => x.kickoff.localeCompare(y.kickoff));
+  games.sort((x, y) => (x.kickoff ?? "").localeCompare(y.kickoff ?? ""));
   return games;
 }
 
-export function mockTeams(): Team[] {
+export function mockTeams(sport: Sport = "NFL"): Team[] {
+  if (sport === "CFB") return cfbMockTeams();
   return TEAM_ABBRS.map((abbr, i) => {
     const m = TEAMS[abbr];
     return {
@@ -364,19 +370,22 @@ export function mockTeams(): Team[] {
   });
 }
 
-export function mockSchedule(): Schedule {
+export function mockSchedule(sport: Sport = "NFL"): Schedule {
+  if (sport === "CFB") return cfbMockSchedule();
   const weeks = [{ week: 1, games: week1Games() }];
   for (let w = 2; w <= 18; w++) weeks.push({ week: w, games: generatedWeekGames(w) });
-  return { season: SEASON, weeks };
+  return { season: SEASON, weeks, sport: "NFL" };
 }
 
-export function mockGames(week: number): GameSummary[] {
+export function mockGames(week: number, sport: Sport = "NFL"): GameSummary[] {
+  if (sport === "CFB") return cfbMockGames(week);
   if (week === 1) return week1Games();
   if (week >= 2 && week <= 18) return generatedWeekGames(week);
   return [];
 }
 
 export function mockMatchup(id: string): MatchupDetail | null {
+  if (id.startsWith("cfb_")) return cfbMockMatchup(id);
   const spec = WEEK1.find((s) => gameId(1, s.away, s.home) === id);
   if (spec) {
     const home = TEAMS[spec.home];
@@ -412,6 +421,7 @@ export function mockMatchup(id: string): MatchupDetail | null {
       model_version: ready ? "0.1.0" : null,
       predicted_at: ready ? iso(Date.UTC(2026, 8, 8, 12, 0)) : null,
       prediction_status: ready ? "ready" : "pending",
+      sport: "NFL",
     };
   }
 
@@ -438,6 +448,7 @@ export function mockMatchup(id: string): MatchupDetail | null {
       model_version: null,
       predicted_at: null,
       prediction_status: "pending",
+      sport: "NFL",
     };
   }
   return null;

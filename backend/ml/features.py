@@ -15,13 +15,21 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Game, Injury, Odds, Team, TeamGameStat, Weather
+from app.models import SPORT_NFL, Game, Injury, Odds, PollRank, Team, TeamGameStat, Weather
 from ml import elo
 
-FEATURES_PARQUET = Path(__file__).resolve().parent / "data" / "features.parquet"
+DATA_DIR = Path(__file__).resolve().parent / "data"
+FEATURES_PARQUET = DATA_DIR / "features.parquet"
+
+
+def features_parquet(sport: str = SPORT_NFL) -> Path:
+    """Per-sport feature cache; NFL keeps the legacy filename."""
+    if sport.upper() == SPORT_NFL:
+        return FEATURES_PARQUET
+    return DATA_DIR / f"features_{sport.lower()}.parquet"
 
 FEATURE_COLUMNS = [
     "elo_diff",
@@ -44,7 +52,12 @@ FEATURE_COLUMNS = [
     "precip",
     "market_spread_home",
     "market_home_prob",
+    # CFB-only signals; structurally 0.0 for NFL.
+    "tier_diff",
+    "poll_strength_diff",
 ]
+
+TIER_VALUES = {"FBS": 1.0, "FCS": 0.0}
 
 # Injury severity weights: positional importance x report status.
 POSITION_WEIGHTS = {
@@ -99,10 +112,10 @@ def injury_severity(rows: pd.DataFrame) -> float:
     return total
 
 
-def _load_frames(db: Session) -> dict[str, pd.DataFrame]:
+def _load_frames(db: Session, sport: str = SPORT_NFL) -> dict[str, pd.DataFrame]:
     teams = pd.DataFrame(
-        [(t.team_id, t.abbr) for t in db.scalars(select(Team))],
-        columns=["team_id", "abbr"],
+        [(t.team_id, t.abbr, t.tier) for t in db.scalars(select(Team).where(Team.sport == sport))],
+        columns=["team_id", "abbr", "tier"],
     )
     games = pd.DataFrame(
         [
@@ -112,7 +125,11 @@ def _load_frames(db: Session) -> dict[str, pd.DataFrame]:
                 g.is_divisional, g.is_primetime, g.spread_line, g.total_line,
                 g.home_moneyline, g.away_moneyline,
             )
-            for g in db.scalars(select(Game).order_by(Game.kickoff_time))
+            for g in db.scalars(
+                select(Game)
+                .where(Game.sport == sport)
+                .order_by(func.coalesce(Game.kickoff_time, Game.game_date))
+            )
         ],
         columns=[
             "game_id", "season", "week", "kickoff", "game_date",
@@ -121,43 +138,85 @@ def _load_frames(db: Session) -> dict[str, pd.DataFrame]:
             "home_moneyline", "away_moneyline",
         ],
     )
+    # TBD-kickoff (CFB) games get game_date at midnight UTC as a stand-in,
+    # so merge_asof and the Elo replay always have a sortable, non-null key.
+    games["kickoff"] = pd.to_datetime(games["kickoff"], utc=True).fillna(
+        pd.to_datetime(games["game_date"], utc=True)
+    )
     stats = pd.DataFrame(
         [
             (s.game_id, s.team_id, s.epa_offense, s.epa_defense, s.turnovers)
-            for s in db.scalars(select(TeamGameStat))
+            for s in db.scalars(
+                select(TeamGameStat)
+                .join(Game, TeamGameStat.game_id == Game.game_id)
+                .where(Game.sport == sport)
+            )
         ],
         columns=["game_id", "team_id", "epa_offense", "epa_defense", "turnovers"],
     )
     injuries = pd.DataFrame(
         [
             (i.game_id, i.team_id, i.position, i.status)
-            for i in db.scalars(select(Injury))
+            for i in db.scalars(
+                select(Injury).join(Game, Injury.game_id == Game.game_id).where(Game.sport == sport)
+            )
         ],
         columns=["game_id", "team_id", "position", "status"],
     )
     weather = pd.DataFrame(
         [
             (w.game_id, w.temp_f, w.wind_mph, w.precipitation)
-            for w in db.scalars(select(Weather))
+            for w in db.scalars(
+                select(Weather)
+                .join(Game, Weather.game_id == Game.game_id)
+                .where(Game.sport == sport)
+            )
         ],
         columns=["game_id", "temp_f", "wind_mph", "precipitation"],
     )
     odds = pd.DataFrame(
         [
             (o.game_id, o.spread_home, o.moneyline_home, o.moneyline_away, o.captured_at)
-            for o in db.scalars(select(Odds))
+            for o in db.scalars(
+                select(Odds).join(Game, Odds.game_id == Game.game_id).where(Game.sport == sport)
+            )
         ],
         columns=["game_id", "spread_home", "moneyline_home", "moneyline_away", "captured_at"],
     )
+    polls = pd.DataFrame(
+        [
+            (p.season, p.week, p.poll, p.team_id, p.rank)
+            for p in db.scalars(select(PollRank).where(PollRank.sport == sport))
+        ],
+        columns=["season", "week", "poll", "team_id", "rank"],
+    )
     return {
         "teams": teams, "games": games, "stats": stats,
-        "injuries": injuries, "weather": weather, "odds": odds,
+        "injuries": injuries, "weather": weather, "odds": odds, "polls": polls,
     }
 
 
-def _elo_pregame(games: pd.DataFrame, id_to_abbr: dict[int, str]) -> pd.DataFrame:
+def _poll_strength(polls: pd.DataFrame) -> pd.DataFrame:
+    """Per (season, week, team): f(rank)=max(0, 26-rank) from the poll
+    entering that week (AP preferred when a team appears in several polls)."""
+    if polls.empty:
+        return pd.DataFrame(columns=["season", "week", "team_id", "poll_strength"])
+    p = polls.copy()
+    p["is_ap"] = p["poll"].fillna("").str.contains("AP", case=False)
+    p = p.sort_values("is_ap", ascending=False, kind="stable")
+    p = p.drop_duplicates(subset=["season", "week", "team_id"], keep="first")
+    p["poll_strength"] = (26.0 - p["rank"]).clip(lower=0.0)
+    return p[["season", "week", "team_id", "poll_strength"]]
+
+
+def _elo_pregame(
+    games: pd.DataFrame,
+    id_to_abbr: dict[int, str],
+    config: elo.EloConfig = elo.NFL_CONFIG,
+    tiers: dict[str, str] | None = None,
+) -> pd.DataFrame:
     """Chronological Elo replay: pre-game rating for every game row."""
-    book = elo.EloBook()
+    book = elo.EloBook(config=config, tiers=tiers or {})
     records = []
     for row in games.itertuples(index=False):
         home = id_to_abbr[row.home_team_id]
@@ -273,16 +332,22 @@ def _injury_features(injuries: pd.DataFrame) -> pd.DataFrame:
     return agg.reset_index()
 
 
-def build_features(db: Session, seasons: list[int] | None = None) -> pd.DataFrame:
+def build_features(
+    db: Session, seasons: list[int] | None = None, sport: str = SPORT_NFL
+) -> pd.DataFrame:
     """One row per game: FEATURE_COLUMNS + metadata + home_win target
     (NaN for unplayed games)."""
-    frames = _load_frames(db)
+    frames = _load_frames(db, sport)
     games = frames["games"]
     id_to_abbr = dict(
         zip(frames["teams"]["team_id"], frames["teams"]["abbr"], strict=True)
     )
+    id_to_tier = dict(
+        zip(frames["teams"]["team_id"], frames["teams"]["tier"], strict=True)
+    )
+    abbr_tiers = {id_to_abbr[tid]: tier for tid, tier in id_to_tier.items() if tier}
 
-    elo_df = _elo_pregame(games, id_to_abbr)
+    elo_df = _elo_pregame(games, id_to_abbr, elo.config_for(sport), abbr_tiers)
     form = _team_form(games, frames["stats"])
     home_form = _asof_form(games, form, "home")
     away_form = _asof_form(games, form, "away")
@@ -311,8 +376,8 @@ def build_features(db: Session, seasons: list[int] | None = None) -> pd.DataFram
             }
         )
         df = df.merge(side_inj, on=["game_id", f"{side}_team_id"], how="left")
-        df[f"{side}_qb_out"] = df[f"{side}_qb_out"].fillna(0.0)
-        df[f"{side}_injury_sev"] = df[f"{side}_injury_sev"].fillna(0.0)
+        df[f"{side}_qb_out"] = df[f"{side}_qb_out"].fillna(0.0).astype(float)
+        df[f"{side}_injury_sev"] = df[f"{side}_injury_sev"].fillna(0.0).astype(float)
 
     df = df.merge(frames["weather"], on="game_id", how="left")
 
@@ -363,6 +428,28 @@ def build_features(db: Session, seasons: list[int] | None = None) -> pd.DataFram
         axis=1,
     )
 
+    # Tier class edge (FBS=1, FCS=0); 0.0 for NFL where tier is NULL.
+    df["home_tier"] = df["home_team_id"].map(id_to_tier)
+    df["away_tier"] = df["away_team_id"].map(id_to_tier)
+    df["tier_diff"] = (
+        df["home_tier"].map(TIER_VALUES).fillna(1.0)
+        - df["away_tier"].map(TIER_VALUES).fillna(1.0)
+    )
+
+    # Poll standing entering the game's week (exact season+week join is
+    # leakage-safe: the week-W poll is published before week W's games).
+    strength = _poll_strength(frames["polls"])
+    if strength.empty:
+        df["poll_strength_diff"] = 0.0
+    else:
+        for side in ("home", "away"):
+            side_poll = strength.rename(
+                columns={"team_id": f"{side}_team_id", "poll_strength": f"{side}_poll_strength"}
+            )
+            df = df.merge(side_poll, on=["season", "week", f"{side}_team_id"], how="left")
+            df[f"{side}_poll_strength"] = df[f"{side}_poll_strength"].fillna(0.0)
+        df["poll_strength_diff"] = df["home_poll_strength"] - df["away_poll_strength"]
+
     df["home_win"] = np.where(
         df["home_score"].isna(),
         np.nan,
@@ -374,14 +461,18 @@ def build_features(db: Session, seasons: list[int] | None = None) -> pd.DataFram
     if seasons is not None:
         df = df[df["season"].isin(seasons)]
 
-    meta = ["game_id", "season", "week", "kickoff", "home_abbr", "away_abbr", "home_win"]
+    meta = [
+        "game_id", "season", "week", "kickoff", "home_abbr", "away_abbr",
+        "home_tier", "away_tier", "home_win",
+    ]
     return df[meta + FEATURE_COLUMNS].reset_index(drop=True)
 
 
-def training_frame(db: Session, seasons: list[int]) -> pd.DataFrame:
+def training_frame(db: Session, seasons: list[int], sport: str = SPORT_NFL) -> pd.DataFrame:
     """Played games in the given seasons, feature-complete, cached to parquet."""
-    df = build_features(db, seasons=seasons)
+    df = build_features(db, seasons=seasons, sport=sport)
     df = df[df["home_win"].notna()]
-    FEATURES_PARQUET.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(FEATURES_PARQUET, index=False)
+    cache = features_parquet(sport)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(cache, index=False)
     return df

@@ -19,6 +19,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 JsonType = JSON().with_variant(JSONB(), "postgresql")
 
+SPORT_NFL = "NFL"
+SPORT_CFB = "CFB"
+
 
 class Base(DeclarativeBase):
     pass
@@ -38,12 +41,23 @@ class Stadium(Base):
 
 class Team(Base):
     __tablename__ = "teams"
+    __table_args__ = (UniqueConstraint("sport", "abbr", name="uq_team_sport_abbr"),)
 
     team_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    abbr: Mapped[str] = mapped_column(String(4), unique=True, index=True)
+    sport: Mapped[str] = mapped_column(
+        String(8), default=SPORT_NFL, server_default=SPORT_NFL, index=True
+    )
+    abbr: Mapped[str] = mapped_column(String(16), index=True)
     name: Mapped[str] = mapped_column(String(60))
-    conference: Mapped[str] = mapped_column(String(3))
-    division: Mapped[str] = mapped_column(String(10))
+    conference: Mapped[str] = mapped_column(String(40))
+    division: Mapped[str | None] = mapped_column(String(10))
+    # CFB only: "FBS"/"FCS" tier and ESPN numeric id for logos. NULL for NFL.
+    tier: Mapped[str | None] = mapped_column(String(3))
+    espn_id: Mapped[int | None] = mapped_column(Integer)
+    # Seeded from CFBD for CFB; NULL for NFL (frontend has its own NFL map).
+    color: Mapped[str | None] = mapped_column(String(9))
+    alt_color: Mapped[str | None] = mapped_column(String(9))
+    logo_url: Mapped[str | None] = mapped_column(String(255))
     stadium_id: Mapped[int | None] = mapped_column(ForeignKey("stadiums.stadium_id"))
 
     stadium: Mapped[Stadium | None] = relationship()
@@ -53,6 +67,9 @@ class Game(Base):
     __tablename__ = "games"
 
     game_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    sport: Mapped[str] = mapped_column(
+        String(8), default=SPORT_NFL, server_default=SPORT_NFL, index=True
+    )
     season: Mapped[int] = mapped_column(Integer, index=True)
     week: Mapped[int] = mapped_column(Integer, index=True)
     game_date: Mapped[date] = mapped_column(Date)
@@ -91,6 +108,9 @@ class TeamGameStat(Base):
 class TeamRating(Base):
     __tablename__ = "team_ratings"
 
+    sport: Mapped[str] = mapped_column(
+        String(8), primary_key=True, default=SPORT_NFL, server_default=SPORT_NFL
+    )
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.team_id"), primary_key=True)
     season: Mapped[int] = mapped_column(Integer, primary_key=True)
     week: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -135,6 +155,23 @@ class Injury(Base):
     position: Mapped[str | None] = mapped_column(String(6))
     status: Mapped[str | None] = mapped_column(String(30))
     report_date: Mapped[date | None] = mapped_column(Date)
+
+
+class PollRank(Base):
+    """Weekly poll ranking as published entering (season, week)."""
+
+    __tablename__ = "poll_ranks"
+    __table_args__ = (
+        UniqueConstraint("sport", "season", "week", "poll", "team_id", name="uq_poll_rank"),
+    )
+
+    poll_rank_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sport: Mapped[str] = mapped_column(String(8), default=SPORT_CFB, server_default=SPORT_CFB)
+    season: Mapped[int] = mapped_column(Integer, index=True)
+    week: Mapped[int] = mapped_column(Integer, index=True)
+    poll: Mapped[str] = mapped_column(String(30))
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.team_id"))
+    rank: Mapped[int] = mapped_column(Integer)
 
 
 class Prediction(Base):

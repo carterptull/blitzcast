@@ -10,9 +10,11 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.models import (  # noqa: E402
+    SPORT_CFB,
     Base,
     Game,
     Injury,
+    PollRank,
     Prediction,
     Stadium,
     Team,
@@ -25,6 +27,76 @@ TEAMS = [
     ("PHI", "Philadelphia Eagles", "NFC", "East"),
     ("DAL", "Dallas Cowboys", "NFC", "East"),
 ]
+
+# (abbr, name, conference, tier, espn_id, color)
+CFB_TEAMS = [
+    ("UGA", "Georgia", "SEC", "FBS", 61, "#BA0C2F"),
+    ("ALA", "Alabama", "SEC", "FBS", 333, "#9E1B32"),
+    ("MER", "Mercer", "SoCon", "FCS", None, None),
+]
+
+
+def _seed_cfb(db: Session, stadium: Stadium) -> None:
+    teams: dict[str, Team] = {}
+    for abbr, name, conf, tier, espn_id, color in CFB_TEAMS:
+        team = Team(
+            sport=SPORT_CFB, abbr=abbr, name=name, conference=conf,
+            division=None, tier=tier, espn_id=espn_id, color=color,
+            stadium_id=stadium.stadium_id,
+        )
+        db.add(team)
+        teams[abbr] = team
+    db.flush()
+
+    # AP + Coaches polls entering 2026 week 1; AP must be preferred.
+    for poll, uga_rank, ala_rank in (("AP Top 25", 3, 7), ("Coaches Poll", 4, 8)):
+        for abbr, rank in (("UGA", uga_rank), ("ALA", ala_rank)):
+            db.add(
+                PollRank(
+                    sport=SPORT_CFB, season=2026, week=1, poll=poll,
+                    team_id=teams[abbr].team_id, rank=rank,
+                )
+            )
+
+    kickoff = datetime(2026, 9, 5, 19, 30, tzinfo=UTC)
+    db.add(
+        Game(
+            game_id="cfb_401800001",
+            sport=SPORT_CFB, season=2026, week=1,
+            game_date=kickoff.date(), kickoff_time=kickoff,
+            home_team_id=teams["ALA"].team_id,
+            away_team_id=teams["UGA"].team_id,
+            stadium_id=stadium.stadium_id,
+            is_primetime=True, is_divisional=True,
+            status="scheduled",
+        )
+    )
+    # Week 2 FBS-vs-FCS game with a TBD (NULL) kickoff.
+    db.add(
+        Game(
+            game_id="cfb_401800002",
+            sport=SPORT_CFB, season=2026, week=2,
+            game_date=date(2026, 9, 12), kickoff_time=None,
+            home_team_id=teams["UGA"].team_id,
+            away_team_id=teams["MER"].team_id,
+            stadium_id=stadium.stadium_id,
+            is_primetime=False, is_divisional=False,
+            status="scheduled",
+        )
+    )
+    db.add(
+        Prediction(
+            game_id="cfb_401800001",
+            model_version="cfb-0.1.0",
+            home_win_prob=0.55,
+            predicted_at=datetime(2026, 9, 3, 12, 0, tzinfo=UTC),
+            shap_top_features=[
+                {"feature": "poll_strength_diff", "label": "AP poll standing edge",
+                 "value": 0.08, "direction": "home"},
+            ],
+            llm_narrative=None,
+        )
+    )
 
 
 def _seed(db: Session) -> None:
@@ -126,6 +198,7 @@ def _seed(db: Session) -> None:
             llm_narrative=None,
         )
     )
+    _seed_cfb(db, stadium)
     db.commit()
 
 

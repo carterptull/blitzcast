@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     odds_api_key: str = ""
     visual_crossing_api_key: str = ""
     anthropic_api_key: str = ""
+    cfbd_api_key: str = ""
 
     anthropic_model: str = "claude-haiku-4-5-20251001"
 
@@ -29,7 +30,12 @@ class Settings(BaseSettings):
     # Serve fixture predictions so the frontend works before real data exists.
     blitzcast_mock: bool = False
 
+    # NFL keeps the original stamp; CFB artifacts/predictions use their own.
     model_version: str = "0.1.0"
+    model_version_cfb: str = "cfb-0.1.0"
+
+    def model_version_for(self, sport: str) -> str:
+        return self.model_version_cfb if sport.upper() == "CFB" else self.model_version
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -1,5 +1,8 @@
 // Static NFL team metadata: colors (used as data in the win-prob split),
-// stadium info for mock fixtures, and ESPN CDN logo slugs.
+// stadium info for mock fixtures, and ESPN CDN logo slugs. CFB teams are
+// API-driven (logo_url/color on the response) — never looked up here.
+
+import type { Sport } from "./types";
 
 export type Conference = "AFC" | "NFC";
 export type Division = "East" | "North" | "South" | "West";
@@ -80,6 +83,14 @@ export const TEAM_ABBRS = Object.keys(TEAMS);
 export function logoUrl(abbr: string): string {
   const slug = TEAMS[abbr]?.espnSlug ?? abbr.toLowerCase();
   return `https://a.espncdn.com/i/teamlogos/nfl/500/${slug}.png`;
+}
+
+export const NEUTRAL_PRIMARY = "#4f6459";
+
+/** Team primary color: API-supplied for CFB, the static NFL map for NFL. */
+export function primaryColor(sport: Sport, abbr: string, apiColor?: string | null): string {
+  if (sport === "CFB") return apiColor || NEUTRAL_PRIMARY;
+  return TEAMS[abbr]?.primary ?? NEUTRAL_PRIMARY;
 }
 
 /** Readable text color (chalk or ink) for a given team-color background. */

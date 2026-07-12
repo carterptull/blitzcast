@@ -1,24 +1,27 @@
-"""Pull current NFL odds from The Odds API into the odds table.
+"""Pull current odds from The Odds API into the odds table.
 
-One API call returns every upcoming game, so one run per day stays far
-inside the free tier (500 requests/month).
+One API call returns every upcoming game for a sport, so one run per day
+per sport stays far inside the free tier (500 requests/month).
 
-Usage: python -m data_pipeline.refresh_odds
+Usage: python -m data_pipeline.refresh_odds [--sport nfl|cfb]
 """
 
+import argparse
 import sys
 from datetime import UTC, datetime, timedelta
 
 import requests
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from app.config import get_settings
 from app.db import session_scope
-from app.models import Game, Odds
+from app.models import SPORT_CFB, SPORT_NFL, Game, Odds
+from data_pipeline.cfb_team_names import cfb_to_abbr
 from data_pipeline.games_loader import team_id_map
 from data_pipeline.team_names import to_abbr
 
-ODDS_URL = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
+ODDS_URL = "https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
+SPORT_KEYS = {"nfl": "americanfootball_nfl", "cfb": "americanfootball_ncaaf"}
 SOURCE = "the-odds-api"
 
 
@@ -42,13 +45,19 @@ def _consensus(event: dict, home_abbr: str, away_abbr: str) -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl")
+    args = parser.parse_args()
+    sport = SPORT_CFB if args.sport == "cfb" else SPORT_NFL
+    resolve = cfb_to_abbr if args.sport == "cfb" else to_abbr
+
     settings = get_settings()
     if not settings.odds_api_key:
         print("ODDS_API_KEY is not set in backend/.env — skipping odds refresh.")
         sys.exit(0)
 
     resp = requests.get(
-        ODDS_URL,
+        ODDS_URL.format(sport_key=SPORT_KEYS[args.sport]),
         params={
             "regions": "us",
             "markets": "h2h,spreads,totals",
@@ -62,25 +71,34 @@ def main() -> None:
     remaining = resp.headers.get("x-requests-remaining")
 
     now = datetime.now(UTC)
+    lo, hi = now - timedelta(hours=6), now + timedelta(days=14)
     upserted = 0
     with session_scope() as db:
-        ids = team_id_map(db)
+        ids = team_id_map(db, sport)
+        # NULL kickoff (TBD) falls back to game_date so those games still match.
         window_games = db.scalars(
             select(Game).where(
-                Game.kickoff_time >= now - timedelta(hours=6),
-                Game.kickoff_time <= now + timedelta(days=14),
+                Game.sport == sport,
+                or_(
+                    and_(Game.kickoff_time >= lo, Game.kickoff_time <= hi),
+                    and_(
+                        Game.kickoff_time.is_(None),
+                        Game.game_date >= lo.date(),
+                        Game.game_date <= hi.date(),
+                    ),
+                ),
             )
         ).all()
         by_matchup = {(g.home_team_id, g.away_team_id): g for g in window_games}
 
         for event in events:
             try:
-                home = to_abbr(event["home_team"])
-                away = to_abbr(event["away_team"])
+                home = resolve(event["home_team"])
+                away = resolve(event["away_team"])
             except KeyError as exc:
                 print(f"skipping event, unknown team: {exc}")
                 continue
-            game = by_matchup.get((ids[home], ids[away]))
+            game = by_matchup.get((ids.get(home), ids.get(away)))
             if game is None:
                 continue
             markets = _consensus(event, home, away)
@@ -100,7 +118,8 @@ def main() -> None:
             odds.captured_at = now
             upserted += 1
 
-    print(f"odds refresh: upserted {upserted} games (requests remaining: {remaining})")
+    print(f"odds refresh ({args.sport}): upserted {upserted} games "
+          f"(requests remaining: {remaining})")
 
 
 if __name__ == "__main__":

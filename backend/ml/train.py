@@ -4,12 +4,16 @@ Split is time-aware: the base XGBoost model trains on the earlier seasons,
 the most recent season is the holdout used for early stopping and Platt
 (sigmoid) calibration.
 
-Usage: python -m ml.train
+CFB trains the model on FBS-vs-FBS plus FBS-vs-FCS games, but fits the
+calibrator (and reports headline metrics) on FBS-vs-FBS only — mismatch
+outcomes are near-deterministic and would distort the reliability fit.
+
+Usage: python -m ml.train [--sport nfl|cfb]
 """
 
+import argparse
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 
 import joblib
 import numpy as np
@@ -19,11 +23,11 @@ from xgboost import XGBClassifier
 
 from app.config import get_settings
 from app.db import session_scope
+from app.models import SPORT_CFB, SPORT_NFL
 from ml.calibration import PlattCalibrator
-from ml.explain import FEATURE_LABELS
+from ml.explain import feature_labels
 from ml.features import FEATURE_COLUMNS, training_frame
-
-ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
+from ml.model_store import artifacts_dir
 
 TRAIN_SEASONS = [2022, 2023, 2024]
 CALIB_SEASON = 2025
@@ -40,8 +44,14 @@ XGB_PARAMS = dict(
 )
 
 
+def fbs_vs_fbs(df: pd.DataFrame) -> pd.Series:
+    return (df["home_tier"] == "FBS") & (df["away_tier"] == "FBS")
+
+
 def fit_model(
-    train_df: pd.DataFrame, calib_df: pd.DataFrame
+    train_df: pd.DataFrame,
+    calib_df: pd.DataFrame,
+    calib_fit_df: pd.DataFrame | None = None,
 ) -> tuple[XGBClassifier, PlattCalibrator]:
     x_train = train_df[FEATURE_COLUMNS]
     y_train = train_df["home_win"].astype(int)
@@ -51,8 +61,9 @@ def fit_model(
     model = XGBClassifier(**XGB_PARAMS)
     model.fit(x_train, y_train, eval_set=[(x_calib, y_calib)], verbose=False)
 
-    raw = model.predict_proba(x_calib)[:, 1]
-    calibrator = PlattCalibrator().fit(raw, y_calib.to_numpy())
+    fit_df = calib_df if calib_fit_df is None else calib_fit_df
+    raw = model.predict_proba(fit_df[FEATURE_COLUMNS])[:, 1]
+    calibrator = PlattCalibrator().fit(raw, fit_df["home_win"].astype(int).to_numpy())
     return model, calibrator
 
 
@@ -62,18 +73,25 @@ def predict_calibrated(model, calibrator, x: pd.DataFrame) -> np.ndarray:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl")
+    args = parser.parse_args()
+    sport = SPORT_CFB if args.sport == "cfb" else SPORT_NFL
+
     settings = get_settings()
     with session_scope() as db:
-        df = training_frame(db, TRAIN_SEASONS + [CALIB_SEASON])
+        df = training_frame(db, TRAIN_SEASONS + [CALIB_SEASON], sport=sport)
 
     train_df = df[df["season"].isin(TRAIN_SEASONS)]
     calib_df = df[df["season"] == CALIB_SEASON]
+    calib_fit_df = calib_df[fbs_vs_fbs(calib_df)] if sport == SPORT_CFB else None
     print(f"training rows: {len(train_df)}, calibration rows: {len(calib_df)}")
 
-    model, calibrator = fit_model(train_df, calib_df)
+    model, calibrator = fit_model(train_df, calib_df, calib_fit_df)
 
-    probs = predict_calibrated(model, calibrator, calib_df)
-    y = calib_df["home_win"].astype(int).to_numpy()
+    eval_df = calib_df if calib_fit_df is None else calib_fit_df
+    probs = predict_calibrated(model, calibrator, eval_df)
+    y = eval_df["home_win"].astype(int).to_numpy()
     metrics = {
         "holdout_season": CALIB_SEASON,
         "brier": round(float(brier_score_loss(y, probs)), 4),
@@ -83,15 +101,17 @@ def main() -> None:
     }
     print("holdout metrics:", metrics)
 
-    version = settings.model_version
-    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    artifact_path = ARTIFACTS_DIR / f"model_{version}.joblib"
+    version = settings.model_version_for(sport)
+    art_dir = artifacts_dir(sport)
+    art_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = art_dir / f"model_{version}.joblib"
     joblib.dump(
         {
             "model": model,
             "calibrator": calibrator,
+            "sport": sport,
             "feature_columns": FEATURE_COLUMNS,
-            "feature_labels": FEATURE_LABELS,
+            "feature_labels": feature_labels(sport),
             "training_window": {"train": TRAIN_SEASONS, "calibration": CALIB_SEASON},
             "metrics": metrics,
             "model_version": version,
@@ -99,7 +119,7 @@ def main() -> None:
         },
         artifact_path,
     )
-    (ARTIFACTS_DIR / "latest.json").write_text(
+    (art_dir / "latest.json").write_text(
         json.dumps({"model_version": version, "artifact": artifact_path.name}, indent=2),
         encoding="utf-8",
     )

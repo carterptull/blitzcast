@@ -1,25 +1,38 @@
 import Link from "next/link";
 import { fmtKickoffTime, fmtPct } from "@/lib/format";
-import { TEAMS } from "@/lib/teams";
-import type { GameSummary } from "@/lib/types";
+import { apiSport, type SportSlug } from "@/lib/sport";
+import { primaryColor } from "@/lib/teams";
+import type { GameSummary, GameTeamRef } from "@/lib/types";
+import TbdBadge from "./TbdBadge";
 import TeamCrest from "./TeamCrest";
 
 function TeamRow({
-  abbr,
-  name,
+  team,
+  cfb,
   prob,
   favored,
 }: {
-  abbr: string;
-  name: string;
+  team: GameTeamRef;
+  cfb: boolean;
   prob: number | null;
   favored: boolean;
 }) {
   return (
     <div className="flex items-center gap-3">
-      <TeamCrest abbr={abbr} size={34} />
-      <span className="font-display text-xl uppercase leading-none tracking-wide">{abbr}</span>
-      <span className="truncate text-sm text-ink-soft">{name}</span>
+      <TeamCrest
+        abbr={team.abbr}
+        size={34}
+        logoUrl={cfb ? (team.logo_url ?? null) : undefined}
+        color={cfb ? team.color : undefined}
+        label={cfb ? team.name : undefined}
+      />
+      <span className="font-display text-xl uppercase leading-none tracking-wide">{team.abbr}</span>
+      {team.rank != null ? (
+        <span className="-ml-1.5 font-mono text-[10px] font-semibold tabular-nums text-gold-text">
+          #{team.rank}
+        </span>
+      ) : null}
+      <span className="truncate text-sm text-ink-soft">{team.name}</span>
       {prob !== null ? (
         <span
           className={`ml-auto font-mono text-sm font-semibold tabular-nums ${
@@ -33,27 +46,35 @@ function TeamRow({
   );
 }
 
-export default function GameCard({ game }: { game: GameSummary }) {
+export default function GameCard({
+  game,
+  sport = "nfl",
+}: {
+  game: GameSummary;
+  sport?: SportSlug;
+}) {
+  const cfb = sport === "cfb";
+  const s = apiSport(sport);
   const homeProb = typeof game.home_win_prob === "number" ? game.home_win_prob : null;
   const awayProb = homeProb === null ? null : 1 - homeProb;
-  const awayColor = TEAMS[game.away.abbr]?.primary ?? "#4f6459";
-  const homeColor = TEAMS[game.home.abbr]?.primary ?? "#4f6459";
+  const awayColor = primaryColor(s, game.away.abbr, game.away.color);
+  const homeColor = primaryColor(s, game.home.abbr, game.home.color);
 
   return (
     <Link
-      href={`/matchup/${game.game_id}`}
+      href={`/${sport}/matchup/${game.game_id}`}
       className="group block rounded-xl border border-edge bg-surface p-4 transition-all hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-lg hover:shadow-stripe-a/10 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
     >
       <div className="space-y-2.5">
         <TeamRow
-          abbr={game.away.abbr}
-          name={game.away.name}
+          team={game.away}
+          cfb={cfb}
           prob={awayProb}
           favored={awayProb !== null && awayProb > 0.5}
         />
         <TeamRow
-          abbr={game.home.abbr}
-          name={game.home.name}
+          team={game.home}
+          cfb={cfb}
           prob={homeProb}
           favored={homeProb !== null && homeProb > 0.5}
         />
@@ -75,7 +96,11 @@ export default function GameCard({ game }: { game: GameSummary }) {
       )}
 
       <div className="mt-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-ink-soft">
-        <span className="tabular-nums">{fmtKickoffTime(game.kickoff)}</span>
+        {game.kickoff !== null ? (
+          <span className="tabular-nums">{fmtKickoffTime(game.kickoff)}</span>
+        ) : (
+          <TbdBadge />
+        )}
         {game.is_primetime ? (
           <span className="rounded-sm border border-gold/50 px-1.5 py-0.5 text-[9px] tracking-[0.15em] text-gold-text">
             Prime time
