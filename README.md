@@ -1,12 +1,13 @@
 # Blitzcast
 
-An AI/ML-powered NFL matchup predictor by **Paymon Software**. Pick a 2026
-matchup, get a win probability (0–100%) plus a broadcaster-style explanation
-of the key factors behind it — built on a trained, calibrated XGBoost model
-with SHAP explainability. Claude narrates the model's output; it never makes
-the prediction.
+An AI/ML-powered matchup predictor for **NFL and college football** by
+**Paymon Software**. Pick a 2026 matchup, get a win probability (0–100%)
+plus a broadcaster-style explanation of the key factors behind it — built on
+a trained, calibrated XGBoost model with SHAP explainability. Claude
+narrates the model's output; it never makes the prediction.
 
-**Version: 0.1.0-beta** (local-only; see [VERSION](./VERSION))
+**Version: 0.2.0-beta** (local-only; see [VERSION](./VERSION) ·
+[CHANGELOG](./CHANGELOG.md))
 
 Scope, ML approach, and roadmap: [PLANNING.md](./PLANNING.md) ·
 Build spec: [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) ·
@@ -46,6 +47,19 @@ The model approaches closing-line accuracy using only public data (and
 matches Vegas accuracy in 2025). Full report + calibration plot:
 `backend/ml/reports/`.
 
+CFB has its own Elo/model/calibration, walk-forward against de-vigged CFBD
+closing lines (FBS-vs-FBS games only; FBS-vs-FCS mismatches are predicted
+but excluded from these metrics):
+
+| Season | Games | Model Brier | Vegas Brier | Model Acc | Vegas Acc |
+|---|---|---|---|---|---|
+| 2023 | 755 | 0.1805 | 0.1685 | 0.711 | 0.739 |
+| 2024 | 757 | 0.1840 | 0.1781 | 0.721 | 0.727 |
+| 2025 | 763 | 0.1751 | 0.1719 | 0.739 | 0.748 |
+| **All** | 2275 | **0.1799** | **0.1729** | 0.724 | 0.738 |
+
+Full report: `backend/ml/reports/backtest_cfb.md`.
+
 ## Quick start (local)
 
 Requires Node 22+, Python 3.13, Docker Desktop.
@@ -60,23 +74,34 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 copy .env.example .env            # paste real API keys
 .venv\Scripts\python -m alembic upgrade head
+
+# NFL pipeline
 .venv\Scripts\python -m data_pipeline.seed
 .venv\Scripts\python -m data_pipeline.backfill
 .venv\Scripts\python -m ml.train
 .venv\Scripts\python -m app.jobs.predict_week
+
+# CFB pipeline (independent of NFL, same DB)
+.venv\Scripts\python -m data_pipeline.seed_cfb
+.venv\Scripts\python -m data_pipeline.backfill_cfb
+.venv\Scripts\python -m ml.train --sport cfb
+.venv\Scripts\python -m data_pipeline.refresh_schedule_cfb   # syncs current season
+.venv\Scripts\python -m app.jobs.predict_week --sport cfb
+
 .venv\Scripts\python -m uvicorn app.main:app --reload   # http://localhost:8000
 
 # 3. Frontend (new terminal)
 cd frontend
 npm install
 copy .env.example .env.local      # set NEXT_PUBLIC_BUYMEACOFFEE_URL etc.
-npm run dev                        # http://localhost:3000
+npm run dev                        # http://localhost:3000, tabs at /nfl and /cfb
 ```
 
 In-season weekly refresh (odds → weather → injuries → predictions):
 
 ```powershell
-.venv\Scripts\python -m data_pipeline.refresh_week
+.venv\Scripts\python -m data_pipeline.refresh_week        # NFL
+.venv\Scripts\python -m data_pipeline.refresh_week_cfb     # CFB
 ```
 
 **No API keys yet?** Everything still runs: refresh jobs skip politely,
@@ -88,11 +113,14 @@ mode (`NEXT_PUBLIC_USE_MOCK=1`) plus the backend's `BLITZCAST_MOCK=1`.
 ```
 blitzcast/
 ├── frontend/            Next.js 16 + TypeScript + Tailwind v4 (App Router)
+│                        routes: /nfl, /cfb, /[sport]/matchup/[gameId]
 ├── backend/
 │   ├── app/             FastAPI: routers, schemas, services, jobs, config
 │   ├── ml/              Elo, features, train, backtest, SHAP explainability
-│   ├── data_pipeline/   seeds + nflverse/odds/weather/injury loaders
-│   ├── tests/           pytest suite (39 tests)
+│   │                    (per-sport artifacts: ml/artifacts/, ml/artifacts/cfb/)
+│   ├── data_pipeline/   seeds + nflverse/CFBD/odds/weather/injury loaders
+│   │                    (NFL and *_cfb.py CFB counterparts)
+│   ├── tests/           pytest suite (93 tests)
 │   └── README.md        every backend command
 ├── docker/              docker-compose.yml (Postgres 16)
 ├── .github/workflows/   CI: ruff + pytest, lint + build
@@ -103,7 +131,7 @@ blitzcast/
 ## Testing
 
 ```powershell
-cd backend && .venv\Scripts\python -m pytest      # 39 tests
+cd backend && .venv\Scripts\python -m pytest      # 93 tests
 cd frontend && npm run lint && npm run build
 ```
 

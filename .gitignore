@@ -35,6 +35,9 @@ data/processed/
 .DS_Store
 Thumbs.db
 
+# Claude Code local config/notes
+.claude/
+
 # Docker
 docker-compose.override.yml
 

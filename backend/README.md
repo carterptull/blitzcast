@@ -45,23 +45,35 @@ refreshes print a message and exit; narration writes `null` and continues.
 |---|---|
 | Apply migrations | `python -m alembic upgrade head` |
 | New migration | `python -m alembic revision --autogenerate -m "msg"` |
-| Seed teams/stadiums | `python -m data_pipeline.seed` |
-| Historical backfill (2021-2026) | `python -m data_pipeline.backfill` |
-| Sync 2026 schedule | `python -m data_pipeline.refresh_schedule` |
-| Refresh odds | `python -m data_pipeline.refresh_odds` |
-| Refresh weather | `python -m data_pipeline.refresh_weather` |
-| Refresh injuries | `python -m data_pipeline.refresh_injuries` |
-| Full weekly refresh + predict | `python -m data_pipeline.refresh_week` |
-| Persist Elo snapshots | `python -m ml.compute_ratings` |
-| Train model | `python -m ml.train` |
-| Backtest (writes `ml/reports/`) | `python -m ml.backtest` |
-| Predict a week | `python -m app.jobs.predict_week --season 2026 --week 1` |
+| Seed teams/stadiums (NFL) | `python -m data_pipeline.seed` |
+| Historical backfill (NFL, 2021-2026) | `python -m data_pipeline.backfill` |
+| Sync 2026 schedule (NFL) | `python -m data_pipeline.refresh_schedule` |
+| Refresh odds (NFL) | `python -m data_pipeline.refresh_odds` |
+| Refresh weather (NFL) | `python -m data_pipeline.refresh_weather` |
+| Refresh injuries (NFL) | `python -m data_pipeline.refresh_injuries` |
+| Full weekly refresh + predict (NFL) | `python -m data_pipeline.refresh_week` |
+| Seed teams/conferences (CFB) | `python -m data_pipeline.seed_cfb` |
+| Historical backfill (CFB, 2021-2025) | `python -m data_pipeline.backfill_cfb` |
+| Sync current-season schedule (CFB) | `python -m data_pipeline.refresh_schedule_cfb [--season 2026]` |
+| Refresh AP/Coaches polls (CFB) | `python -m data_pipeline.refresh_polls_cfb` |
+| Full weekly refresh + predict (CFB) | `python -m data_pipeline.refresh_week_cfb` |
+| Persist Elo snapshots | `python -m ml.compute_ratings [--sport nfl\|cfb]` |
+| Train model | `python -m ml.train [--sport nfl\|cfb]` |
+| Backtest (writes `ml/reports/`) | `python -m ml.backtest [--sport nfl\|cfb]` |
+| Predict a week | `python -m app.jobs.predict_week --season 2026 --week 1 [--sport nfl\|cfb]` |
 | Run API | `python -m uvicorn app.main:app --reload` |
 | Tests | `python -m pytest` |
 | Lint | `python -m ruff check .` |
 
-First-time bootstrap order: migrate → seed → backfill → train → backtest →
-predict_week → run API.
+`--sport` defaults to `nfl` on every ML/prediction command. CFB has no
+separate odds/weather/injuries refresh — `refresh_schedule_cfb` and
+`refresh_polls_cfb` are the only in-season CFB syncs, bundled by
+`refresh_week_cfb`.
+
+First-time bootstrap order per sport: migrate (once) → seed → backfill →
+compute_ratings → train → backtest → predict_week → run API. NFL and CFB
+pipelines are independent — run either or both in any order after
+migrations.
 
 ## API
 
@@ -71,6 +83,12 @@ predict_week → run API.
 - `GET /api/games?week=1&season=2026`
 - `GET /api/predictions/{game_id}` (404 unknown game; `prediction_status:
   "pending"` when a game exists but has no prediction yet)
+
+`/api/teams`, `/api/schedule`, and `/api/games` take an optional
+`sport=NFL|CFB` query param (case-insensitive, default `NFL`; unknown values
+422). `/api/predictions/{game_id}` needs no sport — game ids are globally
+unique (CFB ids are prefixed `cfb_`) and the response carries `sport`.
+`predict_week` takes `--sport nfl|cfb` (default `nfl`).
 
 Interactive docs at `http://localhost:8000/docs`. Set `BLITZCAST_MOCK=1` to
 serve fixture data so the frontend can develop without a database.

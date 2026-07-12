@@ -1,8 +1,10 @@
 // Typed API client for the Blitzcast backend (IMPLEMENTATION_PLAN.md §3.2).
 // NEXT_PUBLIC_USE_MOCK=1 serves fixture data instead of hitting the network.
+// Sport is a query param on list endpoints (CFB_IMPLEMENTATION_PLAN.md §3.2);
+// prediction lookups need none — game ids are globally unique.
 
 import { mockGames, mockMatchup, mockSchedule, mockTeams } from "./mock";
-import type { GameSummary, MatchupDetail, Schedule, Team } from "./types";
+import type { GameSummary, MatchupDetail, Schedule, Sport, Team } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
@@ -33,19 +35,23 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function getTeams(): Promise<Team[]> {
-  if (MOCK) return mockTeams();
-  return get<Team[]>("/api/teams");
+export async function getTeams(sport: Sport = "NFL"): Promise<Team[]> {
+  if (MOCK) return mockTeams(sport);
+  return get<Team[]>(`/api/teams?sport=${sport}`);
 }
 
-export async function getSchedule(season = 2026): Promise<Schedule> {
-  if (MOCK) return mockSchedule();
-  return get<Schedule>(`/api/schedule?season=${season}`);
+export async function getSchedule(season = 2026, sport: Sport = "NFL"): Promise<Schedule> {
+  if (MOCK) return mockSchedule(sport);
+  return get<Schedule>(`/api/schedule?season=${season}&sport=${sport}`);
 }
 
-export async function getGames(week: number, season = 2026): Promise<GameSummary[]> {
-  if (MOCK) return mockGames(week);
-  return get<GameSummary[]>(`/api/games?week=${week}&season=${season}`);
+export async function getGames(
+  week: number,
+  season = 2026,
+  sport: Sport = "NFL"
+): Promise<GameSummary[]> {
+  if (MOCK) return mockGames(week, sport);
+  return get<GameSummary[]>(`/api/games?week=${week}&season=${season}&sport=${sport}`);
 }
 
 export async function getMatchup(gameId: string): Promise<MatchupDetail> {

@@ -8,15 +8,15 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Game, Team
+from app.models import SPORT_NFL, Game, Team
 from data_pipeline.team_names import to_abbr
 
 ET = ZoneInfo("America/New_York")
 UTC = ZoneInfo("UTC")
 
 
-def team_id_map(db: Session) -> dict[str, int]:
-    return {t.abbr: t.team_id for t in db.scalars(select(Team))}
+def team_id_map(db: Session, sport: str = SPORT_NFL) -> dict[str, int]:
+    return {t.abbr: t.team_id for t in db.scalars(select(Team).where(Team.sport == sport))}
 
 
 def _kickoff_utc(gameday: str, gametime: str | None) -> datetime:

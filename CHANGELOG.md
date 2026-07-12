@@ -1,0 +1,50 @@
+# Changelog
+
+All notable changes to Blitzcast are documented in this file. Format
+follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
+follow [SemVer](https://semver.org/).
+
+## [0.2.0-beta] — 2026-07-12
+
+### Added
+- College football (CFB / FBS) as a second sport, alongside NFL, in the
+  same app — one Postgres DB with `sport` as a first-class discriminator,
+  not a fork.
+- CFBD-backed data pipeline for CFB: team/conference seeding, historical
+  backfill (2021–2025), current-season schedule sync, and AP/Coaches poll
+  refresh (`data_pipeline/*_cfb.py`).
+- Per-sport Elo, feature engineering, XGBoost model, and calibration for
+  CFB, trained and backtested independently of NFL
+  (`ml/reports/backtest_cfb.md`).
+- `sport=NFL|CFB` query param on `/api/teams`, `/api/schedule`,
+  `/api/games`; `--sport` flag on `compute_ratings`, `train`, `backtest`,
+  and `predict_week`.
+- `/nfl` and `/cfb` tabs on the frontend, with sport-aware routing
+  (`/[sport]`, `/[sport]/matchup/[gameId]`) and a TBD-kickoff badge for
+  CFB games without a confirmed time.
+
+### Fixed
+- `ml/features.py`: leakage-safe merge/chronological ordering now
+  coalesces null `kickoff_time` (CFB's TBD-kickoff games) to `game_date`,
+  fixing a `merge_asof` crash and a latent Elo-replay ordering bug. No
+  effect on NFL, where `kickoff_time` is never null.
+- `ml/features.py`: injury-diff feature columns are now explicitly cast
+  to `float`, fixing an XGBoost dtype rejection that only surfaced for
+  CFB (which has no injury data source, unlike NFL).
+
+## [0.1.0-beta] — 2026-07-09
+
+### Added
+- Initial release: NFL matchup predictor. XGBoost home-win model over
+  20 leakage-safe features (Elo, rolling EPA/form, rest, injuries,
+  weather, market), Platt-calibrated, walk-forward backtested against
+  Vegas closing lines (`ml/reports/backtest.md`).
+- FastAPI backend serving cached predictions (`/api/teams`,
+  `/api/schedule`, `/api/games`, `/api/predictions/{game_id}`), with a
+  weekly batch job (features → predict → SHAP → narrate → upsert).
+- Claude-narrated (Haiku 4.5) broadcaster-style explanations, guardrailed
+  to describe the model's output without altering or inventing it.
+- Data pipeline: nflverse historical backfill, weekly odds/weather/injury
+  refresh, all degrading gracefully without API keys.
+- Next.js + Tailwind frontend: week slate and matchup pages, light/dark
+  themes, mobile-first, with a full mock mode for keyless development.

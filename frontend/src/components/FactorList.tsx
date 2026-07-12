@@ -1,4 +1,4 @@
-import { TEAMS, textOn } from "@/lib/teams";
+import { primaryColor, textOn } from "@/lib/teams";
 import type { Factor, MatchupDetail } from "@/lib/types";
 
 /**
@@ -16,7 +16,7 @@ export default function FactorList({ matchup }: { matchup: MatchupDetail }) {
     <ol className="space-y-3">
       {m.factors.map((factor: Factor, i: number) => {
         const team = factor.direction === "home" ? m.home : m.away;
-        const color = TEAMS[team.abbr]?.primary ?? "#4f6459";
+        const color = primaryColor(m.sport ?? "NFL", team.abbr, team.color);
         const abs = Math.abs(factor.value);
         return (
           <li key={`${factor.label}-${i}`} className="grid grid-cols-[2.75rem_1fr_auto] items-center gap-3">

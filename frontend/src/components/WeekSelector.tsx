@@ -6,9 +6,13 @@ import { useEffect, useRef } from "react";
 interface Props {
   weeks: number[];
   selected: number;
+  /** Sport slate path the week links point at, e.g. "/nfl". */
+  basePath: string;
+  /** Extra query params to preserve across week changes, e.g. "&conf=SEC". */
+  query?: string;
 }
 
-export default function WeekSelector({ weeks, selected }: Props) {
+export default function WeekSelector({ weeks, selected, basePath, query = "" }: Props) {
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -24,7 +28,7 @@ export default function WeekSelector({ weeks, selected }: Props) {
           return (
             <li key={w}>
               <Link
-                href={`/?week=${w}`}
+                href={`${basePath}?week=${w}${query}`}
                 scroll={false}
                 aria-current={active ? "page" : undefined}
                 className={`flex min-w-[3.25rem] flex-col items-center rounded-lg border px-3 py-1.5 transition-colors ${

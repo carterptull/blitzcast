@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app import mock_data
 from app.config import get_settings
 from app.db import get_db
+from app.routers import normalize_sport
 from app.schemas import GameSummary
 from app.services import predictions as svc
 
@@ -16,8 +17,9 @@ router = APIRouter(prefix="/api", tags=["games"])
     summary="Games for one week of a season",
 )
 def get_games(
-    week: int, season: int = 2026, db: Session = Depends(get_db)
+    week: int, season: int = 2026, sport: str = "NFL", db: Session = Depends(get_db)
 ) -> list[GameSummary]:
+    sport = normalize_sport(sport)
     if get_settings().blitzcast_mock:
-        return mock_data.get_games(season, week)
-    return svc.get_games(db, season, week)
+        return mock_data.get_games(season, week, sport)
+    return svc.get_games(db, season, week, sport)

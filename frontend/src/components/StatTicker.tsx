@@ -34,7 +34,7 @@ export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
     ["Total", m.odds ? `O/U ${m.odds.total}` : "—"],
     ["Weather", weatherValue],
     ["Venue", `${m.venue.name} · ${m.venue.city}`],
-    ["Kickoff", fmtKickoff(m.kickoff)],
+    ["Kickoff", m.kickoff !== null ? fmtKickoff(m.kickoff) : "TBD"],
   ];
 
   return (

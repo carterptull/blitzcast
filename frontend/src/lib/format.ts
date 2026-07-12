@@ -71,7 +71,22 @@ export function fmtSpread(m: MatchupDetail): string {
 export function pickDefaultWeek(schedule: Schedule, now: Date = new Date()): number {
   const cutoff = now.getTime() - 6 * 60 * 60 * 1000; // keep a week "current" through its last kickoff
   for (const w of schedule.weeks) {
-    if (w.games.some((g) => new Date(g.kickoff).getTime() > cutoff)) return w.week;
+    // A TBD kickoff counts as upcoming.
+    if (w.games.some((g) => g.kickoff === null || new Date(g.kickoff).getTime() > cutoff))
+      return w.week;
   }
   return schedule.weeks[schedule.weeks.length - 1]?.week ?? 1;
+}
+
+export const CFB_WEEKS = 15;
+
+/**
+ * Default CFB week from the calendar (weeks roll over on Monday; Week 1 is
+ * Labor Day weekend 2026). Resolves to Week 1 before the season, the finale
+ * after it. Calendar-based because the CFB slate is fetched per-week.
+ */
+export function pickCfbDefaultWeek(now: Date = new Date()): number {
+  const week1Monday = Date.UTC(2026, 7, 31);
+  const wk = Math.floor((now.getTime() - week1Monday) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return Math.min(Math.max(wk, 1), CFB_WEEKS);
 }

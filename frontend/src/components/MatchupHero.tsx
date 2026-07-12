@@ -1,5 +1,7 @@
 import { fmtKickoff, fmtPct } from "@/lib/format";
+import { primaryColor } from "@/lib/teams";
 import type { MatchupDetail, PredictionTeam } from "@/lib/types";
+import TbdBadge from "./TbdBadge";
 import TeamCrest from "./TeamCrest";
 import WinProbabilitySplit from "./WinProbabilitySplit";
 
@@ -11,13 +13,33 @@ function Badge({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function TeamColumn({ team, align }: { team: PredictionTeam; align: "left" | "right" }) {
+export function TeamColumn({
+  team,
+  align,
+  cfb = false,
+}: {
+  team: PredictionTeam;
+  align: "left" | "right";
+  cfb?: boolean;
+}) {
   const alignCls = align === "left" ? "sm:items-start sm:text-left" : "sm:items-end sm:text-right";
   return (
     <div className={`flex flex-col items-center gap-2 text-center ${alignCls}`}>
-      <TeamCrest abbr={team.abbr} size={88} className="sm:size-24" />
+      <TeamCrest
+        abbr={team.abbr}
+        size={88}
+        className="sm:size-24"
+        logoUrl={cfb ? (team.logo_url ?? null) : undefined}
+        color={cfb ? team.color : undefined}
+        label={cfb ? team.name : undefined}
+      />
       <div>
         <div className="font-display text-3xl uppercase leading-none tracking-wide sm:text-4xl">
+          {team.rank != null ? (
+            <span className="mr-1.5 align-middle font-mono text-base font-semibold tracking-normal text-gold-turf sm:text-lg">
+              #{team.rank}
+            </span>
+          ) : null}
           {team.name}
         </div>
         <div className="mt-1 font-mono text-xs uppercase tracking-[0.2em] text-chalk-soft">
@@ -45,6 +67,8 @@ export function TeamColumn({ team, align }: { team: PredictionTeam; align: "left
 export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
   const m = matchup;
   const pending = m.prediction_status !== "ready";
+  const cfb = m.sport === "CFB";
+  const sport = cfb ? "CFB" : "NFL";
 
   return (
     <section className="turf overflow-hidden rounded-2xl">
@@ -53,18 +77,22 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[11px] uppercase tracking-[0.18em] text-chalk-soft sm:justify-start">
           <span className="text-gold-turf">Week {m.week}</span>
           <span aria-hidden="true">·</span>
-          <span className="tabular-nums">{fmtKickoff(m.kickoff)}</span>
+          {m.kickoff !== null ? (
+            <span className="tabular-nums">{fmtKickoff(m.kickoff)}</span>
+          ) : (
+            <TbdBadge onTurf />
+          )}
           <span aria-hidden="true">·</span>
           <span>
             {m.venue.name}, {m.venue.city}
           </span>
           {m.is_primetime ? <Badge>Prime time</Badge> : null}
-          {m.is_divisional ? <Badge>Divisional</Badge> : null}
+          {m.is_divisional ? <Badge>{cfb ? "Conference game" : "Divisional"}</Badge> : null}
         </div>
 
         {/* Teams */}
         <div className="mt-8 grid items-center gap-8 sm:grid-cols-[1fr_auto_1fr] sm:gap-6">
-          <TeamColumn team={m.away} align="left" />
+          <TeamColumn team={m.away} align="left" cfb={cfb} />
           {/* Center VS — dropped on mobile per the responsive spec */}
           <div className="hidden flex-col items-center gap-1 sm:flex" aria-hidden="true">
             <span className="font-display text-2xl uppercase text-chalk-soft">at</span>
@@ -72,7 +100,7 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
               <path d="M6 0 12 12 0 12z" fill="currentColor" />
             </svg>
           </div>
-          <TeamColumn team={m.home} align="right" />
+          <TeamColumn team={m.home} align="right" cfb={cfb} />
         </div>
 
         {/* Split bar */}
@@ -80,8 +108,16 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
           {!pending && m.away.win_prob !== null && m.home.win_prob !== null ? (
             <>
               <WinProbabilitySplit
-                away={{ abbr: m.away.abbr, prob: m.away.win_prob }}
-                home={{ abbr: m.home.abbr, prob: m.home.win_prob }}
+                away={{
+                  abbr: m.away.abbr,
+                  prob: m.away.win_prob,
+                  color: cfb ? primaryColor(sport, m.away.abbr, m.away.color) : undefined,
+                }}
+                home={{
+                  abbr: m.home.abbr,
+                  prob: m.home.win_prob,
+                  color: cfb ? primaryColor(sport, m.home.abbr, m.home.color) : undefined,
+                }}
               />
               <div className="mt-2 flex justify-between font-mono text-[10px] uppercase tracking-[0.2em] text-chalk-soft">
                 <span>{m.away.abbr}</span>

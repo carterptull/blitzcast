@@ -6,6 +6,8 @@ import { TEAMS } from "@/lib/teams";
 interface Side {
   abbr: string;
   prob: number;
+  /** Pre-resolved fill color (CFB); NFL callers omit it and use the static map. */
+  color?: string;
 }
 
 interface Props {
@@ -30,8 +32,8 @@ export default function WinProbabilitySplit({ away, home, size = "lg" }: Props) 
 
   const awayPct = armed ? away.prob * 100 : 50;
   const homePct = 100 - awayPct;
-  const awayColor = TEAMS[away.abbr]?.primary ?? "#4f6459";
-  const homeColor = TEAMS[home.abbr]?.primary ?? "#4f6459";
+  const awayColor = away.color ?? TEAMS[away.abbr]?.primary ?? "#4f6459";
+  const homeColor = home.color ?? TEAMS[home.abbr]?.primary ?? "#4f6459";
   const h = size === "lg" ? "h-4 sm:h-5" : "h-1.5";
 
   return (

@@ -22,7 +22,19 @@ SYSTEM_PROMPT = (
     "real numbers, no betting advice."
 )
 
+# CFB has no standardized injury report; the model must never imply one exists.
+CFB_INJURY_GUARDRAIL = (
+    "College football has no reliable injury report; never cite player "
+    "availability or injuries unless an explicit injury note is provided."
+)
+
 _PCT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:%|percent)", re.IGNORECASE)
+
+
+def _system_prompt(sport: str) -> str:
+    if sport == "CFB":
+        return SYSTEM_PROMPT + " " + CFB_INJURY_GUARDRAIL
+    return SYSTEM_PROMPT
 
 
 def _build_user_content(payload: dict) -> str:
@@ -40,6 +52,8 @@ def _build_user_content(payload: dict) -> str:
         ("rest_note", "Rest"),
         ("qb_note", "QB status"),
         ("weather_note", "Weather"),
+        ("poll_note", "Poll standing"),
+        ("conference_note", "Conference matchup"),
     ):
         if payload.get(key) is not None:
             lines.append(f"{label}: {payload[key]}")
@@ -60,11 +74,13 @@ def _percentages_consistent(text: str, home_win_prob: float) -> bool:
     return True
 
 
-def _call_api(client: anthropic.Anthropic, model: str, user_content: str) -> str:
+def _call_api(
+    client: anthropic.Anthropic, model: str, system: str, user_content: str
+) -> str:
     response = client.messages.create(
         model=model,
         max_tokens=300,
-        system=SYSTEM_PROMPT,
+        system=system,
         messages=[{"role": "user", "content": user_content}],
     )
     text = "".join(block.text for block in response.content if block.type == "text")
@@ -75,8 +91,9 @@ def narrate(payload: dict) -> str | None:
     """Generate a narrative for a prediction. Returns None on any failure.
 
     payload: home_name, home_abbr, away_name, away_abbr, home_win_prob,
-    factors ([{label, value, direction}, ...]), plus optional color keys
-    (spread_home, rest_note, qb_note, weather_note).
+    factors ([{label, value, direction}, ...]), optional sport ("NFL"
+    default), plus optional color keys (spread_home, rest_note, qb_note,
+    weather_note, poll_note, conference_note).
     """
     settings = get_settings()
     if not settings.anthropic_api_key:
@@ -84,11 +101,12 @@ def narrate(payload: dict) -> str | None:
         return None
 
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    system = _system_prompt(str(payload.get("sport", "NFL")).upper())
     user_content = _build_user_content(payload)
 
     for attempt in range(2):
         try:
-            text = _call_api(client, settings.anthropic_model, user_content)
+            text = _call_api(client, settings.anthropic_model, system, user_content)
             if text and _percentages_consistent(text, payload["home_win_prob"]):
                 return text
             logger.warning("narration failed percentage sanity check; retrying")

@@ -7,20 +7,29 @@ from pydantic import BaseModel
 
 class TeamOut(BaseModel):
     id: int
+    sport: str = "NFL"
     abbr: str
     name: str
     conference: str
-    division: str
-    logo_url: str
+    division: str | None
+    logo_url: str | None
+    tier: str | None = None
+    color: str | None = None
+    alt_color: str | None = None
 
 
 class GameTeam(BaseModel):
     abbr: str
     name: str
+    rank: int | None = None
+    conference: str | None = None
+    logo_url: str | None = None
+    color: str | None = None
 
 
 class GameSummary(BaseModel):
     game_id: str
+    sport: str = "NFL"
     kickoff: datetime | None
     home: GameTeam
     away: GameTeam
@@ -37,6 +46,7 @@ class WeekOut(BaseModel):
 
 class ScheduleOut(BaseModel):
     season: int
+    sport: str = "NFL"
     weeks: list[WeekOut]
 
 
@@ -50,8 +60,11 @@ class TeamDetail(BaseModel):
     abbr: str
     name: str
     record: str
-    logo_url: str
+    logo_url: str | None
     win_prob: float | None
+    rank: int | None = None
+    conference: str | None = None
+    color: str | None = None
 
 
 class OddsOut(BaseModel):
@@ -76,6 +89,7 @@ class FactorOut(BaseModel):
 
 class PredictionOut(BaseModel):
     game_id: str
+    sport: str = "NFL"
     season: int
     week: int
     kickoff: datetime | None

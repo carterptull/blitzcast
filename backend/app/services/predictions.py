@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Game, Odds, Prediction, Team, Weather
+from app.models import SPORT_CFB, SPORT_NFL, Game, Odds, PollRank, Prediction, Team, Weather
 from app.schemas import (
     FactorOut,
     GameSummary,
@@ -19,17 +19,63 @@ from app.schemas import (
 )
 from data_pipeline.team_names import logo_url, nickname
 
+ESPN_CFB_LOGO = "https://a.espncdn.com/i/teamlogos/ncaa/500/{espn_id}.png"
 
-def list_teams(db: Session) -> list[TeamOut]:
-    teams = db.scalars(select(Team).order_by(Team.abbr)).all()
+
+def _team_logo(team: Team) -> str | None:
+    if team.sport == SPORT_NFL:
+        return logo_url(team.abbr)
+    if team.logo_url:
+        return team.logo_url
+    if team.espn_id:
+        return ESPN_CFB_LOGO.format(espn_id=team.espn_id)
+    return None
+
+
+def _display_name(team: Team) -> str:
+    return nickname(team.name) if team.sport == SPORT_NFL else team.name
+
+
+def poll_ranks_entering(db: Session, sport: str, season: int, week: int) -> dict[int, int]:
+    """team_id -> rank from the poll entering (season, week); AP preferred."""
+    return _poll_ranks_by_week(db, sport, season, week=week).get(week, {})
+
+
+def _poll_ranks_by_week(
+    db: Session, sport: str, season: int, week: int | None = None
+) -> dict[int, dict[int, int]]:
+    """week -> {team_id: rank} from the poll entering each week; AP preferred."""
+    if sport != SPORT_CFB:
+        return {}
+    query = select(PollRank.week, PollRank.poll, PollRank.team_id, PollRank.rank).where(
+        PollRank.sport == sport, PollRank.season == season
+    )
+    if week is not None:
+        query = query.where(PollRank.week == week)
+    by_week: dict[int, dict[str, dict[int, int]]] = {}
+    for wk, poll, team_id, rank in db.execute(query):
+        by_week.setdefault(wk, {}).setdefault(poll, {})[team_id] = rank
+    ranks: dict[int, dict[int, int]] = {}
+    for wk, polls in by_week.items():
+        ap = next((p for p in sorted(polls) if p.upper().startswith("AP")), None)
+        ranks[wk] = polls[ap or sorted(polls)[0]]
+    return ranks
+
+
+def list_teams(db: Session, sport: str = SPORT_NFL) -> list[TeamOut]:
+    teams = db.scalars(select(Team).where(Team.sport == sport).order_by(Team.abbr)).all()
     return [
         TeamOut(
             id=t.team_id,
+            sport=t.sport,
             abbr=t.abbr,
             name=t.name,
             conference=t.conference,
             division=t.division,
-            logo_url=logo_url(t.abbr),
+            logo_url=_team_logo(t),
+            tier=t.tier,
+            color=t.color,
+            alt_color=t.alt_color,
         )
         for t in teams
     ]
@@ -40,12 +86,26 @@ def _prediction_probs(db: Session) -> dict[str, float]:
     return dict(rows.all())
 
 
-def _game_summary(game: Game, home_win_prob: float | None) -> GameSummary:
+def _game_team(team: Team, ranks: dict[int, int]) -> GameTeam:
+    if team.sport == SPORT_NFL:
+        return GameTeam(abbr=team.abbr, name=nickname(team.name))
+    return GameTeam(
+        abbr=team.abbr,
+        name=team.name,
+        rank=ranks.get(team.team_id),
+        conference=team.conference,
+        logo_url=_team_logo(team),
+        color=team.color,
+    )
+
+
+def _game_summary(game: Game, home_win_prob: float | None, ranks: dict[int, int]) -> GameSummary:
     return GameSummary(
         game_id=game.game_id,
+        sport=game.sport,
         kickoff=game.kickoff_time,
-        home=GameTeam(abbr=game.home_team.abbr, name=nickname(game.home_team.name)),
-        away=GameTeam(abbr=game.away_team.abbr, name=nickname(game.away_team.name)),
+        home=_game_team(game.home_team, ranks),
+        away=_game_team(game.away_team, ranks),
         is_primetime=game.is_primetime,
         status=game.status,
         has_prediction=home_win_prob is not None,
@@ -53,11 +113,13 @@ def _game_summary(game: Game, home_win_prob: float | None) -> GameSummary:
     )
 
 
-def _season_games(db: Session, season: int, week: int | None = None) -> list[Game]:
+def _season_games(
+    db: Session, season: int, week: int | None = None, sport: str = SPORT_NFL
+) -> list[Game]:
     query = (
         select(Game)
         .options(joinedload(Game.home_team), joinedload(Game.away_team))
-        .where(Game.season == season)
+        .where(Game.season == season, Game.sport == sport)
         .order_by(Game.kickoff_time)
     )
     if week is not None:
@@ -65,32 +127,42 @@ def _season_games(db: Session, season: int, week: int | None = None) -> list[Gam
     return list(db.scalars(query))
 
 
-def get_schedule(db: Session, season: int) -> ScheduleOut:
-    games = _season_games(db, season)
+def get_schedule(db: Session, season: int, sport: str = SPORT_NFL) -> ScheduleOut:
+    games = _season_games(db, season, sport=sport)
     probs = _prediction_probs(db)
+    week_ranks = _poll_ranks_by_week(db, sport, season)
     weeks: dict[int, list[GameSummary]] = {}
     for game in games:
         weeks.setdefault(game.week, []).append(
-            _game_summary(game, probs.get(game.game_id))
+            _game_summary(game, probs.get(game.game_id), week_ranks.get(game.week, {}))
         )
     return ScheduleOut(
         season=season,
+        sport=sport,
         weeks=[WeekOut(week=w, games=weeks[w]) for w in sorted(weeks)],
     )
 
 
-def get_games(db: Session, season: int, week: int) -> list[GameSummary]:
-    games = _season_games(db, season, week)
+def get_games(db: Session, season: int, week: int, sport: str = SPORT_NFL) -> list[GameSummary]:
+    games = _season_games(db, season, week, sport=sport)
     probs = _prediction_probs(db)
-    return [_game_summary(g, probs.get(g.game_id)) for g in games]
+    ranks = poll_ranks_entering(db, sport, season, week)
+    return [_game_summary(g, probs.get(g.game_id), ranks) for g in games]
 
 
 def _record_entering(db: Session, team_id: int, game: Game) -> str:
-    """Team's W-L(-T) record in this season before this game's kickoff."""
+    """Team's W-L(-T) record in this season before this game's kickoff.
+
+    Falls back to game_date when kickoff is TBD (NULL)."""
+    if game.kickoff_time is not None:
+        before = Game.kickoff_time < game.kickoff_time
+    else:
+        before = Game.game_date < game.game_date
     prior = db.scalars(
         select(Game).where(
             Game.season == game.season,
-            Game.kickoff_time < game.kickoff_time,
+            Game.sport == game.sport,
+            before,
             Game.home_score.is_not(None),
             (Game.home_team_id == team_id) | (Game.away_team_id == team_id),
         )
@@ -107,6 +179,22 @@ def _record_entering(db: Session, team_id: int, game: Game) -> str:
             ties += 1
     record = f"{wins}-{losses}"
     return f"{record}-{ties}" if ties else record
+
+
+def _team_detail(
+    db: Session, team: Team, game: Game, win_prob: float | None, ranks: dict[int, int]
+) -> TeamDetail:
+    is_cfb = team.sport == SPORT_CFB
+    return TeamDetail(
+        abbr=team.abbr,
+        name=_display_name(team),
+        record=_record_entering(db, team.team_id, game),
+        logo_url=_team_logo(team),
+        win_prob=win_prob,
+        rank=ranks.get(team.team_id) if is_cfb else None,
+        conference=team.conference if is_cfb else None,
+        color=team.color if is_cfb else None,
+    )
 
 
 def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
@@ -158,9 +246,11 @@ def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
         if prediction and prediction.shap_top_features
         else []
     )
+    ranks = poll_ranks_entering(db, game.sport, game.season, game.week)
 
     return PredictionOut(
         game_id=game.game_id,
+        sport=game.sport,
         season=game.season,
         week=game.week,
         kickoff=game.kickoff_time,
@@ -171,19 +261,13 @@ def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
         ),
         is_primetime=game.is_primetime,
         is_divisional=game.is_divisional,
-        home=TeamDetail(
-            abbr=game.home_team.abbr,
-            name=nickname(game.home_team.name),
-            record=_record_entering(db, game.home_team_id, game),
-            logo_url=logo_url(game.home_team.abbr),
-            win_prob=home_prob,
-        ),
-        away=TeamDetail(
-            abbr=game.away_team.abbr,
-            name=nickname(game.away_team.name),
-            record=_record_entering(db, game.away_team_id, game),
-            logo_url=logo_url(game.away_team.abbr),
-            win_prob=None if home_prob is None else round(1.0 - home_prob, 4),
+        home=_team_detail(db, game.home_team, game, home_prob, ranks),
+        away=_team_detail(
+            db,
+            game.away_team,
+            game,
+            None if home_prob is None else round(1.0 - home_prob, 4),
+            ranks,
         ),
         odds=odds_out,
         weather=(
