@@ -57,10 +57,10 @@ refreshes print a message and exit; narration writes `null` and continues.
 | Sync current-season schedule (CFB) | `python -m data_pipeline.refresh_schedule_cfb [--season 2026]` |
 | Refresh AP/Coaches polls (CFB) | `python -m data_pipeline.refresh_polls_cfb` |
 | Full weekly refresh + predict (CFB) | `python -m data_pipeline.refresh_week_cfb` |
-| Persist Elo snapshots | `python -m ml.compute_ratings [--sport nfl\|cfb]` |
-| Train model | `python -m ml.train [--sport nfl\|cfb]` |
-| Backtest (writes `ml/reports/`) | `python -m ml.backtest [--sport nfl\|cfb]` |
-| Predict a week | `python -m app.jobs.predict_week --season 2026 --week 1 [--sport nfl\|cfb]` |
+| Persist Elo snapshots | `python -m ml.compute_ratings --sport nfl\|cfb` |
+| Train model | `python -m ml.train --sport nfl\|cfb` |
+| Backtest (writes `ml/reports/`) | `python -m ml.backtest --sport nfl\|cfb` |
+| Predict a week | `python -m app.jobs.predict_week --season 2026 --week 1 --sport nfl\|cfb` |
 | Run API | `python -m uvicorn app.main:app --reload` |
 | Tests | `python -m pytest` |
 | Lint | `python -m ruff check .` |
