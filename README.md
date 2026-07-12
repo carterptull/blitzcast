@@ -78,8 +78,8 @@ copy .env.example .env            # paste real API keys
 # NFL pipeline
 .venv\Scripts\python -m data_pipeline.seed
 .venv\Scripts\python -m data_pipeline.backfill
-.venv\Scripts\python -m ml.train
-.venv\Scripts\python -m app.jobs.predict_week
+.venv\Scripts\python -m ml.train --sport nfl
+.venv\Scripts\python -m app.jobs.predict_week --sport nfl
 
 # CFB pipeline (independent of NFL, same DB)
 .venv\Scripts\python -m data_pipeline.seed_cfb
