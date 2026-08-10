@@ -2,8 +2,8 @@
 
 An AI/ML-powered NFL matchup predictor by Paymon Software: pick a 2026
 matchup, get a win probability plus a natural-language explanation. See
-[PLANNING.md](./PLANNING.md) for scope/roadmap and
-[IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the build spec.
+[DECISIONS.md](./DECISIONS.md) for the rationale behind key technical
+choices.
 
 ## Architecture
 
