@@ -28,6 +28,13 @@ follow [SemVer](https://semver.org/).
   read by the footer) is now the single source of truth; releases are
   tagged on GitHub going forward instead of tracked in a standalone file.
 
+### Fixed
+- CI: bumped `actions/checkout` (v4→v7), `actions/setup-python` (v5→v6),
+  and `actions/setup-node` (v4→v6) to versions that target the Node 24
+  Actions runtime, clearing the "Node.js 20 is deprecated" warnings.
+  Also bumped the `frontend` job's own build/lint Node version (22→24)
+  to the current Active LTS.
+
 ## [0.2.0-beta] — 2026-07-12
 
 ### Added
