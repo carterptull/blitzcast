@@ -4,6 +4,37 @@ All notable changes to Blitzcast are documented in this file. Format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+## [0.3.0-beta] — 2026-08-09
+
+### Changed
+- Replaced `PLANNING.md`/`IMPLEMENTATION_PLAN.md` with `DECISIONS.md` — a
+  concise, what/why/alternative log of significant technical decisions
+  (walk-forward backtesting, difference features, calibration, batch
+  predictions, anti-leakage testing, SHAP, LLM narration boundary, the CFB
+  `sport`-discriminator design, narration model choice, Odds API batching,
+  and the frontend/backend split), replacing the retroactive planning docs
+  with an accumulating engineering record. `README.md` and `CLAUDE.md`
+  now point here instead.
+
+### Added
+- `SECURITY.md` — a basic placeholder vulnerability-reporting policy
+  (private GitHub security advisories), linked from `README.md`. A fuller
+  policy is planned once the app has a public deployment/domain.
+
+### Removed
+- Root `VERSION` file — `frontend/package.json`'s `version` field (already
+  read by the footer) is now the single source of truth; releases are
+  tagged on GitHub going forward instead of tracked in a standalone file.
+
+### Fixed
+- CI: bumped `actions/checkout` (v4→v7), `actions/setup-python` (v5→v6),
+  and `actions/setup-node` (v4→v6) to versions that target the Node 24
+  Actions runtime, clearing the "Node.js 20 is deprecated" warnings.
+  Also bumped the `frontend` job's own build/lint Node version (22→24)
+  to the current Active LTS.
+
 ## [0.2.0-beta] — 2026-07-12
 
 ### Added

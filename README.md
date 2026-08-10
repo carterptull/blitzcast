@@ -6,12 +6,13 @@ plus a broadcaster-style explanation of the key factors behind it — built on
 a trained, calibrated XGBoost model with SHAP explainability. Claude
 narrates the model's output; it never makes the prediction.
 
-**Version: 0.2.0-beta** (local-only; see [VERSION](./VERSION) ·
-[CHANGELOG](./CHANGELOG.md))
+**Version: 0.3.0-beta** (local-only; see
+[CHANGELOG](./CHANGELOG.md) and [releases](https://github.com/carterptull/blitzcast/releases))
 
-Scope, ML approach, and roadmap: [PLANNING.md](./PLANNING.md) ·
-Build spec: [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) ·
-Backend commands: [backend/README.md](./backend/README.md)
+Technical decision log: [DECISIONS.md](./DECISIONS.md) · Release history:
+[CHANGELOG.md](./CHANGELOG.md) · Vulnerability reporting:
+[SECURITY.md](./SECURITY.md) · Backend commands:
+[backend/README.md](./backend/README.md)
 
 ## How it works
 
@@ -124,8 +125,8 @@ blitzcast/
 │   └── README.md        every backend command
 ├── docker/              docker-compose.yml (Postgres 16)
 ├── .github/workflows/   CI: ruff + pytest, lint + build
-├── PLANNING.md          scope, stack, roadmap
-└── IMPLEMENTATION_PLAN.md
+├── DECISIONS.md         technical decision log
+└── CHANGELOG.md         release history
 ```
 
 ## Testing
