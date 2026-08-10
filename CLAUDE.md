@@ -45,9 +45,10 @@ Full setup + env vars: [README.md](./README.md) and
 
 - **Branding:** public-facing identity is "Paymon" / "Paymon Software"
   only. Never put the maintainer's real name in code, comments, or docs.
-- **Version:** SemVer in root `VERSION` (currently `0.1.0-beta`), mirrored
-  in `frontend/package.json`; `MODEL_VERSION` (0.1.0) stamps artifacts and
-  prediction rows. Bump `VERSION` + package.json together at release.
+- **Version:** SemVer, single source of truth is `frontend/package.json`'s
+  `version` field (displayed in the footer); releases are tagged on GitHub.
+  `MODEL_VERSION` (0.1.0) is separate — it stamps ML artifacts and
+  prediction rows, not the app release.
 - **Leakage rule (ML):** every feature for game G uses only data from
   strictly before G's kickoff. Tests enforce this — keep it that way.
 - **LLM boundary:** Claude narrates model output only; it never predicts,
