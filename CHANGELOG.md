@@ -6,6 +6,22 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- Frontend: resolved all 18 open Dependabot alerts (11 high, 7 moderate).
+  Bumped `next` 16.2.10→16.3.0 and `eslint-config-next` to match (fixes 9
+  Next.js advisories — SSRF, DoS, cache confusion, middleware bypass).
+  Added `overrides` pinning transitive deps to patched versions: `postcss`
+  ≥8.5.23, `nanoid` ≥3.3.17, `js-yaml` ≥4.3.1, `sharp` ≥0.35.0, and a
+  scoped override for `brace-expansion` ≥1.1.16 under `eslint` specifically
+  (left the separate `typescript-eslint`→`brace-expansion` v5 chain alone,
+  since GitHub had already auto-dismissed that advisory as not applicable).
+  `npm audit` now reports 0 vulnerabilities.
+
+### Changed
+- `frontend/next.config.ts`: set `agentRules: false` to opt out of Next.js
+  16.3's new auto-generated `AGENTS.md`/`CLAUDE.md` scaffolding — this repo
+  already has a hand-maintained root `CLAUDE.md`.
+
 ## [0.3.0-beta] — 2026-08-09
 
 ### Changed
