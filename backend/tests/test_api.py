@@ -99,6 +99,37 @@ def test_prediction_detail_exposes_scores_and_verdict(client):
     assert "prediction_correct" in body
 
 
+def test_games_filter_final_returns_only_finished(client):
+    body = client.get("/api/games?week=1&season=2026&status=final").json()
+    assert all(g["home_score"] is not None for g in body)
+
+
+def test_games_filter_upcoming_returns_only_unfinished(client):
+    body = client.get("/api/games?week=1&season=2026&status=upcoming").json()
+    assert all(g["home_score"] is None for g in body)
+
+
+def test_games_unknown_status_falls_back_to_all(client):
+    allg = client.get("/api/games?week=1&season=2026").json()
+    junk = client.get("/api/games?week=1&season=2026&status=banana").json()
+    assert len(junk) == len(allg)
+
+
+def test_games_filter_final_against_scored_fixture_data(client):
+    """The final filter must actually work against games that have scores,
+    not just trivially pass against an all-unscored week."""
+    body = client.get("/api/games?week=1&season=2025&status=final").json()
+    assert body, "expected week 1 2025 games"
+    assert all(g["home_score"] is not None for g in body)
+
+
+def test_games_filter_upcoming_against_scored_fixture_data(client):
+    """upcoming must genuinely exclude scored games, not just pass because
+    nothing in the queried week has a score."""
+    body = client.get("/api/games?week=1&season=2025&status=upcoming").json()
+    assert body == []
+
+
 def test_mock_mode(client, monkeypatch):
     from app.config import get_settings
 
