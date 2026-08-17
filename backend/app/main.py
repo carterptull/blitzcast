@@ -6,8 +6,11 @@ from app.routers import games, predictions, schedule, teams
 
 app = FastAPI(
     title="Blitzcast API",
-    description="AI/ML-powered NFL matchup predictions by Paymon Software.",
-    version="0.1.0",
+    description=(
+        "Win probability predictions for NFL and college football, "
+        "by Paymon Software."
+    ),
+    version="1.0.0",
 )
 
 app.add_middleware(

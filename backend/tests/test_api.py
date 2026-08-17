@@ -67,7 +67,7 @@ def test_prediction_detail_available(client):
     assert body["factors"][0]["label"] == "Team rating (Elo) edge"
     assert body["factors"][0]["direction"] == "home"
     assert body["narrative"] is None
-    assert body["model_version"] == "0.1.0"
+    assert body["model_version"] == "1.0.0"
 
 
 def test_prediction_detail_pending(client):
@@ -158,7 +158,7 @@ def test_prediction_detail_cfb(client):
     body = response.json()
     assert body["sport"] == "CFB"
     assert body["prediction_status"] == "ready"
-    assert body["model_version"] == "cfb-0.1.0"
+    assert body["model_version"] == "cfb-1.0.0"
     assert body["home"]["rank"] == 7
     assert body["away"]["rank"] == 3
     assert body["home"]["conference"] == "SEC"
