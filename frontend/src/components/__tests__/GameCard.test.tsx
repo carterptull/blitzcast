@@ -178,4 +178,40 @@ describe("GameCard", () => {
     expect(screen.getByText("75%")).toBeInTheDocument();
     expect(screen.getByText("25%")).toBeInTheDocument();
   });
+
+  const finalGame = (correct: boolean | null) => ({
+    ...baseGame,
+    home_score: 27,
+    away_score: 24,
+    home_win_prob: correct === false ? 0.38 : 0.62,
+    prediction_correct: correct,
+  });
+
+  test("final game shows both scores", () => {
+    render(<GameCard game={finalGame(true)} />);
+    expect(screen.getByText("27")).toBeInTheDocument();
+    expect(screen.getByText("24")).toBeInTheDocument();
+  });
+
+  test("correct prediction shows a called-it badge", () => {
+    render(<GameCard game={finalGame(true)} />);
+    expect(screen.getByText(/called it/i)).toBeInTheDocument();
+  });
+
+  test("incorrect prediction shows a missed badge", () => {
+    render(<GameCard game={finalGame(false)} />);
+    expect(screen.getByText(/missed/i)).toBeInTheDocument();
+  });
+
+  test("final game with no prediction shows score but no verdict", () => {
+    render(<GameCard game={{ ...finalGame(null), home_win_prob: undefined }} />);
+    expect(screen.getByText("27")).toBeInTheDocument();
+    expect(screen.queryByText(/called it|missed/i)).not.toBeInTheDocument();
+  });
+
+  test("verdict is not conveyed by color alone", () => {
+    render(<GameCard game={finalGame(true)} />);
+    // A screen reader user must get the verdict as text.
+    expect(screen.getByText(/called it/i)).toBeInTheDocument();
+  });
 });
