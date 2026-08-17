@@ -113,6 +113,18 @@ def _game_team(team: Team, ranks: dict[int, int]) -> GameTeam:
     )
 
 
+def prediction_verdict(
+    home_win_prob: float | None, home_score: int | None, away_score: int | None
+) -> bool | None:
+    """Did the model pick the winner? None when there is nothing to grade:
+    no prediction, an unfinished game, a tie, or an exact coin flip."""
+    if home_win_prob is None or home_score is None or away_score is None:
+        return None
+    if home_score == away_score or home_win_prob == 0.5:
+        return None
+    return (home_win_prob > 0.5) == (home_score > away_score)
+
+
 def _game_summary(game: Game, home_win_prob: float | None, ranks: dict[int, int]) -> GameSummary:
     return GameSummary(
         game_id=game.game_id,
@@ -124,6 +136,9 @@ def _game_summary(game: Game, home_win_prob: float | None, ranks: dict[int, int]
         status=game.status,
         has_prediction=home_win_prob is not None,
         home_win_prob=home_win_prob,
+        home_score=game.home_score,
+        away_score=game.away_score,
+        prediction_correct=prediction_verdict(home_win_prob, game.home_score, game.away_score),
     )
 
 
@@ -300,4 +315,7 @@ def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
         model_version=prediction.model_version if prediction else None,
         predicted_at=prediction.predicted_at if prediction else None,
         prediction_status="ready" if prediction else "pending",
+        home_score=game.home_score,
+        away_score=game.away_score,
+        prediction_correct=prediction_verdict(home_prob, game.home_score, game.away_score),
     )
