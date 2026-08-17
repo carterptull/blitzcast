@@ -46,6 +46,8 @@ export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
       ].filter(Boolean)
     : [];
 
+  const final = m.home_score != null && m.away_score != null;
+
   const cells: [string, string][] = [
     ["Spread", fmtSpread(m)],
     ["Moneyline", ml.length > 0 ? ml.join(" / ") : "—"],
@@ -54,6 +56,13 @@ export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
     ["Venue", m.venue.name ? `${m.venue.name} · ${m.venue.city}` : "Neutral site"],
     ["Kickoff", m.kickoff !== null ? fmtKickoff(m.kickoff) : "TBD"],
   ];
+
+  if (final) {
+    cells.push([
+      "Final",
+      `${abbr(m.away.abbr)} ${m.away_score} / ${abbr(m.home.abbr)} ${m.home_score}`,
+    ]);
+  }
 
   return (
     <section aria-label="Game stats" className="overflow-hidden rounded-xl border border-edge bg-surface">
