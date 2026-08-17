@@ -64,6 +64,7 @@ refreshes print a message and exit; narration writes `null` and continues.
 | Train model | `python -m ml.train --sport nfl\|cfb` |
 | Backtest (writes `ml/reports/`) | `python -m ml.backtest --sport nfl\|cfb` |
 | Predict a week | `python -m app.jobs.predict_week --season 2026 --week 1 --sport nfl\|cfb` |
+| Backfill walk-forward predictions | `python -m app.jobs.backfill_predictions --sport nfl\|cfb` |
 | Run API | `python -m uvicorn app.main:app --reload` |
 | Tests | `python -m pytest` |
 | Lint | `python -m ruff check .` |
