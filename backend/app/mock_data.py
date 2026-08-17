@@ -287,8 +287,18 @@ def _summary(g: dict, sport: str) -> GameSummary:
     )
 
 
-def get_schedule(season: int, sport: str = SPORT_NFL) -> ScheduleOut:
-    games = [g for g in _games_for(sport) if season == MOCK_SEASON]
+def _matches_status(g: dict, status: str) -> bool:
+    """Mirrors _apply_status: keyed on scores, not a status field."""
+    both_scored = g.get("home_score") is not None and g.get("away_score") is not None
+    if status == "final":
+        return both_scored
+    if status == "upcoming":
+        return not both_scored
+    return True
+
+
+def get_schedule(season: int, sport: str = SPORT_NFL, status: str = "all") -> ScheduleOut:
+    games = [g for g in _games_for(sport) if season == MOCK_SEASON and _matches_status(g, status)]
     weeks: dict[int, list[GameSummary]] = {}
     for g in games:
         weeks.setdefault(g["week"], []).append(_summary(g, sport))
@@ -299,10 +309,16 @@ def get_schedule(season: int, sport: str = SPORT_NFL) -> ScheduleOut:
     )
 
 
-def get_games(season: int, week: int, sport: str = SPORT_NFL) -> list[GameSummary]:
+def get_games(
+    season: int, week: int, sport: str = SPORT_NFL, status: str = "all"
+) -> list[GameSummary]:
     if season != MOCK_SEASON:
         return []
-    return [_summary(g, sport) for g in _games_for(sport) if g["week"] == week]
+    return [
+        _summary(g, sport)
+        for g in _games_for(sport)
+        if g["week"] == week and _matches_status(g, status)
+    ]
 
 
 def _team_detail(abbr: str, sport: str, win_prob: float | None) -> TeamDetail:
