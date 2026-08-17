@@ -284,5 +284,5 @@ def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
         narrative=prediction.llm_narrative if prediction else None,
         model_version=prediction.model_version if prediction else None,
         predicted_at=prediction.predicted_at if prediction else None,
-        prediction_status="available" if prediction else "pending",
+        prediction_status="ready" if prediction else "pending",
     )
