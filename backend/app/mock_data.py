@@ -333,5 +333,5 @@ def get_prediction_detail(game_id: str) -> PredictionOut | None:
         narrative=g["narrative"],
         model_version=version if prob is not None else None,
         predicted_at=datetime(2026, 9, 3, 12, 0, tzinfo=UTC) if prob is not None else None,
-        prediction_status="available" if prob is not None else "pending",
+        prediction_status="ready" if prob is not None else "pending",
     )
