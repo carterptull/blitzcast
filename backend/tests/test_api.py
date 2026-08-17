@@ -85,6 +85,20 @@ def test_prediction_unknown_game_404(client):
     assert response.status_code == 404
 
 
+def test_game_summary_exposes_scores_and_verdict(client):
+    body = client.get("/api/games?week=1&season=2026").json()
+    assert body, "expected week 1 games"
+    for g in body:
+        assert "home_score" in g and "away_score" in g
+        assert "prediction_correct" in g
+
+
+def test_prediction_detail_exposes_scores_and_verdict(client):
+    body = client.get("/api/predictions/2026_01_BUF_KC").json()
+    assert "home_score" in body and "away_score" in body
+    assert "prediction_correct" in body
+
+
 def test_mock_mode(client, monkeypatch):
     from app.config import get_settings
 
