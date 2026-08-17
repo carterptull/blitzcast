@@ -55,7 +55,7 @@ def test_prediction_detail_available(client):
     response = client.get("/api/predictions/2026_01_BUF_KC")
     assert response.status_code == 200
     body = response.json()
-    assert body["prediction_status"] == "available"
+    assert body["prediction_status"] == "ready"
     assert body["home"]["win_prob"] == 0.61
     assert body["away"]["win_prob"] == 0.39
     assert body["home"]["win_prob"] + body["away"]["win_prob"] == 1.0
@@ -93,7 +93,7 @@ def test_mock_mode(client, monkeypatch):
         teams = client.get("/api/teams").json()
         assert len(teams) == 32
         detail = client.get("/api/predictions/2026_01_BUF_KC").json()
-        assert detail["prediction_status"] == "available"
+        assert detail["prediction_status"] == "ready"
         assert detail["narrative"] is not None
         assert client.get("/api/predictions/unknown").status_code == 404
     finally:
@@ -157,7 +157,7 @@ def test_prediction_detail_cfb(client):
     assert response.status_code == 200
     body = response.json()
     assert body["sport"] == "CFB"
-    assert body["prediction_status"] == "available"
+    assert body["prediction_status"] == "ready"
     assert body["model_version"] == "cfb-0.1.0"
     assert body["home"]["rank"] == 7
     assert body["away"]["rank"] == 3
@@ -192,7 +192,7 @@ def test_mock_mode_cfb(client, monkeypatch):
         assert [w["week"] for w in body["weeks"]] == [1, 2]
         ranked = client.get("/api/predictions/cfb_401752873").json()
         assert ranked["sport"] == "CFB"
-        assert ranked["prediction_status"] == "available"
+        assert ranked["prediction_status"] == "ready"
         assert ranked["home"]["rank"] == 1
         assert ranked["narrative"] is not None
         tbd = client.get("/api/predictions/cfb_401753120").json()
