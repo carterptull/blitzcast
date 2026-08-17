@@ -17,10 +17,14 @@ export function TeamColumn({
   team,
   align,
   cfb = false,
+  final = false,
+  score = null,
 }: {
   team: PredictionTeam;
   align: "left" | "right";
   cfb?: boolean;
+  final?: boolean;
+  score?: number | null;
 }) {
   const alignCls = align === "left" ? "sm:items-start sm:text-left" : "sm:items-end sm:text-right";
   return (
@@ -47,7 +51,11 @@ export function TeamColumn({
         </div>
       </div>
       <div className="mt-1">
-        {team.win_prob !== null ? (
+        {final ? (
+          <div className="font-display text-6xl leading-none text-chalk sm:text-7xl lg:text-8xl">
+            {score}
+          </div>
+        ) : team.win_prob !== null ? (
           <div className="font-display text-6xl leading-none text-chalk sm:text-7xl lg:text-8xl">
             {fmtPct(team.win_prob)}
           </div>
@@ -57,7 +65,7 @@ export function TeamColumn({
           </div>
         )}
         <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-chalk-soft">
-          Win probability
+          {final ? "Final" : "Win probability"}
         </div>
       </div>
     </div>
@@ -67,6 +75,7 @@ export function TeamColumn({
 export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
   const m = matchup;
   const pending = m.prediction_status !== "ready";
+  const final = m.home_score != null && m.away_score != null;
   const cfb = m.sport === "CFB";
   const sport = cfb ? "CFB" : "NFL";
 
@@ -85,10 +94,11 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
           <span>{m.venue.name ? `${m.venue.name}, ${m.venue.city}` : "Neutral site"}</span>
           {m.is_primetime ? <Badge>Prime time</Badge> : null}
           {m.is_divisional ? <Badge>{cfb ? "Conference game" : "Divisional"}</Badge> : null}
+          {final ? <Badge>Final</Badge> : null}
         </div>
 
         <div className="mt-8 grid items-center gap-8 sm:grid-cols-[1fr_auto_1fr] sm:gap-6">
-          <TeamColumn team={m.away} align="left" cfb={cfb} />
+          <TeamColumn team={m.away} align="left" cfb={cfb} final={final} score={m.away_score} />
           {/* Center mark; hidden on mobile */}
           <div className="hidden flex-col items-center gap-1 sm:flex" aria-hidden="true">
             <span className="font-display text-2xl uppercase text-chalk-soft">at</span>
@@ -96,11 +106,27 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
               <path d="M6 0 12 12 0 12z" fill="currentColor" />
             </svg>
           </div>
-          <TeamColumn team={m.home} align="right" cfb={cfb} />
+          <TeamColumn team={m.home} align="right" cfb={cfb} final={final} score={m.home_score} />
         </div>
 
         <div className="mt-8">
-          {!pending && m.away.win_prob !== null && m.home.win_prob !== null ? (
+          {final ? (
+            <div className="rounded-md border border-chalk-soft/25 p-3">
+              {m.prediction_correct !== null ? (
+                <p
+                  className={`text-center font-mono text-[11px] uppercase tracking-[0.2em] ${
+                    m.prediction_correct ? "text-verdict-hit-turf" : "text-verdict-miss-turf"
+                  }`}
+                >
+                  {m.prediction_correct ? "Model called it" : "Model missed"}
+                </p>
+              ) : (
+                <p className="text-center font-mono text-[11px] uppercase tracking-[0.2em] text-chalk-soft">
+                  Final: no prediction on record for this one
+                </p>
+              )}
+            </div>
+          ) : !pending && m.away.win_prob !== null && m.home.win_prob !== null ? (
             <>
               <WinProbabilitySplit
                 away={{
