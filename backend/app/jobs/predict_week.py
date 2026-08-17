@@ -136,6 +136,9 @@ def main() -> None:
             )
 
             upsert_prediction(db, row["game_id"], version, prob, factors, narrative)
+            # Commit per game: a full CFB slate is ~100 sequential Claude calls,
+            # and the upsert is idempotent, so partial progress is safe to keep.
+            db.commit()
             print(
                 f"  {row['game_id']}: home {prob:.1%}"
                 + (" (narrated)" if narrative else " (no narrative)")

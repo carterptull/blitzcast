@@ -144,7 +144,11 @@ def main() -> None:
         schedules = nflverse.load_schedules(seasons)
         n_games = upsert_games(db, schedules)
         print(f"games: upserted {n_games}")
-        played = [s for s in seasons if s <= 2025]
+        # Derived, not hardcoded: a season is playable once it has a result,
+        # so the current season starts loading as soon as week 1 is final.
+        played = sorted(
+            {int(s) for s in schedules.loc[schedules["home_score"].notna(), "season"].unique()}
+        )
         n_stats = backfill_team_game_stats(db, played)
         print(f"team_game_stats: upserted {n_stats}")
         n_inj = backfill_injuries(db, played)

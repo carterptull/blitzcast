@@ -2,7 +2,7 @@
 Timeline API for upcoming outdoor games. Domed/roofed and no-stadium
 (international) games are skipped.
 
-Usage: python -m data_pipeline.refresh_weather [--days 8]
+Usage: python -m data_pipeline.refresh_weather [--days 8] [--sport nfl|cfb]
 """
 
 import argparse
@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload
 
 from app.config import get_settings
 from app.db import session_scope
-from app.models import Game, Weather
+from app.models import SPORT_CFB, SPORT_NFL, Game, Weather
 
 BASE_URL = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
 
@@ -46,7 +46,10 @@ def _kickoff_hour(payload: dict, kickoff_utc: datetime) -> dict | None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=8, help="look-ahead window")
+    # Defaults to NFL: a full FBS slate is ~70 games per run against a free tier.
+    parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl")
     args = parser.parse_args()
+    sport = SPORT_CFB if args.sport == "cfb" else SPORT_NFL
 
     settings = get_settings()
     if not settings.visual_crossing_api_key:
@@ -54,12 +57,13 @@ def main() -> None:
         sys.exit(0)
 
     now = datetime.now(UTC)
-    updated = skipped = 0
+    updated = skipped = failed = 0
     with session_scope() as db:
         games = db.scalars(
             select(Game)
             .options(joinedload(Game.stadium))
             .where(
+                Game.sport == sport,
                 Game.kickoff_time >= now,
                 Game.kickoff_time <= now + timedelta(days=args.days),
             )
@@ -69,12 +73,19 @@ def main() -> None:
             if stadium is None or stadium.is_dome:
                 skipped += 1
                 continue
-            payload = fetch_day(
-                stadium.lat,
-                stadium.lon,
-                game.game_date.isoformat(),
-                settings.visual_crossing_api_key,
-            )
+            try:
+                payload = fetch_day(
+                    stadium.lat,
+                    stadium.lon,
+                    game.game_date.isoformat(),
+                    settings.visual_crossing_api_key,
+                )
+            except requests.RequestException as exc:
+                # Commit per game: the quota spent on earlier calls is gone
+                # either way, so a late failure must not roll them back.
+                print(f"weather refresh: {game.game_id} failed ({exc})")
+                failed += 1
+                continue
             hour = _kickoff_hour(payload, game.kickoff_time)
             if hour is None:
                 continue
@@ -87,9 +98,13 @@ def main() -> None:
             w.precipitation = (hour.get("precipprob") or 0) >= 40 or (hour.get("precip") or 0) > 0
             w.conditions = hour.get("conditions")
             w.captured_at = now
+            db.commit()
             updated += 1
 
-    print(f"weather refresh: updated {updated}, skipped {skipped} (dome/international)")
+    print(
+        f"weather refresh ({args.sport}): updated {updated}, skipped {skipped} "
+        f"(dome/international), failed {failed}"
+    )
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ Usage: python -m ml.compute_ratings [--sport nfl|cfb]
 
 import argparse
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
@@ -21,7 +21,11 @@ def compute_ratings(db: Session, sport: str = SPORT_NFL) -> int:
     abbrs = {t.team_id: t.abbr for t in teams}
     tiers = {t.abbr: t.tier for t in teams if t.tier}
     games = db.scalars(
-        select(Game).where(Game.sport == sport).order_by(Game.kickoff_time)
+        # Coalesced: NULL kickoffs (CFB TBD) sort last otherwise, replaying
+        # out of order and firing season regression repeatedly.
+        select(Game)
+        .where(Game.sport == sport)
+        .order_by(func.coalesce(Game.kickoff_time, Game.game_date))
     ).all()
 
     book = elo.EloBook(config=elo.config_for(sport), tiers=tiers)
@@ -31,7 +35,7 @@ def compute_ratings(db: Session, sport: str = SPORT_NFL) -> int:
         elo_home, elo_away = book.pre_game(g.season, home, away)
         snapshots[(g.home_team_id, g.season, g.week)] = elo_home
         snapshots[(g.away_team_id, g.season, g.week)] = elo_away
-        if g.home_score is not None:
+        if g.home_score is not None and g.away_score is not None:
             book.record_result(g.season, home, away, g.home_score, g.away_score)
 
     db.execute(delete(TeamRating).where(TeamRating.sport == sport))

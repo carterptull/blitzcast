@@ -1,8 +1,11 @@
 """Upsert CFBD poll rankings into poll_ranks (AP preferred, Coaches fallback).
 
 CFBD's regular-season "week N" ranking is the poll published before week N's
-games (week 1 = preseason), matching poll_ranks' entering-week semantics —
-stored verbatim. [VERIFY] against live data.
+games (week 1 = preseason), matching poll_ranks' entering-week semantics, so
+it is stored verbatim. Verified against the 2025 AP polls: every ranked team
+that lost in week 1 kept its rank in the week 1 poll and fell only in week 2
+(Texas #1, lost to Ohio State, #7 the following week). See
+tests/test_cfb_polls.py.
 
 Usage: python -m data_pipeline.refresh_polls_cfb [--season 2026]
 """
@@ -25,7 +28,9 @@ COACHES = "Coaches Poll"
 
 
 def upsert_polls(db: Session, rankings: pd.DataFrame) -> int:
-    """Delete-then-insert per (sport, season): one poll per week, AP preferred."""
+    """Delete-then-insert per (sport, season, week): one poll per week, AP
+    preferred. Scoped to the weeks actually returned so a partial CFBD
+    response cannot wipe weeks it did not include."""
     if rankings.empty:
         return 0
     df = rankings[rankings["poll"].isin([AP, COACHES])]
@@ -38,10 +43,14 @@ def upsert_polls(db: Session, rankings: pd.DataFrame) -> int:
     df = pd.concat(weekly, ignore_index=True)
 
     teams = cfb_team_map(db)
-    seasons = [int(s) for s in df["season"].unique()]
-    db.execute(
-        delete(PollRank).where(PollRank.sport == SPORT_CFB, PollRank.season.in_(seasons))
-    )
+    for season, week in {(int(r.season), int(r.week)) for r in df.itertuples(index=False)}:
+        db.execute(
+            delete(PollRank).where(
+                PollRank.sport == SPORT_CFB,
+                PollRank.season == season,
+                PollRank.week == week,
+            )
+        )
     rows = 0
     for row in df.itertuples(index=False):
         team = teams.get(row.school)

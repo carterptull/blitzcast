@@ -223,7 +223,8 @@ def _elo_pregame(
         away = id_to_abbr[row.away_team_id]
         elo_home, elo_away = book.pre_game(int(row.season), home, away)
         records.append((row.game_id, elo_home, elo_away))
-        if row.home_score is not None and not pd.isna(row.home_score):
+        # Both scores: a live or forfeited row can carry one side only.
+        if not pd.isna(row.home_score) and not pd.isna(row.away_score):
             book.record_result(
                 int(row.season), home, away, int(row.home_score), int(row.away_score)
             )
@@ -383,6 +384,11 @@ def build_features(
 
     # Prefer live odds rows (The Odds API) over nflverse schedule lines.
     odds = frames["odds"]
+    if not odds.empty:
+        # Pre-kickoff captures only. The refresh window reaches slightly into
+        # in-progress games, and an in-play line must never reach training.
+        odds = odds.merge(df[["game_id", "kickoff"]], on="game_id", how="inner")
+        odds = odds[pd.to_datetime(odds["captured_at"], utc=True) < odds["kickoff"]]
     if not odds.empty:
         latest = odds.sort_values("captured_at").groupby("game_id").tail(1)
         df = df.merge(

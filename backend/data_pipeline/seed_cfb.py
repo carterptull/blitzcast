@@ -21,7 +21,7 @@ from data_pipeline import cfbd
 from data_pipeline.cfb_games_loader import field
 from data_pipeline.cfb_team_names import build_alias_map, derive_abbrs, save_aliases
 
-# CFBD logos carry the ESPN CDN path .../ncaa/500/<espn_id>.png. [VERIFY]
+# CFBD logos carry the ESPN CDN path .../ncaa/500/<espn_id>.png.
 _ESPN_LOGO_RE = re.compile(r"/(\d+)\.png$")
 
 
