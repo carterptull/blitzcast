@@ -15,7 +15,9 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) {
   const m = matchup;
   const pending = m.prediction_status !== "ready";
+  const final = m.home_score != null && m.away_score != null;
   const favored = m.home.win_prob !== null && m.home.win_prob >= 0.5 ? m.home : m.away;
+  const favoredAbbr = m.sport === "CFB" ? favored.abbr : displayAbbr(favored.abbr);
 
   if (pending) {
     return (
@@ -34,6 +36,13 @@ export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) 
     <section className="rounded-xl border border-edge bg-surface p-6 sm:p-8">
       <SectionLabel>From the booth</SectionLabel>
 
+      {final && m.prediction_correct !== null ? (
+        <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
+          The model favored {favoredAbbr} to win, and the call{" "}
+          {m.prediction_correct ? "landed" : "missed"}.
+        </p>
+      ) : null}
+
       {m.narrative ? (
         <p className="mt-4 text-lg leading-relaxed sm:text-xl">{m.narrative}</p>
       ) : (
@@ -45,7 +54,7 @@ export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) 
       {m.factors.length > 0 ? (
         <div className="mt-8">
           <h3 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-            Why the model leans {m.sport === "CFB" ? favored.abbr : displayAbbr(favored.abbr)}
+            Why the model leans {favoredAbbr}
           </h3>
           <div className="mt-4">
             <FactorList matchup={m} />
@@ -57,6 +66,12 @@ export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) 
         <p className="mt-8 border-t border-edge pt-4 font-mono text-[10px] uppercase tracking-[0.15em] text-ink-soft">
           Model v{m.model_version}
           {m.predicted_at ? ` · predicted ${fmtDate(m.predicted_at)}` : ""} · not betting advice
+        </p>
+      ) : null}
+
+      {m.model_version?.startsWith("backtest") ? (
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.15em] text-ink-soft">
+          Reconstructed from a backtest, not a live call made before kickoff.
         </p>
       ) : null}
     </section>
