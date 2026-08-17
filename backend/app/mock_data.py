@@ -269,6 +269,8 @@ def _games_for(sport: str) -> list[dict]:
 
 
 def _summary(g: dict, sport: str) -> GameSummary:
+    home_score = g.get("home_score")
+    away_score = g.get("away_score")
     return GameSummary(
         game_id=g["game_id"],
         sport=sport,
@@ -279,6 +281,9 @@ def _summary(g: dict, sport: str) -> GameSummary:
         status="scheduled",
         has_prediction=g["home_win_prob"] is not None,
         home_win_prob=g["home_win_prob"],
+        home_score=home_score,
+        away_score=away_score,
+        prediction_correct=prediction_verdict(g["home_win_prob"], home_score, away_score),
     )
 
 
@@ -328,6 +333,8 @@ def get_prediction_detail(game_id: str) -> PredictionOut | None:
     if g is None:
         return None
     prob = g["home_win_prob"]
+    home_score = g.get("home_score")
+    away_score = g.get("away_score")
     version = "cfb-1.0.0-mock" if sport == SPORT_CFB else "1.0.0-mock"
     return PredictionOut(
         game_id=g["game_id"],
@@ -347,4 +354,7 @@ def get_prediction_detail(game_id: str) -> PredictionOut | None:
         model_version=version if prob is not None else None,
         predicted_at=datetime(2026, 9, 3, 12, 0, tzinfo=UTC) if prob is not None else None,
         prediction_status="ready" if prob is not None else "pending",
+        home_score=home_score,
+        away_score=away_score,
+        prediction_correct=prediction_verdict(prob, home_score, away_score),
     )
