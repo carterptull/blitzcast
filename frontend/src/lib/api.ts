@@ -23,6 +23,10 @@ export class NotFoundError extends Error {
   }
 }
 
+/** Mirrors the backend's status filter (Query("all"), normalized server-side
+ *  — unrecognized values fall back to "all"). */
+export type StatusFilterValue = "all" | "final" | "upcoming";
+
 async function get<T>(path: string): Promise<T> {
   let res: Response;
   try {
@@ -40,18 +44,25 @@ export async function getTeams(sport: Sport = "NFL"): Promise<Team[]> {
   return get<Team[]>(`/api/teams?sport=${sport}`);
 }
 
-export async function getSchedule(season = 2026, sport: Sport = "NFL"): Promise<Schedule> {
+export async function getSchedule(
+  season = 2026,
+  sport: Sport = "NFL",
+  status: StatusFilterValue = "all"
+): Promise<Schedule> {
   if (MOCK) return mockSchedule(sport);
-  return get<Schedule>(`/api/schedule?season=${season}&sport=${sport}`);
+  return get<Schedule>(`/api/schedule?season=${season}&sport=${sport}&status=${status}`);
 }
 
 export async function getGames(
   week: number,
   season = 2026,
-  sport: Sport = "NFL"
+  sport: Sport = "NFL",
+  status: StatusFilterValue = "all"
 ): Promise<GameSummary[]> {
   if (MOCK) return mockGames(week, sport);
-  return get<GameSummary[]>(`/api/games?week=${week}&season=${season}&sport=${sport}`);
+  return get<GameSummary[]>(
+    `/api/games?week=${week}&season=${season}&sport=${sport}&status=${status}`
+  );
 }
 
 export async function getMatchup(gameId: string): Promise<MatchupDetail> {
