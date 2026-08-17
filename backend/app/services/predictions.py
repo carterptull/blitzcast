@@ -1,5 +1,7 @@
 """Read-side query helpers for the API routers."""
 
+from typing import Literal
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -142,8 +144,22 @@ def _game_summary(game: Game, home_win_prob: float | None, ranks: dict[int, int]
     )
 
 
+GameStatusFilter = Literal["all", "final", "upcoming"]
+
+
+def _apply_status(query, status: str):
+    """Keyed on scores, not Game.status: that column is derived, unindexed,
+    and NFL sets it final on the home score alone."""
+    both = Game.home_score.is_not(None) & Game.away_score.is_not(None)
+    if status == "final":
+        return query.where(both)
+    if status == "upcoming":
+        return query.where(~both)
+    return query
+
+
 def _season_games(
-    db: Session, season: int, week: int | None = None, sport: str = SPORT_NFL
+    db: Session, season: int, week: int | None = None, sport: str = SPORT_NFL, status: str = "all"
 ) -> list[Game]:
     query = (
         select(Game)
@@ -153,11 +169,14 @@ def _season_games(
     )
     if week is not None:
         query = query.where(Game.week == week)
+    query = _apply_status(query, status)
     return list(db.scalars(query))
 
 
-def get_schedule(db: Session, season: int, sport: str = SPORT_NFL) -> ScheduleOut:
-    games = _season_games(db, season, sport=sport)
+def get_schedule(
+    db: Session, season: int, sport: str = SPORT_NFL, status: str = "all"
+) -> ScheduleOut:
+    games = _season_games(db, season, sport=sport, status=status)
     probs = _prediction_probs(db, season, sport)
     week_ranks = _poll_ranks_by_week(db, sport, season)
     weeks: dict[int, list[GameSummary]] = {}
@@ -172,8 +191,10 @@ def get_schedule(db: Session, season: int, sport: str = SPORT_NFL) -> ScheduleOu
     )
 
 
-def get_games(db: Session, season: int, week: int, sport: str = SPORT_NFL) -> list[GameSummary]:
-    games = _season_games(db, season, week, sport=sport)
+def get_games(
+    db: Session, season: int, week: int, sport: str = SPORT_NFL, status: str = "all"
+) -> list[GameSummary]:
+    games = _season_games(db, season, week, sport=sport, status=status)
     probs = _prediction_probs(db, season, sport, week)
     ranks = poll_ranks_entering(db, sport, season, week)
     return [_game_summary(g, probs.get(g.game_id), ranks) for g in games]
