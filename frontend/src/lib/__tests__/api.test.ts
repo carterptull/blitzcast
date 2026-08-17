@@ -134,6 +134,17 @@ describe("API Client", () => {
       expect(matchup).toHaveProperty("prediction_status");
       expect(["ready", "pending"]).toContain(matchup.prediction_status);
     });
+
+    test("GameSummary carries scores and verdict", async () => {
+      process.env.NEXT_PUBLIC_USE_MOCK = "1";
+      const { getGames } = await import("../api");
+      const games = await getGames(1, 2026, "NFL");
+      for (const g of games) {
+        expect(g).toHaveProperty("home_score");
+        expect(g).toHaveProperty("away_score");
+        expect(g).toHaveProperty("prediction_correct");
+      }
+    });
   });
 
   describe("Sport Parameter", () => {
