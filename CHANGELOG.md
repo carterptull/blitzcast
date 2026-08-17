@@ -6,7 +6,123 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-08-17
+
+First public release. Model artifacts are retrained and stamped `1.0.0`
+(NFL) and `cfb-1.0.0` (CFB); the app version and the model version are
+tracked separately, as before.
+
+### Added
+- `LICENSE`: MIT.
+- `frontend/src/app/error.tsx`: route-level error boundary. Anything the
+  API client does not turn into a `NotFoundError` or `ApiUnreachableError`
+  previously surfaced Next's raw "Application error" page.
+- `backend/tests/test_odds.py`: pins the stored spread convention against
+  the moneyline favorite. The Odds API ingestion path had no test fixture
+  at all, which is why the sign bug below went unnoticed.
+- Frontend tests for `fmtSpread`, `pickDefaultWeek`, and
+  `pickCfbDefaultWeek` (52 tests, up from 38).
+- `.env.example`: `CFBD_API_KEY` and `MODEL_VERSION_CFB`, both previously
+  undocumented. Without the former every CFB job silently skips.
+
+### Fixed
+- **Spread sign was inverted for live odds.** The Odds API quotes betting
+  convention (negative = home favored) while `games.spread_line` follows
+  nflverse (positive = home favored). Both were written to the same field
+  unnormalized, and `ml/features.py` prefers the live row, so
+  `market_spread_home` was sign-flipped at inference on exactly the
+  upcoming games users see, contradicting `market_home_prob` (derived from
+  the moneylines). The frontend compounded it by assuming the book
+  convention, naming the wrong favorite on every game with a spread.
+  Normalized at ingestion, corrected in `fmtSpread`, and the affected rows
+  were rewritten.
+- `prediction_status` returned `"available"` while the frontend contract
+  only recognized `"ready"`, so every completed prediction rendered in the
+  pending state, hiding the reasoning panel and narration site-wide.
+- `_prediction_probs` had no ordering and no scope: it full-scanned the
+  predictions table on the two hottest endpoints, and with more than one
+  row per game (which a model version bump creates) the slate could
+  disagree with the matchup page. Now scoped to the slate and resolved to
+  the newest prediction.
+- `/api/predictions/{game_id}` returned 500 for a game with a home score
+  but no away score.
+- `data_pipeline/seed.py` matched teams on abbreviation alone, so
+  re-running the documented seed step could overwrite the CFB BUF, CIN,
+  HOU, or MIA rows with NFL data.
+- `team_game_stats` was never re-ingested in-season (a hardcoded
+  `<= 2025` in the backfill, and no step in the weekly refresh), so the
+  rolling EPA and turnover form features decayed to null a few weeks into
+  a season while SHAP kept labeling them. The season list is now derived
+  from which seasons actually have results, and `refresh_stats` runs
+  weekly.
+- `refresh_weather` had no sport filter while being called by the CFB
+  orchestrator, so it fetched a full FBS slate (~70 calls) per run against
+  a free tier. It now defaults to NFL, commits per game so a late failure
+  cannot roll back calls already paid for, and is no longer invoked by
+  `refresh_week_cfb`.
+- Injury refresh deleted only the games present in the incoming batch, so
+  a team reporting fully healthy kept last week's injuries feeding
+  `qb_out_diff` and `injury_sev_diff`. It now clears every upcoming game
+  being refreshed.
+- Odds could be captured after kickoff (the fetch window reached back six
+  hours) and an in-play line would then be preferred over the closing
+  line in training. The window now starts at the current time, and the
+  feature build ignores any capture at or after kickoff.
+- Poll refresh deleted a whole season before inserting, so a partial CFBD
+  response wiped the weeks it did not include. Scoped to the returned
+  weeks.
+- `predict_week` held one transaction across the whole slate, including
+  every Claude call, so a late failure discarded roughly a hundred
+  computed predictions. Commits per game; the upsert was already
+  idempotent.
+- `ml/compute_ratings.py` ordered by `kickoff_time` alone, so CFB TBD
+  kickoffs (NULL) replayed after every dated game and fired season
+  regression repeatedly. Coalesced with `game_date`, matching
+  `features.py`.
+- Elo replay in both `features.py` and `compute_ratings.py` guarded on the
+  home score but read both, so a row with one side scored would raise.
+
+### Verified, not changed
+- CFBD's regular-season "week N" poll is published *before* week N's games,
+  confirming `poll_strength` carries no leakage. Checked against the live
+  2025 AP polls: all six ranked teams that lost in week 1 held their week 1
+  rank and fell only in week 2 (Texas #1, lost to Ohio State, #7 the next
+  week). Pinned by `tests/test_cfb_polls.py`.
+- `Odds` and `Weather` were typed non-nullable on the frontend while the
+  backend returns every member nullable, rendering the literal string
+  `null` in the stat ticker.
+- A single TBD kickoff pinned the NFL default week for the rest of the
+  season; a leftover TBD no longer holds a finished week open.
+- CFB weeks rolled over Sunday 20:00 ET instead of Monday 00:00 ET,
+  advancing users to an empty slate a few hours early.
+- `FactorList` divided by zero when every SHAP value was 0, blanking all
+  bars.
+- Rams display: nflverse keys them `LA`, so the frontend's `LAR` lookup
+  silently missed, dropping the logo and team colors. Internal keys stay
+  `LA`; only rendered text shows `LAR` (Chargers remain `LAC`).
+
+### Changed
+- Narration prompt rewritten toward an ESPN / College GameDay register,
+  with an explicit instruction against em dashes plus a deterministic
+  sanitizer, since the prompt itself contained one and roughly 90% of
+  stored narrations echoed it.
+- Em dashes removed from user-visible copy: page titles, meta
+  descriptions, empty states, and the mock narratives.
+- Mock fixture spreads realigned to nflverse convention so each agrees
+  with its own moneyline.
+- `metadataBase` now reads `NEXT_PUBLIC_SITE_URL` / `VERCEL_URL` instead
+  of being hardcoded to `http://localhost:3000`.
+- `SECURITY.md` replaced its placeholder text with a real reporting
+  policy; `frontend/README.md` replaced create-next-app boilerplate.
+- Comment cleanup: `[VERIFY]` markers, Alembic and Jest scaffolding, and
+  citations to planning docs that no longer exist.
+
+### Removed
+- Five unreferenced create-next-app SVGs from `frontend/public/`.
+
 ### Security
+- `.gitignore` now matches `.env.*` with a `!.env.example` negation, so a
+  `.env.production` written during deploy cannot be committed.
 - Frontend: resolved all 18 open Dependabot alerts (11 high, 7 moderate).
   Bumped `next` 16.2.10→16.3.0 and `eslint-config-next` to match (fixes 9
   Next.js advisories — SSRF, DoS, cache confusion, middleware bypass).

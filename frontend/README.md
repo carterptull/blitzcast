@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Blitzcast Frontend
 
-## Getting Started
+Next.js app for Blitzcast: the week slate and matchup pages that render
+win probabilities and their explanations. It reads the FastAPI backend
+over HTTP and owns no model logic of its own.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Next.js 16 (App Router, `src/`)
+- React 19
+- TypeScript 5
+- Tailwind CSS v4
+- Jest + Testing Library for unit tests
+- Fonts: Anton, Newsreader, and IBM Plex Mono via `next/font/google`
+
+## Routes
+
+| Route | Purpose |
+|---|---|
+| `/` | Redirects to `/nfl` |
+| `/[sport]` | Week slate for `nfl` or `cfb` |
+| `/[sport]/matchup/[gameId]` | Matchup detail: probability, factors, narration |
+
+## Commands
+
+```powershell
+npm install
+npm run dev          # http://localhost:3000
+npm run build        # production build
+npm run start        # serve the production build
+npm run lint         # eslint
+npm test             # jest
+npm run test:watch   # jest in watch mode
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env.local` and fill in what you need:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Var | Purpose |
+|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | Backend API base URL (dev default `http://localhost:8000`) |
+| `NEXT_PUBLIC_BUYMEACOFFEE_URL` | Support link; the footer button is hidden when unset |
+| `NEXT_PUBLIC_USE_MOCK` | Set to `1` to serve fixture data instead of calling the backend |
 
-## Learn More
+## Layout
 
-To learn more about Next.js, take a look at the following resources:
+- `src/app/` routes, layout, global styles
+- `src/components/` UI components
+- `src/lib/` typed API client (`api.ts`), contract types (`types.ts`),
+  formatting helpers, and mock fixtures
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## More
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Setup for the whole project, including the backend and database, lives in
+the [root README](../README.md). Backend commands are in
+[backend/README.md](../backend/README.md).

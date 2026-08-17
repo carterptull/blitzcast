@@ -7,8 +7,8 @@ unchanged. CFB uses a stronger home edge, heavier season regression, a
 blowouts), and anchors FCS-tier teams 350 points below base at first
 appearance and each season rollover.
 
-Note: the recruiting / returning-production preseason anchor (plan 2.3)
-is deferred to v2; CFB v1 ships the regression + FCS-floor baseline.
+Note: the recruiting / returning-production preseason anchor is deferred
+to v2; CFB v1 ships the regression + FCS-floor baseline.
 """
 
 import math
