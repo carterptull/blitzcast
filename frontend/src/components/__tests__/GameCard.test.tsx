@@ -31,6 +31,9 @@ describe("GameCard", () => {
     is_primetime: false,
     status: "scheduled",
     has_prediction: true,
+    home_score: null,
+    away_score: null,
+    prediction_correct: null,
   };
 
   test("renders team abbreviations", () => {
@@ -152,6 +155,9 @@ describe("GameCard", () => {
       is_primetime: false,
       status: "scheduled",
       has_prediction: true,
+      home_score: null,
+      away_score: null,
+      prediction_correct: null,
     };
 
     render(<GameCard game={minimalGame} />);
