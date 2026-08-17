@@ -37,6 +37,9 @@ class GameSummary(BaseModel):
     status: str
     has_prediction: bool
     home_win_prob: float | None = None
+    home_score: int | None = None
+    away_score: int | None = None
+    prediction_correct: bool | None = None
 
 
 class WeekOut(BaseModel):
@@ -105,3 +108,6 @@ class PredictionOut(BaseModel):
     model_version: str | None
     predicted_at: datetime | None
     prediction_status: str
+    home_score: int | None = None
+    away_score: int | None = None
+    prediction_correct: bool | None = None
