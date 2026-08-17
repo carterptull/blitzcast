@@ -73,7 +73,9 @@ export function fmtSpread(m: MatchupDetail): string {
  * finale it sticks to the last week.
  */
 export function pickDefaultWeek(schedule: Schedule, now: Date = new Date()): number {
-  const cutoff = now.getTime() - 6 * 60 * 60 * 1000; // keep a week "current" through its last kickoff
+  // 12h past the last kickoff. An NFL week ends with Monday Night Football, so
+  // this keeps the finished slate up overnight and rolls it Tuesday morning.
+  const cutoff = now.getTime() - 12 * 60 * 60 * 1000;
   for (const w of schedule.weeks) {
     const dated = w.games.filter((g) => g.kickoff !== null);
     if (dated.some((g) => new Date(g.kickoff as string).getTime() > cutoff)) return w.week;
