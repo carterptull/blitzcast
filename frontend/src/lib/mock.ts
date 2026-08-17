@@ -39,6 +39,8 @@ interface Week1Spec {
   weather: Weather | null; // null for domes
   factors: Factor[];
   narrative: string | null;
+  homeScore?: number | null; // null/absent => game not final
+  awayScore?: number | null;
 }
 
 const f = (label: string, value: number, direction: "home" | "away"): Factor => ({
@@ -46,6 +48,20 @@ const f = (label: string, value: number, direction: "home" | "away"): Factor => 
   value,
   direction,
 });
+
+/** Mirrors the backend's prediction_verdict rule: null when there's no
+ *  prediction, the game isn't final, it's a tie, or the pick was a
+ *  toss-up (exactly 0.5); otherwise true iff the favored side won. */
+function verdict(
+  homeProb: number | null,
+  homeScore: number | null | undefined,
+  awayScore: number | null | undefined
+): boolean | null {
+  if (homeProb === null || homeScore == null || awayScore == null) return null;
+  if (homeScore === awayScore) return null;
+  if (homeProb === 0.5) return null;
+  return (homeProb > 0.5) === (homeScore > awayScore);
+}
 
 const WEEK1: Week1Spec[] = [
   {
@@ -64,6 +80,8 @@ const WEEK1: Week1Spec[] = [
     ],
     narrative:
       "Folks, the banner drops at Arrowhead and the model likes the home team at 58 percent! Kansas City brings the sharper rating edge and a Thursday-night crowd that is worth real points, with the market laying 2.5 right alongside it. Buffalo's offense actually owns the better recent EPA per play, so if the Bills steal an early possession, this one tightens in a hurry.",
+    homeScore: 27,
+    awayScore: 24,
   },
   {
     away: "CIN",
@@ -80,6 +98,8 @@ const WEEK1: Week1Spec[] = [
     ],
     narrative:
       "The Bengals stroll into the Dawg Pound as 59-percent road favorites, and the biggest number on the board is Cincinnati's passing-game efficiency over its last five. Cleveland counters with the home crowd, a 12-mile-an-hour lake breeze, and all the ugly familiarity of an AFC North opener. The model says that closes some of the gap, just not the 2.5 points of it that Vegas is asking.",
+    homeScore: 23,
+    awayScore: 20,
   },
   {
     away: "NE",
@@ -304,6 +324,9 @@ function week1Games(): GameSummary[] {
     has_prediction: s.homeProb !== null,
     sport: "NFL",
     home_win_prob: s.homeProb,
+    home_score: s.homeScore ?? null,
+    away_score: s.awayScore ?? null,
+    prediction_correct: verdict(s.homeProb, s.homeScore, s.awayScore),
   }));
 }
 
@@ -349,6 +372,9 @@ function generatedWeekGames(week: number): GameSummary[] {
       has_prediction: false,
       sport: "NFL",
       home_win_prob: null,
+      home_score: null,
+      away_score: null,
+      prediction_correct: null,
     });
   }
   games.sort((x, y) => (x.kickoff ?? "").localeCompare(y.kickoff ?? ""));
@@ -422,6 +448,9 @@ export function mockMatchup(id: string): MatchupDetail | null {
       predicted_at: ready ? iso(Date.UTC(2026, 8, 8, 12, 0)) : null,
       prediction_status: ready ? "ready" : "pending",
       sport: "NFL",
+      home_score: spec.homeScore ?? null,
+      away_score: spec.awayScore ?? null,
+      prediction_correct: verdict(spec.homeProb, spec.homeScore, spec.awayScore),
     };
   }
 
@@ -449,6 +478,9 @@ export function mockMatchup(id: string): MatchupDetail | null {
       predicted_at: null,
       prediction_status: "pending",
       sport: "NFL",
+      home_score: null,
+      away_score: null,
+      prediction_correct: null,
     };
   }
   return null;
