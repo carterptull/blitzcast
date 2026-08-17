@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ApiUnreachableError, getGames, getSchedule } from "@/lib/api";
+import { ApiUnreachableError, getGames, getSchedule, type StatusFilterValue } from "@/lib/api";
 import { CFB_WEEKS, fmtDayHeading, pickCfbDefaultWeek, pickDefaultWeek } from "@/lib/format";
 import { isSportSlug } from "@/lib/sport";
 import type { GameSummary, Schedule } from "@/lib/types";
 import BackendDown from "@/components/BackendDown";
 import FilterChips from "@/components/FilterChips";
 import GameCard from "@/components/GameCard";
+import StatusFilter from "@/components/StatusFilter";
 import WeekSelector from "@/components/WeekSelector";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +18,15 @@ interface Props {
     week?: string | string[];
     conf?: string | string[];
     top25?: string | string[];
+    status?: string | string[];
   }>;
 }
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+const STATUS_VALUES: readonly string[] = ["all", "final", "upcoming"];
+const validStatus = (v: string | undefined): StatusFilterValue =>
+  STATUS_VALUES.includes(v ?? "") ? (v as StatusFilterValue) : "all";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sport } = await params;
@@ -95,10 +101,16 @@ function Slate({ games, sport, filtered }: { games: GameSummary[]; sport: "nfl" 
   );
 }
 
-async function NflSlate({ requestedWeek }: { requestedWeek: number }) {
+async function NflSlate({
+  requestedWeek,
+  status,
+}: {
+  requestedWeek: number;
+  status: StatusFilterValue;
+}) {
   let schedule: Schedule;
   try {
-    schedule = await getSchedule(2026, "NFL");
+    schedule = await getSchedule(2026, "NFL", status);
   } catch (e) {
     if (e instanceof ApiUnreachableError) return <BackendDown />;
     throw e;
@@ -108,6 +120,7 @@ async function NflSlate({ requestedWeek }: { requestedWeek: number }) {
   const selected = weeks.includes(requestedWeek) ? requestedWeek : pickDefaultWeek(schedule);
   const games = schedule.weeks.find((w) => w.week === selected)?.games ?? [];
   const predicted = games.filter((g) => g.has_prediction).length;
+  const filterQuery = status !== "all" ? `&status=${status}` : "";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -122,11 +135,12 @@ async function NflSlate({ requestedWeek }: { requestedWeek: number }) {
             {predicted}/{games.length} predicted
           </span>
         </div>
-        <WeekSelector weeks={weeks} selected={selected} basePath="/nfl" />
+        <WeekSelector weeks={weeks} selected={selected} basePath="/nfl" query={filterQuery} />
+        <StatusFilter sport="nfl" active={status} week={selected} />
       </div>
 
       <div className="mt-8 space-y-8">
-        <Slate games={games} sport="nfl" filtered={false} />
+        <Slate games={games} sport="nfl" filtered={status !== "all"} />
       </div>
     </div>
   );
@@ -136,10 +150,12 @@ async function CfbSlate({
   requestedWeek,
   conf,
   top25,
+  status,
 }: {
   requestedWeek: number;
   conf?: string;
   top25: boolean;
+  status: StatusFilterValue;
 }) {
   const weeks = Array.from({ length: CFB_WEEKS }, (_, i) => i + 1);
   const selected = weeks.includes(requestedWeek) ? requestedWeek : pickCfbDefaultWeek();
@@ -147,7 +163,7 @@ async function CfbSlate({
   // Per-week fetch — the CFB slate is 60+ games/week, never the whole season.
   let games: GameSummary[];
   try {
-    games = await getGames(selected, 2026, "CFB");
+    games = await getGames(selected, 2026, "CFB", status);
   } catch (e) {
     if (e instanceof ApiUnreachableError) return <BackendDown />;
     throw e;
@@ -169,7 +185,9 @@ async function CfbSlate({
     return true;
   });
   const predicted = filtered.filter((g) => g.has_prediction).length;
-  const filterQuery = `${activeConf ? `&conf=${encodeURIComponent(activeConf)}` : ""}${top25 ? "&top25=1" : ""}`;
+  const confQuery = `${activeConf ? `&conf=${encodeURIComponent(activeConf)}` : ""}${top25 ? "&top25=1" : ""}`;
+  const statusQuery = status !== "all" ? `&status=${status}` : "";
+  const filterQuery = `${confQuery}${statusQuery}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -190,11 +208,13 @@ async function CfbSlate({
           activeConf={activeConf}
           top25={top25}
           week={selected}
+          query={statusQuery}
         />
+        <StatusFilter sport="cfb" active={status} week={selected} query={confQuery} />
       </div>
 
       <div className="mt-8 space-y-8">
-        <Slate games={filtered} sport="cfb" filtered={!!activeConf || top25} />
+        <Slate games={filtered} sport="cfb" filtered={!!activeConf || top25 || status !== "all"} />
       </div>
     </div>
   );
@@ -206,9 +226,17 @@ export default async function SlatePage({ params, searchParams }: Props) {
 
   const sp = await searchParams;
   const requestedWeek = Number(one(sp.week));
+  const status = validStatus(one(sp.status));
 
   if (sport === "cfb") {
-    return <CfbSlate requestedWeek={requestedWeek} conf={one(sp.conf)} top25={one(sp.top25) === "1"} />;
+    return (
+      <CfbSlate
+        requestedWeek={requestedWeek}
+        conf={one(sp.conf)}
+        top25={one(sp.top25) === "1"}
+        status={status}
+      />
+    );
   }
-  return <NflSlate requestedWeek={requestedWeek} />;
+  return <NflSlate requestedWeek={requestedWeek} status={status} />;
 }
