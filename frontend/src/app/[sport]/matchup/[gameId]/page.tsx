@@ -25,12 +25,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const league = cfb ? "college football" : "NFL";
     const awayAbbr = cfb ? m.away.abbr : displayAbbr(m.away.abbr);
     const homeAbbr = cfb ? m.home.abbr : displayAbbr(m.home.abbr);
-    const title = `${awayAbbr} @ ${homeAbbr} — Week ${m.week}`;
+    const title = `${awayAbbr} @ ${homeAbbr}, Week ${m.week}`;
     const favored = m.home.win_prob !== null && m.home.win_prob >= 0.5 ? m.home : m.away;
     const description =
       favored.win_prob !== null
         ? `Blitzcast gives the ${favored.name} a ${fmtPct(favored.win_prob)} chance in ${m.away.name} at ${m.home.name}, Week ${m.week} of the ${m.season} ${league} season.`
-        : `${m.away.name} at ${m.home.name}, Week ${m.week} of the ${m.season} ${league} season — prediction coming after the weekly data refresh.`;
+        : `${m.away.name} at ${m.home.name}, Week ${m.week} of the ${m.season} ${league} season. Prediction coming after the weekly data refresh.`;
     return {
       title,
       description,

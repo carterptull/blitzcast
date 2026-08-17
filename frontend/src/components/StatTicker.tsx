@@ -18,21 +18,38 @@ function Cell({ label, value }: { label: string; value: string }) {
 export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
   const m = matchup;
 
+  const cfb = m.sport === "CFB";
+  const abbr = (a: string) => (cfb ? a : displayAbbr(a));
+
+  // Each market can be null on its own, so build from the parts that exist.
+  const weatherParts = m.weather
+    ? [
+        m.weather.temp_f != null ? `${m.weather.temp_f}°F` : null,
+        m.weather.wind_mph != null ? `${m.weather.wind_mph} mph` : null,
+        m.weather.conditions,
+      ].filter(Boolean)
+    : [];
   const weatherValue = m.venue.is_dome
     ? "Dome · controlled"
-    : m.weather
-      ? `${m.weather.temp_f}°F · ${m.weather.wind_mph} mph · ${m.weather.conditions}`
+    : weatherParts.length > 0
+      ? weatherParts.join(" · ")
       : "—";
+
+  const ml = m.odds
+    ? [
+        m.odds.moneyline_away != null
+          ? `${abbr(m.away.abbr)} ${fmtMoneyline(m.odds.moneyline_away)}`
+          : null,
+        m.odds.moneyline_home != null
+          ? `${abbr(m.home.abbr)} ${fmtMoneyline(m.odds.moneyline_home)}`
+          : null,
+      ].filter(Boolean)
+    : [];
 
   const cells: [string, string][] = [
     ["Spread", fmtSpread(m)],
-    [
-      "Moneyline",
-      m.odds
-        ? `${displayAbbr(m.away.abbr)} ${fmtMoneyline(m.odds.moneyline_away)} / ${displayAbbr(m.home.abbr)} ${fmtMoneyline(m.odds.moneyline_home)}`
-        : "—",
-    ],
-    ["Total", m.odds ? `O/U ${m.odds.total}` : "—"],
+    ["Moneyline", ml.length > 0 ? ml.join(" / ") : "—"],
+    ["Total", m.odds?.total != null ? `O/U ${m.odds.total}` : "—"],
     ["Weather", weatherValue],
     ["Venue", m.venue.name ? `${m.venue.name} · ${m.venue.city}` : "Neutral site"],
     ["Kickoff", m.kickoff !== null ? fmtKickoff(m.kickoff) : "TBD"],

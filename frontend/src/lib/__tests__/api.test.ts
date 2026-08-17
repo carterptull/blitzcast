@@ -1,9 +1,4 @@
-/**
- * API Client Tests
- *
- * Tests the typed API client for correct error handling, mock mode,
- * and contract validation.
- */
+/** API client tests: error handling, mock mode, and contract validation. */
 
 import { ApiUnreachableError, NotFoundError } from "../api";
 
@@ -44,7 +39,6 @@ describe("API Client", () => {
     });
 
     test("getTeams returns mock data in mock mode", async () => {
-      // Verify mock mode is enabled before running test
       expect(process.env.NEXT_PUBLIC_USE_MOCK).toBe("1");
 
       // Re-import to pick up env change
@@ -53,7 +47,7 @@ describe("API Client", () => {
 
       expect(teams).toBeDefined();
       expect(Array.isArray(teams)).toBe(true);
-      expect(teams.length).toBeGreaterThan(0); // Guarantee mock data exists
+      expect(teams.length).toBeGreaterThan(0);
       expect(teams[0]).toHaveProperty("abbr");
       expect(teams[0]).toHaveProperty("name");
     });

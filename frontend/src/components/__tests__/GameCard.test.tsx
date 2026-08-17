@@ -1,13 +1,4 @@
-/**
- * GameCard Component Tests
- *
- * Tests the game card component for correct rendering of:
- * - Team names and abbreviations
- * - Win probabilities
- * - Primetime indicators
- * - Pending prediction states
- * - Links to matchup pages
- */
+/** GameCard rendering tests: teams, win probabilities, badges, and links. */
 
 import React from "react";
 import { render, screen } from "@testing-library/react";
@@ -115,7 +106,6 @@ describe("GameCard", () => {
     };
 
     const { container } = render(<GameCard game={tbdGame} />);
-    // TbdBadge component should be present (renders "Time TBD" text)
     const tbdBadge = container.querySelector('span[class*="border-dashed"]');
     expect(tbdBadge).toBeInTheDocument();
     expect(tbdBadge?.textContent).toMatch(/TBD/);
@@ -124,7 +114,6 @@ describe("GameCard", () => {
   test("renders kickoff time when available", () => {
     render(<GameCard game={baseGame} />);
 
-    // Should have time in HH:MM AM/PM ET format (from fmtKickoffTime)
     const gamecard = screen.getByRole("link");
     expect(gamecard.textContent).toMatch(/\d{1,2}:\d{2}\s(AM|PM)\sET/);
   });
@@ -137,7 +126,6 @@ describe("GameCard", () => {
 
     const { container } = render(<GameCard game={gameWithProb} />);
 
-    // Should have a progress bar element (the one with style transforms)
     const progressBar = container.querySelector('[style*="width"]');
     expect(progressBar).toBeInTheDocument();
   });
@@ -151,7 +139,6 @@ describe("GameCard", () => {
 
     const { container } = render(<GameCard game={gameNoPrediction} />);
 
-    // Should have hatch class instead of progress bar
     const hatch = container.querySelector(".hatch");
     expect(hatch).toBeInTheDocument();
   });
@@ -182,7 +169,6 @@ describe("GameCard", () => {
 
     render(<GameCard game={gameWithProb} />);
 
-    // 75% home win prob = 25% away win prob
     expect(screen.getByText("75%")).toBeInTheDocument();
     expect(screen.getByText("25%")).toBeInTheDocument();
   });

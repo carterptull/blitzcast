@@ -1,7 +1,7 @@
-// Typed API client for the Blitzcast backend (IMPLEMENTATION_PLAN.md §3.2).
+// Typed API client for the Blitzcast backend.
 // NEXT_PUBLIC_USE_MOCK=1 serves fixture data instead of hitting the network.
-// Sport is a query param on list endpoints (CFB_IMPLEMENTATION_PLAN.md §3.2);
-// prediction lookups need none — game ids are globally unique.
+// Sport is a query param on list endpoints; prediction lookups need none,
+// game ids are globally unique.
 
 import { mockGames, mockMatchup, mockSchedule, mockTeams } from "./mock";
 import type { GameSummary, MatchupDetail, Schedule, Sport, Team } from "./types";

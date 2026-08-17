@@ -1,5 +1,4 @@
-// TypeScript mirror of the backend API contract (IMPLEMENTATION_PLAN.md §3.2,
-// CFB_IMPLEMENTATION_PLAN.md §3.1).
+// TypeScript mirror of the backend API contract.
 
 export type Sport = "NFL" | "CFB";
 
@@ -68,18 +67,20 @@ export interface Venue {
   is_dome: boolean | null;
 }
 
+// Any single market can be missing: nflverse often carries a spread with no
+// moneyline, so the container is present while members are null.
 export interface Odds {
-  spread_home: number;
-  moneyline_home: number;
-  moneyline_away: number;
-  total: number;
+  spread_home: number | null;
+  moneyline_home: number | null;
+  moneyline_away: number | null;
+  total: number | null;
 }
 
 export interface Weather {
-  temp_f: number;
-  wind_mph: number;
-  precipitation: boolean;
-  conditions: string;
+  temp_f: number | null;
+  wind_mph: number | null;
+  precipitation: boolean | null;
+  conditions: string | null;
 }
 
 export interface Factor {

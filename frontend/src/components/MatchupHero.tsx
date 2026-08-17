@@ -73,7 +73,6 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
   return (
     <section className="turf overflow-hidden rounded-2xl">
       <div className="px-5 py-8 sm:px-10 sm:py-12">
-        {/* Meta row */}
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[11px] uppercase tracking-[0.18em] text-chalk-soft sm:justify-start">
           <span className="text-gold-turf">Week {m.week}</span>
           <span aria-hidden="true">·</span>
@@ -88,10 +87,9 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
           {m.is_divisional ? <Badge>{cfb ? "Conference game" : "Divisional"}</Badge> : null}
         </div>
 
-        {/* Teams */}
         <div className="mt-8 grid items-center gap-8 sm:grid-cols-[1fr_auto_1fr] sm:gap-6">
           <TeamColumn team={m.away} align="left" cfb={cfb} />
-          {/* Center VS — dropped on mobile per the responsive spec */}
+          {/* Center mark; hidden on mobile */}
           <div className="hidden flex-col items-center gap-1 sm:flex" aria-hidden="true">
             <span className="font-display text-2xl uppercase text-chalk-soft">at</span>
             <svg viewBox="0 0 12 12" className="size-2 text-gold-turf">
@@ -101,7 +99,6 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
           <TeamColumn team={m.home} align="right" cfb={cfb} />
         </div>
 
-        {/* Split bar */}
         <div className="mt-8">
           {!pending && m.away.win_prob !== null && m.home.win_prob !== null ? (
             <>
@@ -126,7 +123,7 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
             <div className="rounded-md border border-chalk-soft/25">
               <div className="hatch flex h-10 items-center justify-center rounded-md">
                 <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-chalk-soft">
-                  Prediction pending — runs after the weekly data refresh
+                  Prediction pending: runs after the weekly data refresh
                 </span>
               </div>
             </div>

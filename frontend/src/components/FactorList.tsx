@@ -10,7 +10,8 @@ import type { Factor, MatchupDetail } from "@/lib/types";
 export default function FactorList({ matchup }: { matchup: MatchupDetail }) {
   const m = matchup;
   if (m.factors.length === 0) return null;
-  const maxAbs = Math.max(...m.factors.map((x) => Math.abs(x.value)));
+  // All-zero SHAP values would divide by zero and blank every bar.
+  const maxAbs = Math.max(...m.factors.map((x) => Math.abs(x.value))) || 1;
 
   return (
     <ol className="space-y-3">
@@ -25,6 +26,7 @@ export default function FactorList({ matchup }: { matchup: MatchupDetail }) {
               style={{ background: color, color: textOn(color) }}
               title={`Favors ${team.name}`}
             >
+              <span className="sr-only">Favors {team.name}: </span>
               {m.sport === "CFB" ? team.abbr : displayAbbr(team.abbr)}
             </span>
             <div className="min-w-0">

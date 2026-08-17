@@ -26,9 +26,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sport } = await params;
   if (sport === "cfb") {
     return {
-      title: "Blitzcast — College Football Win Probabilities",
+      title: "Blitzcast: College Football Win Probabilities",
       description:
-        "AI-powered win probabilities with plain-language reasoning for every 2026 college football matchup.",
+        "Every 2026 college football matchup, called before kickoff. Real win probabilities, explained like a human would.",
     };
   }
   return {};
@@ -60,7 +60,7 @@ function Banner({ season, week }: { season: number; week: number }) {
           Every matchup, called before kickoff
         </h1>
         <p className="mt-4 max-w-xl text-lg italic leading-relaxed text-chalk-soft">
-          Win probabilities from a calibrated model — explained in plain language, never by
+          Win probabilities from a calibrated model, explained in plain language, never by
           guesswork.
         </p>
       </div>
@@ -113,7 +113,6 @@ async function NflSlate({ requestedWeek }: { requestedWeek: number }) {
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <Banner season={schedule.season} week={selected} />
 
-      {/* Week selector */}
       <div className="mt-8">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
@@ -126,7 +125,6 @@ async function NflSlate({ requestedWeek }: { requestedWeek: number }) {
         <WeekSelector weeks={weeks} selected={selected} basePath="/nfl" />
       </div>
 
-      {/* Slate, grouped by day */}
       <div className="mt-8 space-y-8">
         <Slate games={games} sport="nfl" filtered={false} />
       </div>
@@ -177,7 +175,6 @@ async function CfbSlate({
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <Banner season={2026} week={selected} />
 
-      {/* Week selector + filter chips */}
       <div className="mt-8">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
@@ -196,7 +193,6 @@ async function CfbSlate({
         />
       </div>
 
-      {/* Slate, grouped by day */}
       <div className="mt-8 space-y-8">
         <Slate games={filtered} sport="cfb" filtered={!!activeConf || top25} />
       </div>

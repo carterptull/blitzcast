@@ -53,7 +53,6 @@ export default function WinProbabilitySplit({ away, home, size = "lg" }: Props) 
           style={{ width: `${homePct}%`, background: homeColor }}
         />
       </div>
-      {/* Gold marker at the split */}
       <div
         aria-hidden="true"
         className="absolute inset-y-0 w-[3px] -translate-x-1/2 bg-gold-turf transition-[left] duration-1000 ease-out motion-reduce:transition-none"

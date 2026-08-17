@@ -81,9 +81,23 @@ def list_teams(db: Session, sport: str = SPORT_NFL) -> list[TeamOut]:
     ]
 
 
-def _prediction_probs(db: Session) -> dict[str, float]:
-    rows = db.execute(select(Prediction.game_id, Prediction.home_win_prob))
-    return dict(rows.all())
+def _prediction_probs(
+    db: Session, season: int, sport: str, week: int | None = None
+) -> dict[str, float]:
+    """Latest prediction per game, scoped to the slate being rendered.
+
+    Oldest first so newer rows win: a model version bump leaves more than one
+    prediction row per game, and the cards must agree with the detail page.
+    """
+    stmt = (
+        select(Prediction.game_id, Prediction.home_win_prob)
+        .join(Game, Game.game_id == Prediction.game_id)
+        .where(Game.season == season, Game.sport == sport)
+        .order_by(Prediction.predicted_at)
+    )
+    if week is not None:
+        stmt = stmt.where(Game.week == week)
+    return dict(db.execute(stmt).all())
 
 
 def _game_team(team: Team, ranks: dict[int, int]) -> GameTeam:
@@ -129,7 +143,7 @@ def _season_games(
 
 def get_schedule(db: Session, season: int, sport: str = SPORT_NFL) -> ScheduleOut:
     games = _season_games(db, season, sport=sport)
-    probs = _prediction_probs(db)
+    probs = _prediction_probs(db, season, sport)
     week_ranks = _poll_ranks_by_week(db, sport, season)
     weeks: dict[int, list[GameSummary]] = {}
     for game in games:
@@ -145,7 +159,7 @@ def get_schedule(db: Session, season: int, sport: str = SPORT_NFL) -> ScheduleOu
 
 def get_games(db: Session, season: int, week: int, sport: str = SPORT_NFL) -> list[GameSummary]:
     games = _season_games(db, season, week, sport=sport)
-    probs = _prediction_probs(db)
+    probs = _prediction_probs(db, season, sport, week)
     ranks = poll_ranks_entering(db, sport, season, week)
     return [_game_summary(g, probs.get(g.game_id), ranks) for g in games]
 
@@ -164,6 +178,7 @@ def _record_entering(db: Session, team_id: int, game: Game) -> str:
             Game.sport == game.sport,
             before,
             Game.home_score.is_not(None),
+            Game.away_score.is_not(None),
             (Game.home_team_id == team_id) | (Game.away_team_id == team_id),
         )
     ).all()

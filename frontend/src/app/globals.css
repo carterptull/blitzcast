@@ -81,8 +81,6 @@
   --font-mono: var(--font-plex-mono), "Courier New", monospace;
 }
 
-/* ------------------------------------------------------------------ */
-
 body {
   background: var(--canvas);
   color: var(--ink);

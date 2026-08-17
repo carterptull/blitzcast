@@ -1,10 +1,38 @@
-/**
- * Format Utility Tests
- *
- * Tests formatting functions for dates, percentages, and display strings.
- */
+/** Formatting helpers: percentages, kickoff times, spreads. */
 
-import { fmtPct, fmtKickoffTime } from "../format";
+import {
+  fmtPct,
+  fmtKickoffTime,
+  fmtSpread,
+  pickDefaultWeek,
+  pickCfbDefaultWeek,
+} from "../format";
+import type { MatchupDetail, Odds, Schedule } from "../types";
+
+/** Weeks of games with only the kickoff field pickDefaultWeek reads. */
+const schedule = (weeks: (string | null)[][]): Schedule =>
+  ({
+    season: 2026,
+    weeks: weeks.map((kickoffs, i) => ({
+      week: i + 1,
+      games: kickoffs.map((kickoff) => ({ kickoff })),
+    })),
+  }) as unknown as Schedule;
+
+/** Only the fields fmtSpread reads. */
+const matchup = (odds: Partial<Odds> | null, sport: "NFL" | "CFB" = "NFL") =>
+  ({
+    sport,
+    home: { abbr: "KC" },
+    away: { abbr: "BUF" },
+    odds: odds && {
+      spread_home: null,
+      moneyline_home: null,
+      moneyline_away: null,
+      total: null,
+      ...odds,
+    },
+  }) as unknown as MatchupDetail;
 
 describe("Format Utilities", () => {
   describe("fmtPct", () => {
@@ -59,10 +87,84 @@ describe("Format Utilities", () => {
     });
 
     test("returns readable time format", () => {
-      const iso = "2026-09-13T21:05:00Z"; // 5:05 PM ET
-      const result = fmtKickoffTime(iso);
-      // Should contain day and time info
-      expect(result.length).toBeGreaterThan(3);
+      const iso = "2026-09-13T21:05:00Z";
+      expect(fmtKickoffTime(iso).length).toBeGreaterThan(3);
+    });
+  });
+
+  describe("fmtSpread", () => {
+    // spread_home is positive when the home team is favored (nflverse).
+    test("positive spread names the home team", () => {
+      expect(fmtSpread(matchup({ spread_home: 7 }))).toBe("KC -7");
+    });
+
+    test("negative spread names the away team", () => {
+      expect(fmtSpread(matchup({ spread_home: -3.5 }))).toBe("BUF -3.5");
+    });
+
+    test("zero is a pick'em", () => {
+      expect(fmtSpread(matchup({ spread_home: 0 }))).toBe("PK");
+    });
+
+    test("no odds renders a dash", () => {
+      expect(fmtSpread(matchup(null))).toBe("—");
+    });
+
+    test("odds present but spread missing renders a dash", () => {
+      expect(fmtSpread(matchup({ total: 48.5 }))).toBe("—");
+    });
+
+    test("agrees with the moneyline favorite", () => {
+      // Home favorite: negative home moneyline, positive spread_home.
+      const home = matchup({ spread_home: 7, moneyline_home: -330 });
+      expect(fmtSpread(home).startsWith("KC")).toBe(true);
+      const away = matchup({ spread_home: -4.5, moneyline_away: -200 });
+      expect(fmtSpread(away).startsWith("BUF")).toBe(true);
+    });
+
+    test("CFB keeps its own abbreviations", () => {
+      expect(fmtSpread(matchup({ spread_home: 6 }, "CFB"))).toBe("KC -6");
+    });
+  });
+
+  describe("pickDefaultWeek", () => {
+    const now = new Date("2026-09-20T12:00:00Z");
+
+    test("returns the first week with an upcoming game", () => {
+      const s = schedule([["2026-09-13T17:00:00Z"], ["2026-09-27T17:00:00Z"]]);
+      expect(pickDefaultWeek(s, now)).toBe(2);
+    });
+
+    test("a leftover TBD does not pin a finished week", () => {
+      // Week 1 has played out except for one game that never got a time.
+      const s = schedule([["2026-09-13T17:00:00Z", null], ["2026-09-27T17:00:00Z"]]);
+      expect(pickDefaultWeek(s, now)).toBe(2);
+    });
+
+    test("a week with nothing scheduled yet is still ahead", () => {
+      const s = schedule([["2026-09-13T17:00:00Z"], [null, null]]);
+      expect(pickDefaultWeek(s, now)).toBe(2);
+    });
+
+    test("sticks to the last week once the season is over", () => {
+      const s = schedule([["2026-09-13T17:00:00Z"], ["2026-09-14T17:00:00Z"]]);
+      expect(pickDefaultWeek(s, new Date("2027-01-01T00:00:00Z"))).toBe(2);
+    });
+  });
+
+  describe("pickCfbDefaultWeek", () => {
+    test("Sunday night ET is still the outgoing week", () => {
+      // Sun Sep 6, 8:00 PM ET. Anchoring at plain UTC rolled this to week 2.
+      expect(pickCfbDefaultWeek(new Date("2026-09-07T00:00:00Z"))).toBe(1);
+    });
+
+    test("Monday midnight ET starts the new week", () => {
+      expect(pickCfbDefaultWeek(new Date("2026-09-07T04:00:00Z"))).toBe(2);
+    });
+
+    test("clamps before the season and after the finale", () => {
+      expect(pickCfbDefaultWeek(new Date("2026-06-01T00:00:00Z"))).toBe(1);
+      expect(pickCfbDefaultWeek(new Date("2027-03-01T00:00:00Z"))).toBe(15);
     });
   });
 });

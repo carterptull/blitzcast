@@ -38,7 +38,7 @@ _MOCK_GAMES = [
             "city": "Kansas City",
             "is_dome": False,
         },
-        "odds": {"spread_home": -2.5, "moneyline_home": -140, "moneyline_away": 120, "total": 48.5},
+        "odds": {"spread_home": 2.5, "moneyline_home": -140, "moneyline_away": 120, "total": 48.5},
         "weather": {"temp_f": 74.0, "wind_mph": 8.0, "precipitation": False, "conditions": "Clear"},
         "factors": [
             {"label": "Team rating (Elo) edge", "value": 0.14, "direction": "home"},
@@ -47,7 +47,7 @@ _MOCK_GAMES = [
             {"label": "Betting-market win probability", "value": 0.06, "direction": "home"},
         ],
         "narrative": (
-            "Folks, the numbers love Kansas City tonight — a 63 percent shot at "
+            "Folks, the numbers love Kansas City tonight: a 63 percent shot at "
             "home behind a rating edge worth fourteen points of probability! "
             "Buffalo counters with a rest advantage, but the Chiefs' offense has "
             "been humming over its last five games. Under the lights at "
@@ -64,7 +64,7 @@ _MOCK_GAMES = [
         "is_divisional": True,
         "home_win_prob": None,
         "venue": {"name": "SoFi Stadium", "city": "Inglewood", "is_dome": True},
-        "odds": {"spread_home": 3.0, "moneyline_home": -180, "moneyline_away": 150, "total": 48.5},
+        "odds": {"spread_home": 3, "moneyline_home": -180, "moneyline_away": 150, "total": 48.5},
         "weather": None,
         "factors": [],
         "narrative": None,
@@ -79,7 +79,7 @@ _MOCK_GAMES = [
         "is_divisional": True,
         "home_win_prob": 0.41,
         "venue": {"name": "Empower Field at Mile High", "city": "Denver", "is_dome": False},
-        "odds": {"spread_home": 2.5, "moneyline_home": 115, "moneyline_away": -135, "total": 44.0},
+        "odds": {"spread_home": -2.5, "moneyline_home": 115, "moneyline_away": -135, "total": 44.0},
         "weather": {"temp_f": 68.0, "wind_mph": 6.0, "precipitation": False, "conditions": "Sunny"},
         "factors": [
             {"label": "Team rating (Elo) edge", "value": -0.11, "direction": "away"},
@@ -126,7 +126,7 @@ _MOCK_CFB_GAMES = [
         "is_divisional": False,
         "home_win_prob": 0.58,
         "venue": {"name": "Ohio Stadium", "city": "Columbus", "is_dome": False},
-        "odds": {"spread_home": -3.0, "moneyline_home": -155, "moneyline_away": 130, "total": 51.5},
+        "odds": {"spread_home": 3, "moneyline_home": -155, "moneyline_away": 130, "total": 51.5},
         "weather": {"temp_f": 78.0, "wind_mph": 5.0, "precipitation": False, "conditions": "Clear"},
         "factors": [
             {"label": "Team rating (Elo) edge", "value": 0.09, "direction": "home"},
@@ -315,7 +315,7 @@ def get_prediction_detail(game_id: str) -> PredictionOut | None:
     if g is None:
         return None
     prob = g["home_win_prob"]
-    version = "cfb-0.1.0-mock" if sport == SPORT_CFB else "0.1.0-mock"
+    version = "cfb-1.0.0-mock" if sport == SPORT_CFB else "1.0.0-mock"
     return PredictionOut(
         game_id=g["game_id"],
         sport=sport,

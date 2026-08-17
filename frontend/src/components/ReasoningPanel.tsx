@@ -23,7 +23,7 @@ export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) 
         <SectionLabel>From the booth</SectionLabel>
         <p className="mt-4 text-lg italic leading-relaxed text-ink-soft">
           The model hasn&apos;t weighed in on this one yet. Predictions are generated after the
-          weekly data refresh — once the lines, injuries, and weather are in, the numbers and the
+          weekly data refresh. Once the lines, injuries, and weather are in, the numbers and the
           call from the booth will land right here.
         </p>
       </section>
@@ -38,7 +38,7 @@ export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) 
         <p className="mt-4 text-lg leading-relaxed sm:text-xl">{m.narrative}</p>
       ) : (
         <p className="mt-4 italic leading-relaxed text-ink-soft">
-          The broadcast feed dropped out for this one — but the numbers still tell the story below.
+          The broadcast feed dropped out for this one, but the numbers still tell the story below.
         </p>
       )}
 

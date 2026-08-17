@@ -25,14 +25,20 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
+// Vercel injects VERCEL_URL per deployment; NEXT_PUBLIC_SITE_URL pins the
+// canonical domain once it exists.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  metadataBase: new URL("http://localhost:3000"),
+  metadataBase: new URL(siteUrl),
   title: {
-    default: "Blitzcast — NFL Win Probabilities",
+    default: "Blitzcast: NFL Win Probabilities",
     template: "%s · Blitzcast",
   },
   description:
-    "AI-powered win probabilities with plain-language reasoning for every 2026 NFL matchup.",
+    "Every 2026 NFL matchup, called before kickoff. Real win probabilities, explained like a human would.",
 };
 
 export const viewport: Viewport = {
