@@ -118,6 +118,8 @@ interface Week1Spec {
   weather: Weather | null;
   factors: Factor[];
   narrative: string | null;
+  homeScore?: number | null; // null/absent => game not final
+  awayScore?: number | null;
 }
 
 const f = (label: string, value: number, direction: "home" | "away"): Factor => ({
@@ -125,6 +127,20 @@ const f = (label: string, value: number, direction: "home" | "away"): Factor => 
   value,
   direction,
 });
+
+/** Mirrors the backend's prediction_verdict rule: null when there's no
+ *  prediction, the game isn't final, it's a tie, or the pick was a
+ *  toss-up (exactly 0.5); otherwise true iff the favored side won. */
+function verdict(
+  homeProb: number | null,
+  homeScore: number | null | undefined,
+  awayScore: number | null | undefined
+): boolean | null {
+  if (homeProb === null || homeScore == null || awayScore == null) return null;
+  if (homeScore === awayScore) return null;
+  if (homeProb === 0.5) return null;
+  return (homeProb > 0.5) === (homeScore > awayScore);
+}
 
 const WEEK1: Week1Spec[] = [
   {
@@ -176,6 +192,8 @@ const WEEK1: Week1Spec[] = [
     ],
     narrative:
       "Number one against number three, high noon in the Horseshoe, and the model calls it Ohio State at 55 percent! The Buckeyes bring the sharper rating and a hundred and five thousand of their closest friends, with the market laying 2.5 right beside them. Texas counters with the more explosive offense play-for-play, so if the Longhorns cash in an early red-zone trip, this heavyweight bout goes the distance.",
+    homeScore: 31,
+    awayScore: 27,
   },
   {
     id: 401520284,
@@ -194,6 +212,8 @@ const WEEK1: Week1Spec[] = [
     ],
     narrative:
       "Farmageddon opens the Big 12 slate in Ames, and the seventeenth-ranked Cyclones take 58 percent behind the better rating and a Jack Trice crowd that travels nowhere and misses nothing. Kansas State's card is familiarity (conference clashes run closer than the sheet says) and a 13-mile-an-hour prairie wind that turns long drives into arm wrestling.",
+    homeScore: 24,
+    awayScore: 27,
   },
   {
     id: 401520285,
@@ -335,6 +355,9 @@ function toSummary(s: Week1Spec): GameSummary {
     has_prediction: s.homeProb !== null,
     sport: "CFB",
     home_win_prob: s.homeProb,
+    home_score: s.homeScore ?? null,
+    away_score: s.awayScore ?? null,
+    prediction_correct: verdict(s.homeProb, s.homeScore, s.awayScore),
   };
 }
 
@@ -377,6 +400,9 @@ function generatedWeekGames(week: number): GameSummary[] {
       has_prediction: false,
       sport: "CFB",
       home_win_prob: null,
+      home_score: null,
+      away_score: null,
+      prediction_correct: null,
     });
   }
   games.sort((x, y) => (x.kickoff ?? "9999").localeCompare(y.kickoff ?? "9999"));
@@ -453,6 +479,9 @@ export function cfbMockMatchup(id: string): MatchupDetail | null {
       predicted_at: ready ? iso(Date.UTC(2026, 8, 1, 12, 0)) : null,
       prediction_status: ready ? "ready" : "pending",
       sport: "CFB",
+      home_score: spec.homeScore ?? null,
+      away_score: spec.awayScore ?? null,
+      prediction_correct: verdict(spec.homeProb, spec.homeScore, spec.awayScore),
     };
   }
 
@@ -479,6 +508,9 @@ export function cfbMockMatchup(id: string): MatchupDetail | null {
       predicted_at: null,
       prediction_status: "pending",
       sport: "CFB",
+      home_score: null,
+      away_score: null,
+      prediction_correct: null,
     };
   }
   return null;
