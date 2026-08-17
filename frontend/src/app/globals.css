@@ -22,6 +22,21 @@
   --chalk-soft: rgba(243, 247, 240, 0.72);
   --hash: rgba(243, 247, 240, 0.16);
   --yard: rgba(243, 247, 240, 0.07);
+  /* Verdict. Paired on-surface and on-turf variants, as gold-text/gold-turf
+     are paired. The brand is green, so "correct" leans blue-teal to read as a
+     verdict rather than chrome. Hit/miss are tuned to differ in luminance
+     (not just hue) so the pair stays distinguishable under deuteranopia and
+     protanopia, where hue alone collapses red/green-ish pairs. */
+  --verdict-hit: #1d6f5c;
+  /* Light-theme turf variants are lightened beyond their original hue-only
+     design to clear 4.5:1 against BOTH stripe colors in .turf's repeating
+     gradient, not just the darker one (--stripe-a). The lighter stripe
+     (--stripe-b: #2e6f4c) is the binding constraint: the original
+     --verdict-miss-turf (#d97a7a) measured only ~3.7:1 against --stripe-a
+     and ~2.0:1 against --stripe-b, both below AA for small text. */
+  --verdict-hit-turf: #a3ffec;
+  --verdict-miss: #8a2c2c;
+  --verdict-miss-turf: #ffdcdc;
 }
 
 :root[data-theme="dark"] {
@@ -40,6 +55,10 @@
   --chalk-soft: rgba(238, 244, 236, 0.7);
   --hash: rgba(238, 244, 236, 0.14);
   --yard: rgba(238, 244, 236, 0.06);
+  --verdict-hit: #6cc9ac;
+  --verdict-hit-turf: #8fe0c4;
+  --verdict-miss: #d67070;
+  --verdict-miss-turf: #eeb3b3;
 }
 
 /* System preference is the default when no explicit choice is stored. */
@@ -60,6 +79,10 @@
     --chalk-soft: rgba(238, 244, 236, 0.7);
     --hash: rgba(238, 244, 236, 0.14);
     --yard: rgba(238, 244, 236, 0.06);
+    --verdict-hit: #6cc9ac;
+    --verdict-hit-turf: #8fe0c4;
+    --verdict-miss: #d67070;
+    --verdict-miss-turf: #eeb3b3;
   }
 }
 
@@ -76,6 +99,10 @@
   --color-stripe-b: var(--stripe-b);
   --color-chalk: var(--chalk);
   --color-chalk-soft: var(--chalk-soft);
+  --color-verdict-hit: var(--verdict-hit);
+  --color-verdict-hit-turf: var(--verdict-hit-turf);
+  --color-verdict-miss: var(--verdict-miss);
+  --color-verdict-miss-turf: var(--verdict-miss-turf);
   --font-display: var(--font-anton), "Arial Narrow", sans-serif;
   --font-serif: var(--font-newsreader), Georgia, serif;
   --font-mono: var(--font-plex-mono), "Courier New", monospace;
