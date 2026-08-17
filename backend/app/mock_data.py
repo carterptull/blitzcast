@@ -19,6 +19,7 @@ from app.schemas import (
     WeatherOut,
     WeekOut,
 )
+from app.services.predictions import prediction_verdict
 from data_pipeline.team_names import logo_url, nickname
 
 SEEDS_DIR = Path(__file__).resolve().parent.parent / "data_pipeline" / "seeds"
@@ -33,6 +34,8 @@ _MOCK_GAMES = [
         "is_primetime": True,
         "is_divisional": False,
         "home_win_prob": 0.63,
+        "home_score": 27,
+        "away_score": 24,
         "venue": {
             "name": "GEHA Field at Arrowhead Stadium",
             "city": "Kansas City",
@@ -63,6 +66,8 @@ _MOCK_GAMES = [
         "is_primetime": True,
         "is_divisional": True,
         "home_win_prob": None,
+        "home_score": None,
+        "away_score": None,
         "venue": {"name": "SoFi Stadium", "city": "Inglewood", "is_dome": True},
         "odds": {"spread_home": 3, "moneyline_home": -180, "moneyline_away": 150, "total": 48.5},
         "weather": None,
@@ -78,6 +83,8 @@ _MOCK_GAMES = [
         "is_primetime": False,
         "is_divisional": True,
         "home_win_prob": 0.41,
+        "home_score": 23,
+        "away_score": 20,
         "venue": {"name": "Empower Field at Mile High", "city": "Denver", "is_dome": False},
         "odds": {"spread_home": -2.5, "moneyline_home": 115, "moneyline_away": -135, "total": 44.0},
         "weather": {"temp_f": 68.0, "wind_mph": 6.0, "precipitation": False, "conditions": "Sunny"},
@@ -125,6 +132,8 @@ _MOCK_CFB_GAMES = [
         "is_primetime": True,
         "is_divisional": False,
         "home_win_prob": 0.58,
+        "home_score": 24,
+        "away_score": 30,
         "venue": {"name": "Ohio Stadium", "city": "Columbus", "is_dome": False},
         "odds": {"spread_home": 3, "moneyline_home": -155, "moneyline_away": 130, "total": 51.5},
         "weather": {"temp_f": 78.0, "wind_mph": 5.0, "precipitation": False, "conditions": "Clear"},
@@ -151,6 +160,8 @@ _MOCK_CFB_GAMES = [
         "is_primetime": False,
         "is_divisional": False,
         "home_win_prob": 0.97,
+        "home_score": 45,
+        "away_score": 10,
         "venue": {"name": "Bryant-Denny Stadium", "city": "Tuscaloosa", "is_dome": False},
         "odds": None,
         "weather": {"temp_f": 88.0, "wind_mph": 4.0, "precipitation": False, "conditions": "Sunny"},
@@ -175,6 +186,8 @@ _MOCK_CFB_GAMES = [
         "is_primetime": False,
         "is_divisional": True,
         "home_win_prob": None,
+        "home_score": None,
+        "away_score": None,
         "venue": {
             "name": "Darrell K Royal-Texas Memorial Stadium",
             "city": "Austin",
