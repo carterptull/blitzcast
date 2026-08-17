@@ -6,10 +6,10 @@ Usage: python -m app.jobs.predict_week [--season 2026] [--week N] [--sport nfl|c
 """
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -21,18 +21,38 @@ from ml.explain import make_explainer, top_factors
 from ml.features import build_features
 from ml.model_store import load_latest
 
+STALE_AFTER = timedelta(hours=36)
 
-def default_week(db: Session, season: int, sport: str = SPORT_NFL) -> int | None:
-    """Earliest week in the season with an unplayed game.
 
-    Keyed on missing score only, so TBD (NULL) kickoffs are never dropped."""
-    week = db.scalar(
-        select(Game.week)
-        .where(Game.season == season, Game.sport == sport, Game.home_score.is_(None))
+def _as_utc(value) -> datetime:
+    dt = value if isinstance(value, datetime) else datetime.combine(value, time.min)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def default_week(
+    db: Session, season: int, sport: str = SPORT_NFL, now: datetime | None = None
+) -> int | None:
+    """Earliest week that still has a game to play.
+
+    A week whose last kickoff is well past is treated as done even if a game
+    never received a score, so a cancellation cannot pin the job forever."""
+    now = now or datetime.now(UTC)
+    rows = db.execute(
+        select(Game.week, func.max(func.coalesce(Game.kickoff_time, Game.game_date)))
+        .where(
+            Game.season == season,
+            Game.sport == sport,
+            Game.home_score.is_(None),
+        )
+        .group_by(Game.week)
         .order_by(Game.week)
-        .limit(1)
-    )
-    return week
+    ).all()
+    for week, last_kickoff in rows:
+        if last_kickoff is None:
+            return week
+        if _as_utc(last_kickoff) + STALE_AFTER > now:
+            return week
+    return None
 
 
 def upsert_prediction(
@@ -94,6 +114,22 @@ def build_narration_payload(
     return payload
 
 
+def unplayed_game_ids(db: Session, season: int, week: int, sport: str) -> set[str]:
+    """Game ids in the week with no score yet. Both scores must be absent: a
+    row with one side scored has started, and re-predicting it would restamp
+    predicted_at after the result was known."""
+    rows = db.scalars(
+        select(Game.game_id).where(
+            Game.season == season,
+            Game.sport == sport,
+            Game.week == week,
+            Game.home_score.is_(None),
+            Game.away_score.is_(None),
+        )
+    )
+    return set(rows)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--season", type=int, default=2026)
@@ -117,8 +153,13 @@ def main() -> None:
 
         features = build_features(db, seasons=[args.season], sport=sport)
         target = features[features["week"] == week]
+        playable = unplayed_game_ids(db, args.season, week, sport)
+        skipped = len(target) - target["game_id"].isin(playable).sum()
+        target = target[target["game_id"].isin(playable)]
+        if skipped:
+            print(f"skipping {skipped} already-final {sport} games")
         if target.empty:
-            print(f"no {sport} games found for {args.season} week {week}")
+            print(f"no unplayed {sport} games found for {args.season} week {week}")
             return
 
         teams_by_abbr = {t.abbr: t for t in db.scalars(select(Team).where(Team.sport == sport))}
