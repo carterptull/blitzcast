@@ -1,18 +1,20 @@
 """predict_week selection predicates and narration payload shaping."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
+from sqlalchemy import select
 
 from app.jobs.predict_week import build_narration_payload, default_week
 from app.models import SPORT_CFB, SPORT_NFL, Game, Team
 
 
 def test_default_week_is_sport_scoped(db):
-    assert default_week(db, 2026, SPORT_NFL) == 1
-    assert default_week(db, 2026, SPORT_CFB) == 1
-    assert default_week(db, 2025, SPORT_NFL) is None  # all played
-    assert default_week(db, 2025, SPORT_CFB) is None  # no CFB games that season
+    now = datetime(2026, 9, 6, 12, 0, tzinfo=UTC)
+    assert default_week(db, 2026, SPORT_NFL, now=now) == 1
+    assert default_week(db, 2026, SPORT_CFB, now=now) == 1
+    assert default_week(db, 2025, SPORT_NFL, now=now) is None  # all played
+    assert default_week(db, 2025, SPORT_CFB, now=now) is None  # no CFB games that season
 
 
 def test_null_kickoff_game_still_selected(db):
@@ -30,7 +32,8 @@ def test_null_kickoff_game_still_selected(db):
         )
     )
     db.flush()
-    assert default_week(db, 2027, SPORT_CFB) == 5
+    now = datetime(2027, 10, 2, 12, 0, tzinfo=UTC)
+    assert default_week(db, 2027, SPORT_CFB, now=now) == 5
 
 
 def _team(sport: str, abbr: str, name: str, conference: str, team_id: int) -> Team:
@@ -97,3 +100,39 @@ def test_nfl_payload_shape_unchanged():
     }
     assert payload["home_name"] == "Kansas City Chiefs"
     assert payload["spread_home"] == -2.5
+
+
+def test_unplayed_game_ids_excludes_finished_games(db):
+    """A finished game must not be re-predicted; that would overwrite the
+    pre-game call and restamp predicted_at after the result was known."""
+    from app.jobs.predict_week import unplayed_game_ids
+
+    game = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    week = game.week
+    assert "2026_01_BUF_KC" in unplayed_game_ids(db, 2026, week, SPORT_NFL)
+
+    game.home_score, game.away_score = 27, 24
+    db.commit()
+    assert "2026_01_BUF_KC" not in unplayed_game_ids(db, 2026, week, SPORT_NFL)
+
+
+def test_unplayed_game_ids_excludes_a_half_scored_row(db):
+    """One score present means the game started; do not predict it."""
+    from app.jobs.predict_week import unplayed_game_ids
+
+    game = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    game.home_score, game.away_score = 27, None
+    db.commit()
+    assert "2026_01_BUF_KC" not in unplayed_game_ids(db, 2026, game.week, SPORT_NFL)
+
+
+def test_default_week_skips_a_stale_week_with_a_permanently_unscored_game(db):
+    """A cancelled week 1 game must not pin default_week to week 1 forever."""
+    wk1 = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    wk1.home_score = None          # never resolved
+    wk1.away_score = None
+    wk1.kickoff_time = datetime(2026, 9, 10, 0, 20, tzinfo=UTC)
+    db.commit()
+
+    now = datetime(2026, 10, 1, tzinfo=UTC)   # weeks later
+    assert default_week(db, 2026, SPORT_NFL, now=now) != 1
