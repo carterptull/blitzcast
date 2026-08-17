@@ -150,6 +150,35 @@ describe("Format Utilities", () => {
       const s = schedule([["2026-09-13T17:00:00Z"], ["2026-09-14T17:00:00Z"]]);
       expect(pickDefaultWeek(s, new Date("2027-01-01T00:00:00Z"))).toBe(2);
     });
+
+    // A realistic NFL week: a Sunday afternoon slate plus Monday Night Football.
+    // 2026-09-15T00:15Z is Mon Sep 14, 8:15 PM ET.
+    const withMnf = () =>
+      schedule([
+        ["2026-09-13T17:00:00Z", "2026-09-15T00:15:00Z"],
+        ["2026-09-20T17:00:00Z", "2026-09-22T00:15:00Z"],
+      ]);
+
+    test("Monday afternoon shows the current week, MNF has not kicked off", () => {
+      // Mon Sep 14, 6:00 PM ET
+      expect(pickDefaultWeek(withMnf(), new Date("2026-09-14T22:00:00Z"))).toBe(1);
+    });
+
+    test("late Monday night still shows the week just played", () => {
+      // Mon Sep 14, 11:30 PM ET, right after MNF ends
+      expect(pickDefaultWeek(withMnf(), new Date("2026-09-15T03:30:00Z"))).toBe(1);
+    });
+
+    test("early Tuesday still shows the finished week", () => {
+      // Tue Sep 15, 7:00 AM ET. This is the case the 6h hold gets wrong:
+      // it rolled over at 2:15 AM and would return 2 here.
+      expect(pickDefaultWeek(withMnf(), new Date("2026-09-15T11:00:00Z"))).toBe(1);
+    });
+
+    test("by Tuesday mid-morning it has rolled to the new week", () => {
+      // Tue Sep 15, 10:00 AM ET
+      expect(pickDefaultWeek(withMnf(), new Date("2026-09-15T14:00:00Z"))).toBe(2);
+    });
   });
 
   describe("pickCfbDefaultWeek", () => {
