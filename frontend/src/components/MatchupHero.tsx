@@ -1,5 +1,5 @@
 import { fmtKickoff, fmtPct } from "@/lib/format";
-import { primaryColor } from "@/lib/teams";
+import { displayAbbr, primaryColor } from "@/lib/teams";
 import type { MatchupDetail, PredictionTeam } from "@/lib/types";
 import TbdBadge from "./TbdBadge";
 import TeamCrest from "./TeamCrest";
@@ -43,7 +43,7 @@ export function TeamColumn({
           {team.name}
         </div>
         <div className="mt-1 font-mono text-xs uppercase tracking-[0.2em] text-chalk-soft">
-          {team.abbr} · {team.record}
+          {cfb ? team.abbr : displayAbbr(team.abbr)} · {team.record}
         </div>
       </div>
       <div className="mt-1">
@@ -83,9 +83,7 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
             <TbdBadge onTurf />
           )}
           <span aria-hidden="true">·</span>
-          <span>
-            {m.venue.name}, {m.venue.city}
-          </span>
+          <span>{m.venue.name ? `${m.venue.name}, ${m.venue.city}` : "Neutral site"}</span>
           {m.is_primetime ? <Badge>Prime time</Badge> : null}
           {m.is_divisional ? <Badge>{cfb ? "Conference game" : "Divisional"}</Badge> : null}
         </div>
@@ -120,8 +118,8 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
                 }}
               />
               <div className="mt-2 flex justify-between font-mono text-[10px] uppercase tracking-[0.2em] text-chalk-soft">
-                <span>{m.away.abbr}</span>
-                <span>{m.home.abbr}</span>
+                <span>{cfb ? m.away.abbr : displayAbbr(m.away.abbr)}</span>
+                <span>{cfb ? m.home.abbr : displayAbbr(m.home.abbr)}</span>
               </div>
             </>
           ) : (

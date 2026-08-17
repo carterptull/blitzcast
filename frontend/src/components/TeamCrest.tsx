@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { logoUrl, NEUTRAL_PRIMARY, TEAMS, textOn } from "@/lib/teams";
+import { displayAbbr, logoUrl, NEUTRAL_PRIMARY, TEAMS, textOn } from "@/lib/teams";
 
 interface Props {
   abbr: string;
@@ -47,7 +47,7 @@ export default function TeamCrest({
           boxShadow: "inset 0 0 0 2px rgba(255,255,255,0.18)",
         }}
       >
-        {abbr}
+        {explicit ? abbr : displayAbbr(abbr)}
       </span>
     );
   }

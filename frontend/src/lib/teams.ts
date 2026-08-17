@@ -61,7 +61,7 @@ export const TEAMS: Record<string, TeamMeta> = {
   JAX: t("JAX", "Jacksonville", "Jaguars", "AFC", "South", "#006778", "#D7A22A", "EverBank Stadium", "Jacksonville", false),
   KC: t("KC", "Kansas City", "Chiefs", "AFC", "West", "#E31837", "#FFB81C", "GEHA Field at Arrowhead Stadium", "Kansas City", false),
   LAC: t("LAC", "Los Angeles", "Chargers", "AFC", "West", "#0080C6", "#FFC20E", "SoFi Stadium", "Inglewood", true),
-  LAR: t("LAR", "Los Angeles", "Rams", "NFC", "West", "#003594", "#FFA300", "SoFi Stadium", "Inglewood", true),
+  LA: t("LA", "Los Angeles", "Rams", "NFC", "West", "#003594", "#FFA300", "SoFi Stadium", "Inglewood", true, "lar"),
   LV: t("LV", "Las Vegas", "Raiders", "AFC", "West", "#101820", "#A5ACAF", "Allegiant Stadium", "Las Vegas", true),
   MIA: t("MIA", "Miami", "Dolphins", "AFC", "East", "#008E97", "#FC4C02", "Hard Rock Stadium", "Miami Gardens", false),
   MIN: t("MIN", "Minnesota", "Vikings", "NFC", "North", "#4F2683", "#FFC62F", "U.S. Bank Stadium", "Minneapolis", true),
@@ -79,6 +79,15 @@ export const TEAMS: Record<string, TeamMeta> = {
 };
 
 export const TEAM_ABBRS = Object.keys(TEAMS);
+
+// Backend/nflverse key the Rams as "LA" (matches game_id and API responses).
+// Display-only: broadcasts show "LAR" alongside the Chargers' "LAC" — this
+// swap never touches lookup keys, routes, or game ids, only rendered text.
+const DISPLAY_ABBR: Record<string, string> = { LA: "LAR" };
+
+export function displayAbbr(abbr: string): string {
+  return DISPLAY_ABBR[abbr] ?? abbr;
+}
 
 export function logoUrl(abbr: string): string {
   const slug = TEAMS[abbr]?.espnSlug ?? abbr.toLowerCase();

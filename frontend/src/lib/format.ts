@@ -1,3 +1,4 @@
+import { displayAbbr } from "./teams";
 import type { MatchupDetail, Schedule } from "./types";
 
 const ET = "America/New_York";
@@ -60,7 +61,7 @@ export function fmtSpread(m: MatchupDetail): string {
   if (!m.odds) return "—";
   const s = m.odds.spread_home;
   if (s === 0) return "PK";
-  return s < 0 ? `${m.home.abbr} ${s}` : `${m.away.abbr} -${s}`;
+  return s < 0 ? `${displayAbbr(m.home.abbr)} ${s}` : `${displayAbbr(m.away.abbr)} -${s}`;
 }
 
 /**

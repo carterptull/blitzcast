@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { fmtKickoffTime, fmtPct } from "@/lib/format";
 import { apiSport, type SportSlug } from "@/lib/sport";
-import { primaryColor } from "@/lib/teams";
+import { displayAbbr, primaryColor } from "@/lib/teams";
 import type { GameSummary, GameTeamRef } from "@/lib/types";
 import TbdBadge from "./TbdBadge";
 import TeamCrest from "./TeamCrest";
@@ -26,7 +26,9 @@ function TeamRow({
         color={cfb ? team.color : undefined}
         label={cfb ? team.name : undefined}
       />
-      <span className="font-display text-xl uppercase leading-none tracking-wide">{team.abbr}</span>
+      <span className="font-display text-xl uppercase leading-none tracking-wide">
+        {cfb ? team.abbr : displayAbbr(team.abbr)}
+      </span>
       {team.rank != null ? (
         <span className="-ml-1.5 font-mono text-[10px] font-semibold tabular-nums text-gold-text">
           #{team.rank}

@@ -1,4 +1,4 @@
-import { primaryColor, textOn } from "@/lib/teams";
+import { displayAbbr, primaryColor, textOn } from "@/lib/teams";
 import type { Factor, MatchupDetail } from "@/lib/types";
 
 /**
@@ -25,7 +25,7 @@ export default function FactorList({ matchup }: { matchup: MatchupDetail }) {
               style={{ background: color, color: textOn(color) }}
               title={`Favors ${team.name}`}
             >
-              {team.abbr}
+              {m.sport === "CFB" ? team.abbr : displayAbbr(team.abbr)}
             </span>
             <div className="min-w-0">
               <div className="truncate text-sm" title={factor.label}>

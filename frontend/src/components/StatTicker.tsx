@@ -1,4 +1,5 @@
 import { fmtKickoff, fmtMoneyline, fmtSpread } from "@/lib/format";
+import { displayAbbr } from "@/lib/teams";
 import type { MatchupDetail } from "@/lib/types";
 
 function Cell({ label, value }: { label: string; value: string }) {
@@ -28,12 +29,12 @@ export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
     [
       "Moneyline",
       m.odds
-        ? `${m.away.abbr} ${fmtMoneyline(m.odds.moneyline_away)} / ${m.home.abbr} ${fmtMoneyline(m.odds.moneyline_home)}`
+        ? `${displayAbbr(m.away.abbr)} ${fmtMoneyline(m.odds.moneyline_away)} / ${displayAbbr(m.home.abbr)} ${fmtMoneyline(m.odds.moneyline_home)}`
         : "—",
     ],
     ["Total", m.odds ? `O/U ${m.odds.total}` : "—"],
     ["Weather", weatherValue],
-    ["Venue", `${m.venue.name} · ${m.venue.city}`],
+    ["Venue", m.venue.name ? `${m.venue.name} · ${m.venue.city}` : "Neutral site"],
     ["Kickoff", m.kickoff !== null ? fmtKickoff(m.kickoff) : "TBD"],
   ];
 

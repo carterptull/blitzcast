@@ -233,7 +233,7 @@ const WEEK1: Week1Spec[] = [
   },
   {
     away: "PHI",
-    home: "LAR",
+    home: "LA",
     kickoff: SUN_LATE,
     homeProb: 0.49,
     odds: { spread_home: 1, moneyline_home: 100, moneyline_away: -120, total: 48.5 },

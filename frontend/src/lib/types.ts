@@ -62,9 +62,10 @@ export interface PredictionTeam {
 }
 
 export interface Venue {
-  name: string;
-  city: string;
-  is_dome: boolean;
+  // Null for neutral-site games where nflverse doesn't report a venue.
+  name: string | null;
+  city: string | null;
+  is_dome: boolean | null;
 }
 
 export interface Odds {

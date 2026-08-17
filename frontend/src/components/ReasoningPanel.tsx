@@ -1,4 +1,5 @@
 import { fmtDate } from "@/lib/format";
+import { displayAbbr } from "@/lib/teams";
 import type { MatchupDetail } from "@/lib/types";
 import FactorList from "./FactorList";
 
@@ -44,7 +45,7 @@ export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) 
       {m.factors.length > 0 ? (
         <div className="mt-8">
           <h3 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-            Why the model leans {favored.abbr}
+            Why the model leans {m.sport === "CFB" ? favored.abbr : displayAbbr(favored.abbr)}
           </h3>
           <div className="mt-4">
             <FactorList matchup={m} />
