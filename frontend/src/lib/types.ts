@@ -36,6 +36,9 @@ export interface GameSummary {
   /** Frontend extension: compact win-prob hint for cards. Optional — the
    *  card degrades to a "prediction ready" state when absent. */
   home_win_prob?: number | null;
+  home_score: number | null;
+  away_score: number | null;
+  prediction_correct: boolean | null;
 }
 
 export interface ScheduleWeek {
@@ -109,4 +112,7 @@ export interface MatchupDetail {
   predicted_at: string | null;
   prediction_status: PredictionStatus;
   sport?: Sport;
+  home_score: number | null;
+  away_score: number | null;
+  prediction_correct: boolean | null;
 }
