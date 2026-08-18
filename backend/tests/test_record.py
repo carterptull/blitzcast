@@ -104,6 +104,37 @@ def test_record_excludes_games_without_any_market_data_from_both(client, db):
     assert body["market_correct"] == 0
 
 
+def test_record_excludes_pickem_market_lines_from_both_counts(client, db):
+    """A pick'em market line (exact 0.5, no favorite) must be excluded from
+    the record entirely -- not scored as a market loss -- even though the
+    model's own prediction on the same game is gradeable."""
+    kc = db.scalar(select(Team).where(Team.abbr == "KC"))
+    buf = db.scalar(select(Team).where(Team.abbr == "BUF"))
+    game_id = "2025_95_BUF_KC"
+    db.add(
+        Game(
+            game_id=game_id, season=2025, week=95,
+            game_date=date(2025, 12, 1),
+            kickoff_time=datetime(2025, 12, 1, 18, 0, tzinfo=UTC),
+            home_team_id=kc.team_id, away_team_id=buf.team_id,
+            stadium_id=kc.stadium_id, status="final",
+            home_score=24, away_score=17,
+            home_moneyline=-110, away_moneyline=-110,  # de-vigs to exactly 0.5
+        )
+    )
+    db.add(
+        Prediction(
+            game_id=game_id, model_version="1.0.0", home_win_prob=0.65,
+            predicted_at=datetime(2025, 11, 1, tzinfo=UTC),
+        )
+    )
+    db.commit()
+    body = client.get("/api/record?sport=NFL&season=2025").json()
+    assert body["total"] == 0
+    assert body["correct"] == 0
+    assert body["market_correct"] == 0
+
+
 def test_record_prefers_live_odds_over_game_level_lines(client, db):
     """A live Odds row must be used even when the Game columns are empty."""
     kc = db.scalar(select(Team).where(Team.abbr == "KC"))
