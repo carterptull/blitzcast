@@ -35,6 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title,
       description,
       openGraph: { title: `${title} · Blitzcast`, description, type: "website" },
+      twitter: { card: "summary_large_image", title: `${title} · Blitzcast`, description },
     };
   } catch {
     return { title: "Matchup" };
