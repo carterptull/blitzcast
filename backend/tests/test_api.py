@@ -1,5 +1,9 @@
 """API contract tests against a seeded SQLite database."""
 
+import pytest
+
+from ml.features import market_home_prob
+
 
 def test_health(client):
     response = client.get("/health")
@@ -99,6 +103,32 @@ def test_prediction_detail_exposes_scores_and_verdict(client):
     assert "prediction_correct" in body
 
 
+def test_game_summary_exposes_market_home_prob(client):
+    """market_home_prob is populated from the Game's own market columns
+    (no live Odds row seeded here) using the same de-vig arithmetic as
+    ml.features.market_home_prob -- not a duplicated implementation."""
+    body = client.get("/api/games?week=1&season=2026").json()
+    game = next(g for g in body if g["game_id"] == "2026_01_BUF_KC")
+    expected = market_home_prob(-130, 110, 2.5)
+    assert game["market_home_prob"] == pytest.approx(expected)
+
+
+def test_schedule_exposes_market_home_prob(client):
+    body = client.get("/api/schedule?season=2026").json()
+    game = next(
+        g for g in body["weeks"][0]["games"] if g["game_id"] == "2026_01_BUF_KC"
+    )
+    expected = market_home_prob(-130, 110, 2.5)
+    assert game["market_home_prob"] == pytest.approx(expected)
+
+
+def test_game_summary_market_home_prob_null_without_market_data(client):
+    """cfb_401800001 has no spread/moneyline columns and no Odds row."""
+    body = client.get("/api/games?week=1&season=2026&sport=cfb").json()
+    game = next(g for g in body if g["game_id"] == "cfb_401800001")
+    assert game["market_home_prob"] is None
+
+
 def test_games_filter_final_returns_only_finished(client):
     body = client.get("/api/games?week=1&season=2026&status=final").json()
     assert all(g["home_score"] is not None for g in body)
@@ -141,6 +171,12 @@ def test_mock_mode(client, monkeypatch):
         assert detail["prediction_status"] == "ready"
         assert detail["narrative"] is not None
         assert client.get("/api/predictions/unknown").status_code == 404
+        games = client.get("/api/games?week=1&season=2026").json()
+        buf_kc = next(g for g in games if g["game_id"] == "2026_01_BUF_KC")
+        expected = market_home_prob(-140, 120, 2.5)
+        assert buf_kc["market_home_prob"] == pytest.approx(expected)
+        sf_la = next(g for g in games if g["game_id"] == "2026_01_SF_LA")
+        assert sf_la["market_home_prob"] is not None  # has odds, no prediction yet
     finally:
         monkeypatch.setattr(get_settings(), "blitzcast_mock", False)
 

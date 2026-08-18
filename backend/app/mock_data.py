@@ -12,6 +12,7 @@ from app.schemas import (
     GameTeam,
     OddsOut,
     PredictionOut,
+    RecordOut,
     ScheduleOut,
     TeamDetail,
     TeamOut,
@@ -21,6 +22,7 @@ from app.schemas import (
 )
 from app.services.predictions import prediction_verdict
 from data_pipeline.team_names import logo_url, nickname
+from ml.features import market_home_prob
 
 SEEDS_DIR = Path(__file__).resolve().parent.parent / "data_pipeline" / "seeds"
 
@@ -271,6 +273,7 @@ def _games_for(sport: str) -> list[dict]:
 def _summary(g: dict, sport: str) -> GameSummary:
     home_score = g.get("home_score")
     away_score = g.get("away_score")
+    odds = g.get("odds") or {}
     return GameSummary(
         game_id=g["game_id"],
         sport=sport,
@@ -281,6 +284,9 @@ def _summary(g: dict, sport: str) -> GameSummary:
         status="scheduled",
         has_prediction=g["home_win_prob"] is not None,
         home_win_prob=g["home_win_prob"],
+        market_home_prob=market_home_prob(
+            odds.get("moneyline_home"), odds.get("moneyline_away"), odds.get("spread_home")
+        ),
         home_score=home_score,
         away_score=away_score,
         prediction_correct=prediction_verdict(g["home_win_prob"], home_score, away_score),
@@ -340,6 +346,37 @@ def _team_detail(abbr: str, sport: str, win_prob: float | None) -> TeamDetail:
         record="0-0",
         logo_url=logo_url(abbr),
         win_prob=win_prob,
+    )
+
+
+def get_record(season: int, sport: str | None = None) -> RecordOut:
+    if season != MOCK_SEASON:
+        return RecordOut(
+            sport=sport, season=season, correct=0, total=0, market_correct=0, sufficient=False
+        )
+    sports = [sport] if sport else [SPORT_NFL, SPORT_CFB]
+    correct = total = market_correct = 0
+    for s in sports:
+        for g in _games_for(s):
+            home_score, away_score = g.get("home_score"), g.get("away_score")
+            verdict = prediction_verdict(g["home_win_prob"], home_score, away_score)
+            if verdict is None:
+                continue
+            odds = g.get("odds") or {}
+            market_prob = market_home_prob(
+                odds.get("moneyline_home"), odds.get("moneyline_away"), odds.get("spread_home")
+            )
+            if market_prob is None:
+                continue
+            market_verdict = prediction_verdict(market_prob, home_score, away_score)
+            if market_verdict is None:
+                continue
+            total += 1
+            correct += verdict
+            market_correct += market_verdict
+    return RecordOut(
+        sport=sport, season=season, correct=correct, total=total,
+        market_correct=market_correct, sufficient=total >= 10,
     )
 
 

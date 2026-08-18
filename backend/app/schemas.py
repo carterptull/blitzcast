@@ -37,6 +37,7 @@ class GameSummary(BaseModel):
     status: str
     has_prediction: bool
     home_win_prob: float | None = None
+    market_home_prob: float | None = None
     home_score: int | None = None
     away_score: int | None = None
     prediction_correct: bool | None = None
@@ -88,6 +89,15 @@ class FactorOut(BaseModel):
     label: str
     value: float
     direction: str
+
+
+class RecordOut(BaseModel):
+    sport: str | None
+    season: int
+    correct: int
+    total: int
+    market_correct: int
+    sufficient: bool
 
 
 class PredictionOut(BaseModel):
