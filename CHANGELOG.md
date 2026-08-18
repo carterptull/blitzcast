@@ -84,6 +84,14 @@ tracked separately, as before.
   blank, so `kickoff_time` is now written `NULL` for any (season, week)
   where every game shares a single non-null gametime. CFB already handled
   this correctly via CFBD's explicit TBD flag.
+- **A pick'em market line was being scored as a market loss instead of
+  excluded.** `/api/record` skips a graded game when the model's own
+  probability is exactly 0.5 (no favorite), but the market side of that
+  same check evaluated `bool(None)` to `False` and counted the game as a
+  market miss rather than skipping it too, biasing the record in the
+  model's favor. Affects roughly 22 finished games in the current
+  historical data (symmetric moneylines or a zero spread). Fixed in both
+  the live and mock-mode implementations, with regression tests on each.
 - **Spread sign was inverted for live odds.** The Odds API quotes betting
   convention (negative = home favored) while `games.spread_line` follows
   nflverse (positive = home favored). Both were written to the same field

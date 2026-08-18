@@ -141,7 +141,7 @@ blitzcast/
 │   │                    (per-sport artifacts: ml/artifacts/, ml/artifacts/cfb/)
 │   ├── data_pipeline/   seeds + nflverse/CFBD/odds/weather/injury loaders
 │   │                    (NFL and *_cfb.py CFB counterparts)
-│   ├── tests/           pytest suite (143 tests)
+│   ├── tests/           pytest suite (148 tests)
 │   └── README.md        every backend command
 ├── docker/              docker-compose.yml (Postgres 16)
 ├── .github/workflows/   CI: ruff + pytest, lint + build
@@ -154,7 +154,7 @@ blitzcast/
 ## Testing
 
 ```powershell
-cd backend  && .venv\Scripts\python -m pytest     # 143 tests
+cd backend  && .venv\Scripts\python -m pytest     # 148 tests
 cd frontend && npm test                           # 114 tests
 cd frontend && npm run lint && npm run build
 ```
@@ -175,12 +175,12 @@ CI runs both suites on every push/PR.
 - **`--gold-turf` fails AA contrast** (about 3.27:1) against the turf
   gradient's lighter stop. Confirmed by two independent reviews; a
   brand-token decision to leave as-is for now, not a feature defect.
-- **No automated regression test on the pick'em / exact-0.5 market
-  exclusion** in `/api/record` specifically, despite it being a real,
-  recently-fixed bug (a pick'em market line was being scored as a market
-  loss instead of excluded), affecting roughly 22 games in the current
-  historical data. A future change to the verdict logic could regress
-  this silently; worth a follow-up test.
+- ~~No automated regression test on the pick'em / exact-0.5 market
+  exclusion~~ Resolved: `test_record_excludes_pickem_market_lines_from_both_counts`
+  (backend) and `test_get_record_excludes_pickem_market_lines_from_both_counts`
+  (mock mode) now guard the real bug this was tracking (a pick'em market line
+  was being scored as a market loss instead of excluded, affecting roughly
+  22 games in the current historical data).
 
 ## License
 
