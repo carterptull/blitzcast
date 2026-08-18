@@ -113,6 +113,65 @@ a cached row instead of a live call. **Alternative:** fetch fresh odds per match
 view: simple to reason about, but ties API budget directly to traffic and would blow through
 500 requests/month almost immediately; rejected.
 
+## Completion keyed on scores, never on `Game.status`
+
+Every place that needs to know whether a game is over (the `?status=` filter, the verdict
+badge, the season record) checks `home_score is not None and away_score is not None`, never the
+`Game.status` column. **Why:** `status` is a derived, unindexed column that NFL's own loader has
+set to final on the home score alone in the past; a filter or a grading query built on top of it
+would inherit that bug silently. The two score columns are the actual source of truth written by
+the data pipeline, and checking them directly can't drift out of sync with itself.
+**Alternative:** trust and maintain `Game.status` as the single flag: fewer columns to check per
+call site, but re-introduces exactly the class of bug (a home-score-only final check) this feature
+was built to leave behind; rejected.
+
+## Backfilled predictions from walk-forward retraining, not the shipped model
+
+`app/jobs/backfill_predictions.py` reconstructs 2023-2025 predictions with a model retrained per
+holdout season that has never seen that season, mirroring `ml/backtest.py`, rather than by simply
+running the shipped `1.0.0` artifact over historical games. **Why:** the shipped model trained on
+2023-2025, so scoring it against those same seasons would be in-sample and read as a far better
+season record than the model has ever actually produced on unseen games. Rows are stamped with a
+distinct `backtest-*` model version specifically so they can never leak into `/api/record` or the
+slate's live probability. **Alternative:** run the shipped model over history for speed and
+simplicity: much less code, but the resulting "season record" would be a quiet lie about how the
+model performs on games it hasn't trained on; rejected.
+
+## No mid-season retrain for this release
+
+The model is not retrained partway through the 2026 season even though a finished-games feature
+now exists to grade it. **Why:** Elo and the rolling-form features already adapt within a season
+without retraining the model itself, and widening `TRAIN_SEASONS` mid-season would need its own
+validated methodology (what counts as calibration data, how to avoid leaking the very games being
+graded) before it's safe to ship. `assert_temporally_disjoint` in `ml/train.py` was added now so
+that whenever that methodology exists, a training/calibration window overlap fails loudly instead
+of quietly leaking. **Alternative:** retrain on a rolling window as the season progresses: would
+keep the model fresher, but without a validated split it risks training on games close enough to
+the calibration window to leak; rejected for this release.
+
+## Record always paired with the market baseline, never shown alone
+
+`/api/record` and `RecordBanner` never surface the model's accuracy without the market's accuracy
+over the identical graded sample, and `RecordBanner` explicitly documents this as a rule in its
+own comment. **Why:** a bare "65% correct" reads as a claim of skill it can't back up alone; the
+whole point of comparing to Vegas throughout this project (see the walk-forward backtest decision
+above) is that a number is only meaningful next to a real baseline, and the live in-season record
+deserves the same standard as the backtest report does. **Alternative:** show the model's number
+by itself and let a reader visit the backtest report for context: technically available, but
+defeats the purpose of putting a record on the page at all if the one number shown is the
+misleading one; rejected.
+
+## No season selector for this release
+
+The slate always renders the current season (2026); the 2023-2025 backfilled history is reachable
+only via a direct matchup URL by game id, not through any slate navigation control. **Why:** a
+season selector is a real, separate piece of UI and routing work, and this release's actual goal
+was grading the live model against the market, not building a historical archive browser.
+Reconstructed predictions are already labeled as such wherever they're reachable, so nothing about
+leaving them nav-inaccessible is dishonest, it's just not built yet. **Alternative:** ship a season
+dropdown now: would make the backfilled data browsable, but expands this feature's scope well
+beyond the finished-games work it was meant to deliver; deferred, not rejected outright.
+
 ## Frontend and backend as separate services, not a monolith
 
 Next.js (`frontend/`) and FastAPI (`backend/`) are two processes communicating over an internal

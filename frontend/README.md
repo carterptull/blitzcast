@@ -18,8 +18,13 @@ over HTTP and owns no model logic of its own.
 | Route | Purpose |
 |---|---|
 | `/` | Redirects to `/nfl` |
-| `/[sport]` | Week slate for `nfl` or `cfb` |
-| `/[sport]/matchup/[gameId]` | Matchup detail: probability, factors, narration |
+| `/[sport]` | Week slate for `nfl` or `cfb`, with a season record banner, status filter, and disagreements panel |
+| `/[sport]/matchup/[gameId]` | Matchup detail: probability, factors, narration, final score and verdict once played |
+| `/how-it-works` | Methodology page: model inputs, the leakage rule, the LLM boundary, the honest Vegas comparison |
+
+`/[sport]` and `/[sport]/matchup/[gameId]` also render `opengraph-image.tsx`
+(and a paired `twitter` card) for social previews, and are covered by the
+root `sitemap.ts`/`robots.ts` (current season only, 1-hour cache).
 
 ## Commands
 
@@ -46,9 +51,22 @@ Copy `.env.example` to `.env.local` and fill in what you need:
 ## Layout
 
 - `src/app/` routes, layout, global styles
-- `src/components/` UI components
+- `src/components/` UI components, including:
+  - `StatusFilter`: all/completed/upcoming chips shared by both slates;
+    filter state lives in the URL (`?status=`) and survives week and
+    conference navigation
+  - `RecordBanner`: season-to-date model accuracy next to the market's
+  - `Disagreements`: the week's largest model-vs-market probability gaps
+  - `GameCard`: final score and "Called it"/"Missed" verdict badge once
+    a game is played
 - `src/lib/` typed API client (`api.ts`), contract types (`types.ts`),
   formatting helpers, and mock fixtures
+
+`Disagreements` is fed a slightly different game set per sport: NFL passes
+it the status-filtered week's games, while CFB passes it the
+status-filtered-but-not-conference-filtered week (so picking a conference
+filter doesn't shrink the disagreements panel). A defensible but
+inconsistent interpretation between the two slates, not a bug.
 
 ## More
 

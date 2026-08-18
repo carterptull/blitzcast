@@ -79,6 +79,21 @@ CFB syncs, bundled by `refresh_week_cfb`.
 the rolling EPA and turnover form features. It runs inside `refresh_week`
 and skips cleanly until the season's first game is final.
 
+`backfill_predictions` reconstructs a season-record's worth of history for
+the "Called it"/"Missed" UI and the `/api/record` endpoint: it walk-forward
+retrains a model per holdout season (2023-2025) that has never seen that
+season, scores it, and writes the result under a distinct
+`backtest-1.0.0` / `backtest-cfb-1.0.0` model version, mirroring
+`ml/backtest.py`. The shipped model artifact is never used for this,
+since it trained on 2023-2025 and its accuracy on them would be in-sample.
+Rows written this way are excluded from `/api/record` and from the slate's
+prediction probability, and are labeled "Reconstructed from a backtest,
+not a live call made before kickoff" on the matchup page. Its own ad-hoc
+verification snippet (used during development, not part of the committed
+report) does not filter CFB to FBS-vs-FBS the way `ml/backtest.py`'s
+report does, so re-running it will read a higher CFB accuracy than the
+report's number unless filtered manually.
+
 First-time bootstrap order per sport: migrate (once) → seed → backfill →
 compute_ratings → train → backtest → predict_week → run API.
 (`compute_ratings` persists Elo snapshots to `team_ratings` for inspection
@@ -95,12 +110,24 @@ migrations.
 - `GET /api/games?week=1&season=2026`
 - `GET /api/predictions/{game_id}` (404 unknown game; `prediction_status:
   "pending"` when a game exists but has no prediction yet)
+- `GET /api/record?sport=NFL|CFB&season=2026`: current-season accuracy
+  (`correct`/`total`) alongside the market's accuracy over the identical
+  graded sample (`market_correct`/`total`). A game is graded only when it
+  has a final score, a non-tie result, a model probability that isn't an
+  exact 0.5 pick'em, and a market probability that clears the same bar;
+  reconstructed (`backtest*`) predictions never count. `sufficient` is
+  `false` below 10 graded games. Omitting `sport` combines both.
 
 `/api/teams`, `/api/schedule`, and `/api/games` take an optional
 `sport=NFL|CFB` query param (case-insensitive, default `NFL`; unknown values
 422). `/api/predictions/{game_id}` needs no sport: game ids are globally
 unique (CFB ids are prefixed `cfb_`) and the response carries `sport`.
 `predict_week` takes `--sport nfl|cfb` (default `nfl`).
+
+`/api/games` and `/api/schedule` also take `status=all|final|upcoming`
+(default `all`), filtering on whether both scores are present, not on the
+`Game.status` column. Unlike `sport`, an unrecognized `status` value falls
+back to `all` silently rather than 422ing.
 
 Interactive docs at `http://localhost:8000/docs`. Set `BLITZCAST_MOCK=1` to
 serve fixture data so the frontend can develop without a database.
@@ -110,6 +137,12 @@ serve fixture data so the frontend can develop without a database.
 - **nflverse** (via `nflreadpy`): schedules incl. 2026, play-by-play EPA,
   injuries, historical closing lines. No key needed. Historical
   `spread_line`/moneylines from nflverse are the *training* market feature.
+  For a week nflverse hasn't scheduled real broadcast times for yet
+  (observed for Week 18 seasons far in advance), it fills every game's
+  `gametime` with one repeated placeholder string rather than leaving it
+  blank; `games_loader.py` detects that pattern and writes `kickoff_time`
+  as `NULL` (shown as TBD) for the whole week instead of a fake confident
+  time. CFB already handled this correctly via CFBD's explicit TBD flag.
 - **The Odds API** (`ODDS_API_KEY`): current 2026 odds only. Free tier is
   500 requests/month; one call returns all games, so run
   `refresh_odds` **at most once per day** (~30 calls/month). Never call it
@@ -130,3 +163,12 @@ rest, injuries incl. QB status, weather, market). Walk-forward backtest
 results live in [`ml/reports/backtest.md`](ml/reports/backtest.md).
 Artifacts in `ml/artifacts/` are gitignored; retrain with `python -m
 ml.train`.
+
+`ml/train.py` asserts the training and calibration windows are temporally
+disjoint (`assert_temporally_disjoint`, raises if the latest training
+kickoff is not strictly before the earliest calibration kickoff) before
+fitting. There's no plan to retrain mid-season today: Elo and the rolling
+form features already adapt within a season without a retrain, and
+widening `TRAIN_SEASONS` mid-season would need its own validated
+methodology first. The guard exists so that whenever that happens, a
+window overlap fails loudly instead of quietly leaking into the model.

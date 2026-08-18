@@ -13,6 +13,51 @@ First public release. Model artifacts are retrained and stamped `1.0.0`
 tracked separately, as before.
 
 ### Added
+- `GET /api/record?sport=NFL|CFB&season=2026`: current-season prediction
+  accuracy graded against the market's accuracy over the identical sample
+  of games, excluding reconstructed/backtest predictions. Reports
+  `sufficient: false` below 10 graded games rather than a number that
+  isn't meaningful yet.
+- `?status=all|final|upcoming` query param on `/api/games` and
+  `/api/schedule`. Unknown values fall back to `all` rather than 422ing,
+  matching the frontend's existing tolerance for unknown filter values.
+- `GameSummary` and `PredictionOut` gained `home_score`, `away_score`,
+  `prediction_correct` (true/false, or `null` when there's nothing to
+  grade: no prediction yet, an unplayed game, a tie, or an exact 0.5
+  pick'em), and `market_home_prob`.
+- `backend/app/jobs/backfill_predictions.py`: walk-forward backtest job
+  that reconstructs historical predictions (2023-2025, both sports) from
+  models trained only on strictly prior seasons, mirroring
+  `ml/backtest.py`. Written under distinct `backtest-1.0.0` /
+  `backtest-cfb-1.0.0` model versions so they're excluded from the live
+  record and can be labeled in the UI as reconstructed. Run with
+  `python -m app.jobs.backfill_predictions --sport nfl|cfb`.
+- `assert_temporally_disjoint` in `ml/train.py`: raises if the training
+  and calibration windows ever overlap, so a future mid-season retrain
+  that widens `TRAIN_SEASONS` can't silently leak.
+- Frontend: finished games show the final score, a winner-emphasized
+  display, and a "Called it"/"Missed" verdict badge (color plus text, not
+  color alone) on the game card and matchup page.
+- `StatusFilter` component (all / completed / upcoming) on both slates;
+  filter state lives in the URL and survives week and conference
+  navigation.
+- `RecordBanner`: model accuracy shown next to the market's at the top of
+  each slate, never the model's number alone; "Not enough games yet"
+  below the 10-game threshold.
+- `Disagreements` component: the week's largest gaps between the model's
+  win probability and the market's, framed as a curiosity worth reading,
+  not a betting signal.
+- `/how-it-works`: a methodology page, linked from the footer, covering
+  the model's inputs, the leakage rule, the LLM boundary, and an honest
+  reading of the Vegas comparison numbers.
+- `opengraph-image.tsx` for matchup pages: team names plus win probability
+  (or final score and verdict) on Blitzcast's turf branding, paired with
+  a `twitter` summary card.
+- `sitemap.ts` / `robots.ts`: bounded to the current season, cached via
+  `unstable_cache` at a 1-hour revalidate so repeated crawler hits can't
+  force a schedule fetch on every request.
+- Matchup pages backed by a `backfill_predictions` row are labeled
+  "Reconstructed from a backtest, not a live call made before kickoff."
 - `LICENSE`: MIT.
 - `frontend/src/app/error.tsx`: route-level error boundary. Anything the
   API client does not turn into a `NotFoundError` or `ApiUnreachableError`
@@ -26,6 +71,19 @@ tracked separately, as before.
   undocumented. Without the former every CFB job silently skips.
 
 ### Fixed
+- `predict_week` no longer re-predicts a game once both scores are in, and
+  the weekly prediction job's own `default_week` no longer sticks on a week
+  with a permanently-unscored game (a 36-hour post-kickoff hold before that
+  week is treated as done, so a cancellation can't pin the prediction job
+  on a stale week forever). Unrelated to the slate UI's own week rollover,
+  which stays a separate 12-hour hold.
+- NFL games in a week nflverse hasn't scheduled real broadcast times for
+  yet (observed for Week 18 far in advance) were getting a fake confident
+  kickoff time instead of TBD: nflverse fills every game in such a week
+  with one repeated placeholder `gametime` string rather than leaving it
+  blank, so `kickoff_time` is now written `NULL` for any (season, week)
+  where every game shares a single non-null gametime. CFB already handled
+  this correctly via CFBD's explicit TBD flag.
 - **Spread sign was inverted for live odds.** The Odds API quotes betting
   convention (negative = home favored) while `games.spread_line` follows
   nflverse (positive = home favored). Both were written to the same field

@@ -33,6 +33,23 @@ Technical decision log: [DECISIONS.md](./DECISIONS.md) · Release history:
 5. **Frontend** (`frontend/`): Next.js + Tailwind, with a week slate,
    turf-hero matchup pages, light/dark themes, mobile-first.
 
+## Finished games and the season record
+
+Once a game is final, its card and matchup page show the actual score and
+a "Called it" / "Missed" verdict badge for the model's pick. Each slate
+also opens with a season-to-date record banner: model accuracy shown next
+to the market's accuracy over the same graded games, never the model's
+number by itself, and it stays hidden behind a "not enough games yet"
+message below 10 graded games (`GET /api/record`). A separate `/how-it-works`
+page, linked from the footer, walks through the model's inputs, the
+leakage rule, the LLM boundary, and this same honest comparison in more
+detail.
+
+Both slates also support filtering by game status (all / completed /
+upcoming) via `?status=`, and surface the week's largest gaps between the
+model's win probability and the market's as a curiosity, not a betting
+signal.
+
 ## Backtest results
 
 Walk-forward by season (train strictly on prior seasons), compared to
@@ -116,14 +133,15 @@ mode (`NEXT_PUBLIC_USE_MOCK=1`) plus the backend's `BLITZCAST_MOCK=1`.
 ```
 blitzcast/
 ├── frontend/            Next.js 16 + TypeScript + Tailwind v4 (App Router)
-│                        routes: /nfl, /cfb, /[sport]/matchup/[gameId]
+│                        routes: /nfl, /cfb, /[sport]/matchup/[gameId],
+│                        /how-it-works
 ├── backend/
 │   ├── app/             FastAPI: routers, schemas, services, jobs, config
 │   ├── ml/              Elo, features, train, backtest, SHAP explainability
 │   │                    (per-sport artifacts: ml/artifacts/, ml/artifacts/cfb/)
 │   ├── data_pipeline/   seeds + nflverse/CFBD/odds/weather/injury loaders
 │   │                    (NFL and *_cfb.py CFB counterparts)
-│   ├── tests/           pytest suite (98 tests)
+│   ├── tests/           pytest suite (143 tests)
 │   └── README.md        every backend command
 ├── docker/              docker-compose.yml (Postgres 16)
 ├── .github/workflows/   CI: ruff + pytest, lint + build
@@ -136,12 +154,33 @@ blitzcast/
 ## Testing
 
 ```powershell
-cd backend  && .venv\Scripts\python -m pytest     # 98 tests
-cd frontend && npm test                           # 52 tests
+cd backend  && .venv\Scripts\python -m pytest     # 143 tests
+cd frontend && npm test                           # 114 tests
 cd frontend && npm run lint && npm run build
 ```
 
 CI runs both suites on every push/PR.
+
+## Known limitations
+
+- **CFB postseason is never loaded.** `cfbd.load_games` hardcodes
+  `seasonType="regular"`, so bowl and playoff results never arrive.
+  Pre-existing, not addressed by the finished-games work.
+- **No live/in-progress game state.** A game is only ever `scheduled` or
+  `final`; there's no in-progress score.
+- **No season selector.** The slate always shows the current season
+  (2026). Historical, backfilled data (2023-2025) is reachable only via a
+  direct matchup URL by game id, not through slate navigation. Deliberate
+  scope decision, not a bug.
+- **`--gold-turf` fails AA contrast** (about 3.27:1) against the turf
+  gradient's lighter stop. Confirmed by two independent reviews; a
+  brand-token decision to leave as-is for now, not a feature defect.
+- **No automated regression test on the pick'em / exact-0.5 market
+  exclusion** in `/api/record` specifically, despite it being a real,
+  recently-fixed bug (a pick'em market line was being scored as a market
+  loss instead of excluded), affecting roughly 22 games in the current
+  historical data. A future change to the verdict logic could regress
+  this silently; worth a follow-up test.
 
 ## License
 
