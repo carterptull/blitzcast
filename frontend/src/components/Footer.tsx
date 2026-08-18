@@ -1,3 +1,4 @@
+import Link from "next/link";
 import pkg from "../../package.json";
 
 const beerUrl = process.env.NEXT_PUBLIC_BUYMEACOFFEE_URL;
@@ -6,7 +7,15 @@ export default function Footer() {
   return (
     <footer className="mt-16 border-t border-edge">
       <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-8 sm:grid sm:grid-cols-3 sm:items-center sm:px-6">
-        <p className="text-sm text-ink-soft sm:justify-self-start">© 2026 Paymon Software</p>
+        <p className="flex flex-wrap items-center justify-center gap-x-2 text-sm text-ink-soft sm:justify-self-start">
+          <span>© 2026 Paymon Software</span>
+          <span aria-hidden="true" className="text-edge">
+            ·
+          </span>
+          <Link href="/how-it-works" className="underline decoration-edge underline-offset-2 hover:text-ink">
+            How It Works
+          </Link>
+        </p>
         <div className="sm:justify-self-center">
           {beerUrl ? (
             <a
