@@ -1,14 +1,39 @@
 # Security Policy
 
-Blitzcast is pre-1.0 and runs locally only — there's no public deployment or domain yet, so
-this is a placeholder policy rather than the result of a full security review. A more thorough
-SECURITY.md is planned once the app is deployed publicly.
+Blitzcast is a personal portfolio project maintained by Paymon Software.
+Response times are best effort, not contractual.
+
+## Supported versions
+
+| Version | Supported |
+|---|---|
+| 1.0.0 (latest release) | Yes |
+| Older pre-1.0 tags | No |
+
+Only the latest release and the current `main` receive security fixes.
 
 ## Reporting a vulnerability
 
-Please **do not** open a public GitHub issue for a security vulnerability. Instead, use
-GitHub's private vulnerability reporting for this repository:
+Please **do not** open a public GitHub issue for a security vulnerability.
+Use GitHub's private vulnerability reporting on this repository:
 [github.com/carterptull/blitzcast/security/advisories/new](https://github.com/carterptull/blitzcast/security/advisories/new)
-(adjust the org/repo path if it differs from `carterptull/blitzcast`).
 
-Only the latest commit on `main` is supported — there are no maintained release branches yet.
+Helpful details: affected component (frontend, API, data pipeline, or
+deployment), steps to reproduce, and the impact you believe it has.
+
+## What to expect
+
+- An acknowledgement once the report has been read, typically within a
+  few days.
+- A follow-up with an assessment and, if the issue is valid, a fix or a
+  mitigation plan.
+- Coordinated disclosure: please give the fix a chance to ship before
+  publishing details. Credit in the advisory is offered if you want it.
+- No bug bounty. There is no budget for one on a project like this.
+
+## Scope notes
+
+The app serves read-only sports predictions and stores no user accounts
+or personal data. Reports about missing hardening on third-party
+services, or about rate limits on free-tier data providers, are welcome
+but are likely to be triaged as low priority.

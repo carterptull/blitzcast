@@ -1,5 +1,4 @@
-// TypeScript mirror of the backend API contract (IMPLEMENTATION_PLAN.md §3.2,
-// CFB_IMPLEMENTATION_PLAN.md §3.1).
+// TypeScript mirror of the backend API contract.
 
 export type Sport = "NFL" | "CFB";
 
@@ -37,6 +36,23 @@ export interface GameSummary {
   /** Frontend extension: compact win-prob hint for cards. Optional — the
    *  card degrades to a "prediction ready" state when absent. */
   home_win_prob?: number | null;
+  /** De-vigged market win probability for the home team; null when no
+   *  market data is available for this game. */
+  market_home_prob: number | null;
+  home_score: number | null;
+  away_score: number | null;
+  prediction_correct: boolean | null;
+}
+
+// Mirrors the backend's RecordOut. `sport` is null when a record spans both
+// sports (not currently exposed by the UI, but the field is nullable there).
+export interface Record {
+  sport: string | null;
+  season: number;
+  correct: number;
+  total: number;
+  market_correct: number;
+  sufficient: boolean;
 }
 
 export interface ScheduleWeek {
@@ -62,23 +78,26 @@ export interface PredictionTeam {
 }
 
 export interface Venue {
-  name: string;
-  city: string;
-  is_dome: boolean;
+  // Null for neutral-site games where nflverse doesn't report a venue.
+  name: string | null;
+  city: string | null;
+  is_dome: boolean | null;
 }
 
+// Any single market can be missing: nflverse often carries a spread with no
+// moneyline, so the container is present while members are null.
 export interface Odds {
-  spread_home: number;
-  moneyline_home: number;
-  moneyline_away: number;
-  total: number;
+  spread_home: number | null;
+  moneyline_home: number | null;
+  moneyline_away: number | null;
+  total: number | null;
 }
 
 export interface Weather {
-  temp_f: number;
-  wind_mph: number;
-  precipitation: boolean;
-  conditions: string;
+  temp_f: number | null;
+  wind_mph: number | null;
+  precipitation: boolean | null;
+  conditions: string | null;
 }
 
 export interface Factor {
@@ -107,4 +126,7 @@ export interface MatchupDetail {
   predicted_at: string | null;
   prediction_status: PredictionStatus;
   sport?: Sport;
+  home_score: number | null;
+  away_score: number | null;
+  prediction_correct: boolean | null;
 }

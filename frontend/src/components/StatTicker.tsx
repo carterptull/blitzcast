@@ -1,4 +1,5 @@
 import { fmtKickoff, fmtMoneyline, fmtSpread } from "@/lib/format";
+import { displayAbbr } from "@/lib/teams";
 import type { MatchupDetail } from "@/lib/types";
 
 function Cell({ label, value }: { label: string; value: string }) {
@@ -17,25 +18,51 @@ function Cell({ label, value }: { label: string; value: string }) {
 export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
   const m = matchup;
 
+  const cfb = m.sport === "CFB";
+  const abbr = (a: string) => (cfb ? a : displayAbbr(a));
+
+  // Each market can be null on its own, so build from the parts that exist.
+  const weatherParts = m.weather
+    ? [
+        m.weather.temp_f != null ? `${m.weather.temp_f}°F` : null,
+        m.weather.wind_mph != null ? `${m.weather.wind_mph} mph` : null,
+        m.weather.conditions,
+      ].filter(Boolean)
+    : [];
   const weatherValue = m.venue.is_dome
     ? "Dome · controlled"
-    : m.weather
-      ? `${m.weather.temp_f}°F · ${m.weather.wind_mph} mph · ${m.weather.conditions}`
+    : weatherParts.length > 0
+      ? weatherParts.join(" · ")
       : "—";
+
+  const ml = m.odds
+    ? [
+        m.odds.moneyline_away != null
+          ? `${abbr(m.away.abbr)} ${fmtMoneyline(m.odds.moneyline_away)}`
+          : null,
+        m.odds.moneyline_home != null
+          ? `${abbr(m.home.abbr)} ${fmtMoneyline(m.odds.moneyline_home)}`
+          : null,
+      ].filter(Boolean)
+    : [];
+
+  const final = m.home_score != null && m.away_score != null;
 
   const cells: [string, string][] = [
     ["Spread", fmtSpread(m)],
-    [
-      "Moneyline",
-      m.odds
-        ? `${m.away.abbr} ${fmtMoneyline(m.odds.moneyline_away)} / ${m.home.abbr} ${fmtMoneyline(m.odds.moneyline_home)}`
-        : "—",
-    ],
-    ["Total", m.odds ? `O/U ${m.odds.total}` : "—"],
+    ["Moneyline", ml.length > 0 ? ml.join(" / ") : "—"],
+    ["Total", m.odds?.total != null ? `O/U ${m.odds.total}` : "—"],
     ["Weather", weatherValue],
-    ["Venue", `${m.venue.name} · ${m.venue.city}`],
+    ["Venue", m.venue.name ? `${m.venue.name} · ${m.venue.city}` : "Neutral site"],
     ["Kickoff", m.kickoff !== null ? fmtKickoff(m.kickoff) : "TBD"],
   ];
+
+  if (final) {
+    cells.push([
+      "Final",
+      `${abbr(m.away.abbr)} ${m.away_score} / ${abbr(m.home.abbr)} ${m.home_score}`,
+    ]);
+  }
 
   return (
     <section aria-label="Game stats" className="overflow-hidden rounded-xl border border-edge bg-surface">

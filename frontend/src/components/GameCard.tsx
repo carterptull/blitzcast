@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { fmtKickoffTime, fmtPct } from "@/lib/format";
 import { apiSport, type SportSlug } from "@/lib/sport";
-import { primaryColor } from "@/lib/teams";
+import { displayAbbr, primaryColor } from "@/lib/teams";
 import type { GameSummary, GameTeamRef } from "@/lib/types";
 import TbdBadge from "./TbdBadge";
 import TeamCrest from "./TeamCrest";
@@ -11,11 +11,13 @@ function TeamRow({
   cfb,
   prob,
   favored,
+  score,
 }: {
   team: GameTeamRef;
   cfb: boolean;
   prob: number | null;
   favored: boolean;
+  score?: number | null;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -26,14 +28,24 @@ function TeamRow({
         color={cfb ? team.color : undefined}
         label={cfb ? team.name : undefined}
       />
-      <span className="font-display text-xl uppercase leading-none tracking-wide">{team.abbr}</span>
+      <span className="font-display text-xl uppercase leading-none tracking-wide">
+        {cfb ? team.abbr : displayAbbr(team.abbr)}
+      </span>
       {team.rank != null ? (
         <span className="-ml-1.5 font-mono text-[10px] font-semibold tabular-nums text-gold-text">
           #{team.rank}
         </span>
       ) : null}
       <span className="truncate text-sm text-ink-soft">{team.name}</span>
-      {prob !== null ? (
+      {score != null ? (
+        <span
+          className={`ml-auto font-mono text-lg font-semibold tabular-nums ${
+            favored ? "text-gold-text" : "text-ink-soft"
+          }`}
+        >
+          {score}
+        </span>
+      ) : prob !== null ? (
         <span
           className={`ml-auto font-mono text-sm font-semibold tabular-nums ${
             favored ? "text-gold-text" : "text-ink-soft"
@@ -59,6 +71,14 @@ export default function GameCard({
   const awayProb = homeProb === null ? null : 1 - homeProb;
   const awayColor = primaryColor(s, game.away.abbr, game.away.color);
   const homeColor = primaryColor(s, game.home.abbr, game.home.color);
+  const final = game.home_score != null && game.away_score != null;
+  const verdict = game.prediction_correct;
+  const awayFavored = final
+    ? game.away_score! > game.home_score!
+    : awayProb !== null && awayProb > 0.5;
+  const homeFavored = final
+    ? game.home_score! > game.away_score!
+    : homeProb !== null && homeProb > 0.5;
 
   return (
     <Link
@@ -70,18 +90,22 @@ export default function GameCard({
           team={game.away}
           cfb={cfb}
           prob={awayProb}
-          favored={awayProb !== null && awayProb > 0.5}
+          favored={awayFavored}
+          score={final ? game.away_score : null}
         />
         <TeamRow
           team={game.home}
           cfb={cfb}
           prob={homeProb}
-          favored={homeProb !== null && homeProb > 0.5}
+          favored={homeFavored}
+          score={final ? game.home_score : null}
         />
       </div>
 
-      {/* Compact win-prob split, or an intentional pending strip */}
-      {awayProb !== null ? (
+      {/* Compact win-prob split, a settled-game strip, or an intentional pending strip */}
+      {final ? (
+        <div className="mt-3 h-1.5 rounded-full bg-ink-soft/25" aria-hidden="true" />
+      ) : awayProb !== null ? (
         <div
           className="mt-3 flex h-1.5 overflow-hidden rounded-full"
           aria-hidden="true"
@@ -106,7 +130,17 @@ export default function GameCard({
             Prime time
           </span>
         ) : null}
-        {!game.has_prediction ? (
+        {verdict !== null && verdict !== undefined ? (
+          <span
+            className={`ml-auto rounded-sm border px-1.5 py-0.5 text-[9px] tracking-[0.15em] ${
+              verdict
+                ? "border-verdict-hit/50 text-verdict-hit"
+                : "border-verdict-miss/50 text-verdict-miss"
+            }`}
+          >
+            {verdict ? "Called it" : "Missed"}
+          </span>
+        ) : !game.has_prediction && !final ? (
           <span className="ml-auto text-[9px] tracking-[0.15em]">Prediction pending</span>
         ) : (
           <span className="ml-auto text-gold-text opacity-0 transition-opacity group-hover:opacity-100 motion-reduce:transition-none">

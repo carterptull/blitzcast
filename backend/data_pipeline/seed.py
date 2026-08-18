@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
-from app.models import Stadium, Team
+from app.models import SPORT_NFL, Stadium, Team
 
 SEEDS_DIR = Path(__file__).resolve().parent / "seeds"
 
@@ -33,7 +33,10 @@ def load_seeds(db: Session) -> tuple[int, int]:
 
     for row in teams:
         stadium = stadium_by_name[row["stadium"]]
-        existing = db.scalar(select(Team).where(Team.abbr == row["abbr"]))
+        # Scoped by sport: BUF/CIN/HOU/MIA also exist as CFB teams.
+        existing = db.scalar(
+            select(Team).where(Team.abbr == row["abbr"], Team.sport == SPORT_NFL)
+        )
         if existing is None:
             existing = Team(abbr=row["abbr"])
             db.add(existing)

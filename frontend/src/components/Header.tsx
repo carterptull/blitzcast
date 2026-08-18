@@ -34,7 +34,6 @@ export default function Header() {
         </Link>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Sport tab switcher */}
           <nav aria-label="Sport" className="flex rounded-lg border border-edge bg-surface p-0.5">
             {TABS.map((t) => {
               const active = t.slug === sport;

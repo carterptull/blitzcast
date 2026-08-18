@@ -1,5 +1,7 @@
-"""Weekly CFB refresh orchestrator: schedule -> odds -> weather -> polls ->
-prediction batch. Sibling of refresh_week.py with the same soft-fail contract.
+"""Weekly CFB refresh orchestrator: schedule -> odds -> polls -> prediction
+batch. Sibling of refresh_week.py with the same soft-fail contract. No weather
+step: CFB has no stadium coordinates seeded, and a full FBS slate would burn
+the Visual Crossing free tier.
 
 Usage: python -m data_pipeline.refresh_week_cfb [--season 2026] [--skip-predict]
 """
@@ -20,7 +22,6 @@ def main() -> None:
         "cfb schedule sync", ["data_pipeline.refresh_schedule_cfb", "--season", season]
     )
     run_step("cfb odds refresh", ["data_pipeline.refresh_odds", "--sport", "cfb"])
-    run_step("weather refresh", ["data_pipeline.refresh_weather"])
     run_step("cfb polls refresh", ["data_pipeline.refresh_polls_cfb", "--season", season])
 
     if not args.skip_predict:

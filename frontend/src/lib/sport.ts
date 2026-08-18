@@ -1,4 +1,4 @@
-// URL sport segment ↔ API sport value mapping (CFB_IMPLEMENTATION_PLAN.md §5.1).
+// URL sport segment ↔ API sport value mapping.
 
 import type { Sport } from "./types";
 

@@ -118,6 +118,8 @@ interface Week1Spec {
   weather: Weather | null;
   factors: Factor[];
   narrative: string | null;
+  homeScore?: number | null; // null/absent => game not final
+  awayScore?: number | null;
 }
 
 const f = (label: string, value: number, direction: "home" | "away"): Factor => ({
@@ -125,6 +127,39 @@ const f = (label: string, value: number, direction: "home" | "away"): Factor => 
   value,
   direction,
 });
+
+/** Mirrors the backend's prediction_verdict rule: null when there's no
+ *  prediction, the game isn't final, it's a tie, or the pick was a
+ *  toss-up (exactly 0.5); otherwise true iff the favored side won. */
+function verdict(
+  homeProb: number | null,
+  homeScore: number | null | undefined,
+  awayScore: number | null | undefined
+): boolean | null {
+  if (homeProb === null || homeScore == null || awayScore == null) return null;
+  if (homeScore === awayScore) return null;
+  if (homeProb === 0.5) return null;
+  return (homeProb > 0.5) === (homeScore > awayScore);
+}
+
+function moneylineToProb(ml: number): number {
+  return ml < 0 ? -ml / (-ml + 100) : 100 / (ml + 100);
+}
+
+/** Mirrors the backend's market_home_prob (ml/features.py): de-vigged
+ *  moneyline probability, falling back to a spread-based estimate. */
+function marketHomeProb(odds: Odds | null): number | null {
+  if (!odds) return null;
+  if (odds.moneyline_home != null && odds.moneyline_away != null) {
+    const pHome = moneylineToProb(odds.moneyline_home);
+    const pAway = moneylineToProb(odds.moneyline_away);
+    return pHome / (pHome + pAway);
+  }
+  if (odds.spread_home != null) {
+    return 1 / (1 + Math.pow(10, (-odds.spread_home * 25) / 400));
+  }
+  return null;
+}
 
 const WEEK1: Week1Spec[] = [
   {
@@ -134,7 +169,7 @@ const WEEK1: Week1Spec[] = [
     kickoff: THU,
     primetime: true,
     homeProb: 0.63,
-    odds: { spread_home: -4.5, moneyline_home: -190, moneyline_away: 165, total: 51.5 },
+    odds: { spread_home: 4.5, moneyline_home: -190, moneyline_away: 165, total: 51.5 },
     weather: { temp_f: 81, wind_mph: 9, precipitation: false, conditions: "Clear" },
     factors: [
       f("Elo rating edge", 0.12, "home"),
@@ -150,7 +185,7 @@ const WEEK1: Week1Spec[] = [
     kickoff: FRI,
     primetime: true,
     homeProb: 0.47,
-    odds: { spread_home: 1.5, moneyline_home: 110, moneyline_away: -130, total: 55.5 },
+    odds: { spread_home: -1.5, moneyline_home: 110, moneyline_away: -130, total: 55.5 },
     weather: { temp_f: 79, wind_mph: 6, precipitation: false, conditions: "Partly cloudy" },
     factors: [
       f("Offensive PPA, last 5 games", 0.09, "away"),
@@ -165,7 +200,7 @@ const WEEK1: Week1Spec[] = [
     home: "OSU",
     kickoff: SAT_NOON,
     homeProb: 0.55,
-    odds: { spread_home: -2.5, moneyline_home: -135, moneyline_away: 115, total: 52.5 },
+    odds: { spread_home: 2.5, moneyline_home: -135, moneyline_away: 115, total: 52.5 },
     weather: { temp_f: 78, wind_mph: 7, precipitation: false, conditions: "Sunny" },
     factors: [
       f("Elo rating edge", 0.09, "home"),
@@ -176,6 +211,8 @@ const WEEK1: Week1Spec[] = [
     ],
     narrative:
       "Number one against number three, high noon in the Horseshoe, and the model calls it Ohio State at 55 percent! The Buckeyes bring the sharper rating and a hundred and five thousand of their closest friends, with the market laying 2.5 right beside them. Texas counters with the more explosive offense play-for-play, so if the Longhorns cash in an early red-zone trip, this heavyweight bout goes the distance.",
+    homeScore: 31,
+    awayScore: 27,
   },
   {
     id: 401520284,
@@ -184,7 +221,7 @@ const WEEK1: Week1Spec[] = [
     kickoff: SAT_NOON,
     conferenceGame: true,
     homeProb: 0.58,
-    odds: { spread_home: -3, moneyline_home: -155, moneyline_away: 135, total: 47.5 },
+    odds: { spread_home: 3, moneyline_home: -155, moneyline_away: 135, total: 47.5 },
     weather: { temp_f: 84, wind_mph: 13, precipitation: false, conditions: "Breezy" },
     factors: [
       f("Elo rating edge", 0.08, "home"),
@@ -193,7 +230,9 @@ const WEEK1: Week1Spec[] = [
       f("Conference clash", 0.02, "away"),
     ],
     narrative:
-      "Farmageddon opens the Big 12 slate in Ames, and the seventeenth-ranked Cyclones take 58 percent behind the better rating and a Jack Trice crowd that travels nowhere and misses nothing. Kansas State's card is familiarity — conference clashes run closer than the sheet says — and a 13-mile-an-hour prairie wind that turns long drives into arm wrestling.",
+      "Farmageddon opens the Big 12 slate in Ames, and the seventeenth-ranked Cyclones take 58 percent behind the better rating and a Jack Trice crowd that travels nowhere and misses nothing. Kansas State's card is familiarity (conference clashes run closer than the sheet says) and a 13-mile-an-hour prairie wind that turns long drives into arm wrestling.",
+    homeScore: 24,
+    awayScore: 27,
   },
   {
     id: 401520285,
@@ -201,7 +240,7 @@ const WEEK1: Week1Spec[] = [
     home: "ALA",
     kickoff: SAT_TWO,
     homeProb: 0.98,
-    odds: { spread_home: -41.5, moneyline_home: -8000, moneyline_away: 2500, total: 53.5 },
+    odds: { spread_home: 41.5, moneyline_home: -8000, moneyline_away: 2500, total: 53.5 },
     weather: { temp_f: 91, wind_mph: 5, precipitation: false, conditions: "Hot and sunny" },
     factors: [
       f("FBS-vs-FCS class edge", 0.31, "home"),
@@ -209,7 +248,7 @@ const WEEK1: Week1Spec[] = [
       f("Home field", 0.04, "home"),
     ],
     narrative:
-      "Bryant-Denny in the September broil, and the model isn't mincing words: Alabama at 98 percent over an FCS visitor. The class edge between divisions is the single loudest number on the board, and the Tide's rating gap only piles on. For Mercer, success is measured in quarters kept respectable — and in the check that clears on Monday.",
+      "Bryant-Denny in the September broil, and the model isn't mincing words: Alabama at 98 percent over an FCS visitor. The class edge between divisions is the single loudest number on the board, and the Tide's rating gap only piles on. For Mercer, success is measured in quarters kept respectable, and in the check that clears on Monday.",
   },
   {
     id: 401520286,
@@ -217,7 +256,7 @@ const WEEK1: Week1Spec[] = [
     home: "UGA",
     kickoff: SAT_AFT,
     homeProb: 0.84,
-    odds: { spread_home: -14.5, moneyline_home: -750, moneyline_away: 520, total: 49.5 },
+    odds: { spread_home: 14.5, moneyline_home: -750, moneyline_away: 520, total: 49.5 },
     weather: { temp_f: 88, wind_mph: 6, precipitation: true, conditions: "Afternoon storms" },
     factors: [
       f("Elo rating edge", 0.16, "home"),
@@ -232,7 +271,7 @@ const WEEK1: Week1Spec[] = [
     home: "UW",
     kickoff: SAT_AFT,
     homeProb: 0.52,
-    odds: { spread_home: -1, moneyline_home: -115, moneyline_away: -105, total: 54.5 },
+    odds: { spread_home: 1, moneyline_home: -115, moneyline_away: -105, total: 54.5 },
     weather: { temp_f: 71, wind_mph: 8, precipitation: false, conditions: "Clear" },
     factors: [
       f("Home field, Montlake on the lake", 0.06, "home"),
@@ -240,7 +279,7 @@ const WEEK1: Week1Spec[] = [
       f("Elo rating edge", 0.03, "home"),
     ],
     narrative:
-      "A ranked Group-of-Five heavyweight walks into Husky Stadium and the model can barely pick a side — Washington 52, Boise State 48. The nineteenth-ranked Broncos carry the poll cachet; the Huskies carry the building and a hair of rating edge. One point on the sheet, one possession in real life. Appointment football.",
+      "A ranked Group-of-Five heavyweight walks into Husky Stadium and the model can barely pick a side: Washington 52, Boise State 48. The nineteenth-ranked Broncos carry the poll cachet; the Huskies carry the building and a hair of rating edge. One point on the sheet, one possession in real life. Appointment football.",
   },
   {
     id: 401520288,
@@ -249,7 +288,7 @@ const WEEK1: Week1Spec[] = [
     kickoff: SAT_AFT,
     conferenceGame: true,
     homeProb: 0.55,
-    odds: { spread_home: -2, moneyline_home: -125, moneyline_away: 105, total: 50.5 },
+    odds: { spread_home: 2, moneyline_home: -125, moneyline_away: 105, total: 50.5 },
     weather: { temp_f: 92, wind_mph: 10, precipitation: true, conditions: "Scattered storms" },
     factors: [
       f("Elo rating edge", 0.06, "home"),
@@ -274,7 +313,7 @@ const WEEK1: Week1Spec[] = [
       f("Vegas market lean", 0.02, "home"),
     ],
     narrative:
-      "Two top-eleven teams, one Death Valley, and a model split right down the middle: Clemson 51, LSU 49. The ninth-ranked Tigers of the bayou bring the better rating and the better poll standing — but Saturday night in Clemson is worth real probability, and it's nearly the whole home case. Pick 'em on the sheet, pick 'em in the machine. Somebody's season starts with a haymaker.",
+      "Two top-eleven teams, one Death Valley, and a model split right down the middle: Clemson 51, LSU 49. The ninth-ranked Tigers of the bayou bring the better rating and the better poll standing, but Saturday night in Clemson is worth real probability, and it's nearly the whole home case. Pick 'em on the sheet, pick 'em in the machine. Somebody's season starts with a haymaker.",
   },
   {
     id: 401520290,
@@ -283,7 +322,7 @@ const WEEK1: Week1Spec[] = [
     kickoff: SAT_EVE,
     primetime: true,
     homeProb: 0.57,
-    odds: { spread_home: -3, moneyline_home: -150, moneyline_away: 130, total: 47.5 },
+    odds: { spread_home: 3, moneyline_home: -150, moneyline_away: 130, total: 47.5 },
     weather: { temp_f: 74, wind_mph: 9, precipitation: false, conditions: "Clear" },
     factors: [
       f("Elo rating edge", 0.08, "home"),
@@ -299,7 +338,7 @@ const WEEK1: Week1Spec[] = [
     home: "ORE",
     kickoff: null, // TBD — network pick pending
     homeProb: 0.9,
-    odds: { spread_home: -24.5, moneyline_home: -2200, moneyline_away: 1050, total: 55.5 },
+    odds: { spread_home: 24.5, moneyline_home: -2200, moneyline_away: 1050, total: 55.5 },
     weather: null,
     factors: [
       f("Elo rating edge", 0.18, "home"),
@@ -307,7 +346,7 @@ const WEEK1: Week1Spec[] = [
       f("Home field", 0.06, "home"),
     ],
     narrative:
-      "No kickoff time yet — the networks are still haggling — but the model has already made up its mind: Oregon at 90 percent, whatever hour the lights come on at Autzen. The seventh-ranked Ducks hold the biggest FBS-on-FBS rating gap of the opening weekend. Fresno State's path is turnovers, tempo, and a little chaos; the Ducks' path is showing up.",
+      "No kickoff time yet (the networks are still haggling), but the model has already made up its mind: Oregon at 90 percent, whatever hour the lights come on at Autzen. The seventh-ranked Ducks hold the biggest FBS-on-FBS rating gap of the opening weekend. Fresno State's path is turnovers, tempo, and a little chaos; the Ducks' path is showing up.",
   },
   {
     id: 401520292,
@@ -315,7 +354,7 @@ const WEEK1: Week1Spec[] = [
     home: "ASU",
     kickoff: SAT_LATE,
     homeProb: null,
-    odds: { spread_home: -10.5, moneyline_home: -420, moneyline_away: 330, total: 53.5 },
+    odds: { spread_home: 10.5, moneyline_home: -420, moneyline_away: 330, total: 53.5 },
     weather: null,
     factors: [],
     narrative: null,
@@ -335,6 +374,10 @@ function toSummary(s: Week1Spec): GameSummary {
     has_prediction: s.homeProb !== null,
     sport: "CFB",
     home_win_prob: s.homeProb,
+    market_home_prob: marketHomeProb(s.odds),
+    home_score: s.homeScore ?? null,
+    away_score: s.awayScore ?? null,
+    prediction_correct: verdict(s.homeProb, s.homeScore, s.awayScore),
   };
 }
 
@@ -377,6 +420,10 @@ function generatedWeekGames(week: number): GameSummary[] {
       has_prediction: false,
       sport: "CFB",
       home_win_prob: null,
+      market_home_prob: null,
+      home_score: null,
+      away_score: null,
+      prediction_correct: null,
     });
   }
   games.sort((x, y) => (x.kickoff ?? "9999").localeCompare(y.kickoff ?? "9999"));
@@ -453,6 +500,9 @@ export function cfbMockMatchup(id: string): MatchupDetail | null {
       predicted_at: ready ? iso(Date.UTC(2026, 8, 1, 12, 0)) : null,
       prediction_status: ready ? "ready" : "pending",
       sport: "CFB",
+      home_score: spec.homeScore ?? null,
+      away_score: spec.awayScore ?? null,
+      prediction_correct: verdict(spec.homeProb, spec.homeScore, spec.awayScore),
     };
   }
 
@@ -479,6 +529,9 @@ export function cfbMockMatchup(id: string): MatchupDetail | null {
       predicted_at: null,
       prediction_status: "pending",
       sport: "CFB",
+      home_score: null,
+      away_score: null,
+      prediction_correct: null,
     };
   }
   return null;

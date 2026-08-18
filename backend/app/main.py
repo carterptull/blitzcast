@@ -2,12 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import games, predictions, schedule, teams
+from app.routers import games, predictions, record, schedule, teams
 
 app = FastAPI(
     title="Blitzcast API",
-    description="AI/ML-powered NFL matchup predictions by Paymon Software.",
-    version="0.1.0",
+    description=(
+        "Win probability predictions for NFL and college football, "
+        "by Paymon Software."
+    ),
+    version="1.0.0",
 )
 
 app.add_middleware(
@@ -22,6 +25,7 @@ app.include_router(teams.router)
 app.include_router(schedule.router)
 app.include_router(games.router)
 app.include_router(predictions.router)
+app.include_router(record.router)
 
 
 @app.get("/health", tags=["health"])

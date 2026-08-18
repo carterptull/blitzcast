@@ -19,7 +19,7 @@ from data_pipeline import cfbd
 from data_pipeline.cfb_games_loader import cfb_team_map, upsert_games
 from data_pipeline.refresh_polls_cfb import upsert_polls
 
-# [VERIFY] provider names against a live /lines pull.
+# Provider preference order for CFBD betting lines.
 PREFERRED_PROVIDERS = ["consensus", "Bovada", "DraftKings", "ESPN Bet"]
 
 

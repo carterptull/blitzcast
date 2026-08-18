@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TEAMS } from "@/lib/teams";
+import { displayAbbr, TEAMS } from "@/lib/teams";
 
 interface Side {
   abbr: string;
@@ -39,7 +39,7 @@ export default function WinProbabilitySplit({ away, home, size = "lg" }: Props) 
   return (
     <div
       role="img"
-      aria-label={`Win probability: ${away.abbr} ${Math.round(away.prob * 100)}%, ${home.abbr} ${Math.round(home.prob * 100)}%`}
+      aria-label={`Win probability: ${displayAbbr(away.abbr)} ${Math.round(away.prob * 100)}%, ${displayAbbr(home.abbr)} ${Math.round(home.prob * 100)}%`}
       className={`relative w-full overflow-hidden ${size === "lg" ? "rounded-md" : "rounded-full"}`}
       style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.14)" }}
     >
@@ -53,7 +53,6 @@ export default function WinProbabilitySplit({ away, home, size = "lg" }: Props) 
           style={{ width: `${homePct}%`, background: homeColor }}
         />
       </div>
-      {/* Gold marker at the split */}
       <div
         aria-hidden="true"
         className="absolute inset-y-0 w-[3px] -translate-x-1/2 bg-gold-turf transition-[left] duration-1000 ease-out motion-reduce:transition-none"

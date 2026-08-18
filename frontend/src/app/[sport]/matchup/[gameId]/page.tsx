@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ApiUnreachableError, getMatchup, NotFoundError } from "@/lib/api";
 import { fmtPct } from "@/lib/format";
 import { apiSport, isSportSlug } from "@/lib/sport";
+import { displayAbbr } from "@/lib/teams";
 import type { MatchupDetail } from "@/lib/types";
 import BackendDown from "@/components/BackendDown";
 import MatchupHero from "@/components/MatchupHero";
@@ -20,17 +21,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { gameId } = await params;
   try {
     const m = await getMatchup(gameId);
-    const league = m.sport === "CFB" ? "college football" : "NFL";
-    const title = `${m.away.abbr} @ ${m.home.abbr} — Week ${m.week}`;
+    const cfb = m.sport === "CFB";
+    const league = cfb ? "college football" : "NFL";
+    const awayAbbr = cfb ? m.away.abbr : displayAbbr(m.away.abbr);
+    const homeAbbr = cfb ? m.home.abbr : displayAbbr(m.home.abbr);
+    const title = `${awayAbbr} @ ${homeAbbr}, Week ${m.week}`;
     const favored = m.home.win_prob !== null && m.home.win_prob >= 0.5 ? m.home : m.away;
     const description =
       favored.win_prob !== null
         ? `Blitzcast gives the ${favored.name} a ${fmtPct(favored.win_prob)} chance in ${m.away.name} at ${m.home.name}, Week ${m.week} of the ${m.season} ${league} season.`
-        : `${m.away.name} at ${m.home.name}, Week ${m.week} of the ${m.season} ${league} season — prediction coming after the weekly data refresh.`;
+        : `${m.away.name} at ${m.home.name}, Week ${m.week} of the ${m.season} ${league} season. Prediction coming after the weekly data refresh.`;
     return {
       title,
       description,
       openGraph: { title: `${title} · Blitzcast`, description, type: "website" },
+      twitter: { card: "summary_large_image", title: `${title} · Blitzcast`, description },
     };
   } catch {
     return { title: "Matchup" };

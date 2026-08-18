@@ -37,6 +37,10 @@ class GameSummary(BaseModel):
     status: str
     has_prediction: bool
     home_win_prob: float | None = None
+    market_home_prob: float | None = None
+    home_score: int | None = None
+    away_score: int | None = None
+    prediction_correct: bool | None = None
 
 
 class WeekOut(BaseModel):
@@ -87,6 +91,15 @@ class FactorOut(BaseModel):
     direction: str
 
 
+class RecordOut(BaseModel):
+    sport: str | None
+    season: int
+    correct: int
+    total: int
+    market_correct: int
+    sufficient: bool
+
+
 class PredictionOut(BaseModel):
     game_id: str
     sport: str = "NFL"
@@ -105,3 +118,6 @@ class PredictionOut(BaseModel):
     model_version: str | None
     predicted_at: datetime | None
     prediction_status: str
+    home_score: int | None = None
+    away_score: int | None = None
+    prediction_correct: bool | None = None

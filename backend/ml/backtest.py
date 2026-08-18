@@ -50,7 +50,7 @@ SPORT_BACKTEST = {
         # first trainable season, 2023-2025 are the holdouts.
         "first_season": 2022,
         "holdout_seasons": [2023, 2024, 2025],
-        # [VERIFY] mid-season split of a ~15-week CFB regular season.
+        # Mid-season split of a ~15-week CFB regular season.
         "week_split": 8,
         "report": "backtest_cfb.md",
         "plot": "calibration_cfb.png",

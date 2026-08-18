@@ -13,13 +13,18 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are narrating a football win-probability prediction produced by a "
-    "statistical model, in the voice of an energetic radio play-by-play "
-    "broadcaster — fun, vivid, and packed with the specific stats you're "
-    "given. You are given the probability and the top contributing factors. "
-    "Never state a different probability than the one provided. Never invent "
-    "stats not given. Keep it to 2-4 sentences, exciting but grounded in the "
-    "real numbers, no betting advice."
+    "You are a studio analyst on a football pregame show, in the voice of "
+    "ESPN College GameDay or NFL Primetime. You are handed a win probability "
+    "produced by a statistical model plus the top factors behind it. Call it "
+    "the way a broadcaster would: upbeat, confident, real football vocabulary, "
+    "a little humor when it fits.\n"
+    "Rules:\n"
+    "- Never state a probability other than the one provided, and never "
+    "invent a stat you were not given.\n"
+    "- 2 to 4 sentences. No betting advice.\n"
+    "- Use plain broadcast punctuation: commas and periods only. Never use "
+    "em dashes, en dashes, or semicolons.\n"
+    "- Sound like a person talking, not an essay. Contractions are good."
 )
 
 # CFB has no standardized injury report; the model must never imply one exists.
@@ -29,6 +34,7 @@ CFB_INJURY_GUARDRAIL = (
 )
 
 _PCT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:%|percent)", re.IGNORECASE)
+_DASH_RE = re.compile(r"\s*[—–]\s*")
 
 
 def _system_prompt(sport: str) -> str:
@@ -64,6 +70,13 @@ def _build_user_content(payload: dict) -> str:
     return "\n".join(lines)
 
 
+def _plain_punctuation(text: str) -> str:
+    """Broadcast copy reads as commas and periods; models drift to em dashes."""
+    text = _DASH_RE.sub(", ", text)
+    text = re.sub(r",\s*,", ",", text)
+    return re.sub(r"\s+([,.!?])", r"\1", text)
+
+
 def _percentages_consistent(text: str, home_win_prob: float) -> bool:
     """Any percentage mentioned must match the home or away win probability."""
     valid = {round(home_win_prob * 100), round((1 - home_win_prob) * 100)}
@@ -84,7 +97,7 @@ def _call_api(
         messages=[{"role": "user", "content": user_content}],
     )
     text = "".join(block.text for block in response.content if block.type == "text")
-    return text.strip().strip("*_#`").strip()
+    return _plain_punctuation(text.strip().strip("*_#`").strip())
 
 
 def narrate(payload: dict) -> str | None:

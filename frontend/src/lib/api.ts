@@ -1,10 +1,10 @@
-// Typed API client for the Blitzcast backend (IMPLEMENTATION_PLAN.md §3.2).
+// Typed API client for the Blitzcast backend.
 // NEXT_PUBLIC_USE_MOCK=1 serves fixture data instead of hitting the network.
-// Sport is a query param on list endpoints (CFB_IMPLEMENTATION_PLAN.md §3.2);
-// prediction lookups need none — game ids are globally unique.
+// Sport is a query param on list endpoints; prediction lookups need none,
+// game ids are globally unique.
 
 import { mockGames, mockMatchup, mockSchedule, mockTeams } from "./mock";
-import type { GameSummary, MatchupDetail, Schedule, Sport, Team } from "./types";
+import type { GameSummary, MatchupDetail, Record, Schedule, Sport, Team } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
@@ -23,6 +23,10 @@ export class NotFoundError extends Error {
   }
 }
 
+/** Mirrors the backend's status filter (Query("all"), normalized server-side
+ *  — unrecognized values fall back to "all"). */
+export type StatusFilterValue = "all" | "final" | "upcoming";
+
 async function get<T>(path: string): Promise<T> {
   let res: Response;
   try {
@@ -40,18 +44,34 @@ export async function getTeams(sport: Sport = "NFL"): Promise<Team[]> {
   return get<Team[]>(`/api/teams?sport=${sport}`);
 }
 
-export async function getSchedule(season = 2026, sport: Sport = "NFL"): Promise<Schedule> {
+export async function getSchedule(
+  season = 2026,
+  sport: Sport = "NFL",
+  status: StatusFilterValue = "all"
+): Promise<Schedule> {
   if (MOCK) return mockSchedule(sport);
-  return get<Schedule>(`/api/schedule?season=${season}&sport=${sport}`);
+  return get<Schedule>(`/api/schedule?season=${season}&sport=${sport}&status=${status}`);
 }
 
 export async function getGames(
   week: number,
   season = 2026,
-  sport: Sport = "NFL"
+  sport: Sport = "NFL",
+  status: StatusFilterValue = "all"
 ): Promise<GameSummary[]> {
   if (MOCK) return mockGames(week, sport);
-  return get<GameSummary[]>(`/api/games?week=${week}&season=${season}&sport=${sport}`);
+  return get<GameSummary[]>(
+    `/api/games?week=${week}&season=${season}&sport=${sport}&status=${status}`
+  );
+}
+
+export async function getRecord(season = 2026, sport: Sport = "NFL"): Promise<Record> {
+  if (MOCK) {
+    // Demo fixture — deliberately shows the model trailing the market, same
+    // as the real record does, rather than an implausibly clean number.
+    return { sport, season, correct: 11, total: 16, market_correct: 12, sufficient: true };
+  }
+  return get<Record>(`/api/record?sport=${sport}&season=${season}`);
 }
 
 export async function getMatchup(gameId: string): Promise<MatchupDetail> {

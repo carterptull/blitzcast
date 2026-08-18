@@ -86,7 +86,7 @@ def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
         game.away_team_id = away.team_id
         game.stadium_id = stadium_by_name.get(field(row, "venue"))
         game.is_primetime = _is_primetime(game.kickoff_time)
-        # For CFB, "divisional" means same-conference (see plan Phase 0.1).
+        # For CFB, "divisional" means same-conference.
         game.is_divisional = bool(field(row, "conferenceGame", "conference_game"))
         home_pts = field(row, "homePoints", "home_points")
         away_pts = field(row, "awayPoints", "away_points")

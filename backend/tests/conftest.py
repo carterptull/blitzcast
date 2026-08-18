@@ -87,7 +87,7 @@ def _seed_cfb(db: Session, stadium: Stadium) -> None:
     db.add(
         Prediction(
             game_id="cfb_401800001",
-            model_version="cfb-0.1.0",
+            model_version="cfb-1.0.0",
             home_win_prob=0.55,
             predicted_at=datetime(2026, 9, 3, 12, 0, tzinfo=UTC),
             shap_top_features=[
@@ -188,7 +188,7 @@ def _seed(db: Session) -> None:
     db.add(
         Prediction(
             game_id="2026_01_BUF_KC",
-            model_version="0.1.0",
+            model_version="1.0.0",
             home_win_prob=0.61,
             predicted_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
             shap_top_features=[

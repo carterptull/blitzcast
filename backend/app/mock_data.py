@@ -12,6 +12,7 @@ from app.schemas import (
     GameTeam,
     OddsOut,
     PredictionOut,
+    RecordOut,
     ScheduleOut,
     TeamDetail,
     TeamOut,
@@ -19,7 +20,9 @@ from app.schemas import (
     WeatherOut,
     WeekOut,
 )
+from app.services.predictions import prediction_verdict
 from data_pipeline.team_names import logo_url, nickname
+from ml.features import market_home_prob
 
 SEEDS_DIR = Path(__file__).resolve().parent.parent / "data_pipeline" / "seeds"
 
@@ -33,12 +36,14 @@ _MOCK_GAMES = [
         "is_primetime": True,
         "is_divisional": False,
         "home_win_prob": 0.63,
+        "home_score": 27,
+        "away_score": 24,
         "venue": {
             "name": "GEHA Field at Arrowhead Stadium",
             "city": "Kansas City",
             "is_dome": False,
         },
-        "odds": {"spread_home": -2.5, "moneyline_home": -140, "moneyline_away": 120, "total": 48.5},
+        "odds": {"spread_home": 2.5, "moneyline_home": -140, "moneyline_away": 120, "total": 48.5},
         "weather": {"temp_f": 74.0, "wind_mph": 8.0, "precipitation": False, "conditions": "Clear"},
         "factors": [
             {"label": "Team rating (Elo) edge", "value": 0.14, "direction": "home"},
@@ -47,7 +52,7 @@ _MOCK_GAMES = [
             {"label": "Betting-market win probability", "value": 0.06, "direction": "home"},
         ],
         "narrative": (
-            "Folks, the numbers love Kansas City tonight — a 63 percent shot at "
+            "Folks, the numbers love Kansas City tonight: a 63 percent shot at "
             "home behind a rating edge worth fourteen points of probability! "
             "Buffalo counters with a rest advantage, but the Chiefs' offense has "
             "been humming over its last five games. Under the lights at "
@@ -63,8 +68,10 @@ _MOCK_GAMES = [
         "is_primetime": True,
         "is_divisional": True,
         "home_win_prob": None,
+        "home_score": None,
+        "away_score": None,
         "venue": {"name": "SoFi Stadium", "city": "Inglewood", "is_dome": True},
-        "odds": {"spread_home": 3.0, "moneyline_home": -180, "moneyline_away": 150, "total": 48.5},
+        "odds": {"spread_home": 3, "moneyline_home": -180, "moneyline_away": 150, "total": 48.5},
         "weather": None,
         "factors": [],
         "narrative": None,
@@ -78,8 +85,10 @@ _MOCK_GAMES = [
         "is_primetime": False,
         "is_divisional": True,
         "home_win_prob": 0.41,
+        "home_score": 23,
+        "away_score": 20,
         "venue": {"name": "Empower Field at Mile High", "city": "Denver", "is_dome": False},
-        "odds": {"spread_home": 2.5, "moneyline_home": 115, "moneyline_away": -135, "total": 44.0},
+        "odds": {"spread_home": -2.5, "moneyline_home": 115, "moneyline_away": -135, "total": 44.0},
         "weather": {"temp_f": 68.0, "wind_mph": 6.0, "precipitation": False, "conditions": "Sunny"},
         "factors": [
             {"label": "Team rating (Elo) edge", "value": -0.11, "direction": "away"},
@@ -125,8 +134,10 @@ _MOCK_CFB_GAMES = [
         "is_primetime": True,
         "is_divisional": False,
         "home_win_prob": 0.58,
+        "home_score": 24,
+        "away_score": 30,
         "venue": {"name": "Ohio Stadium", "city": "Columbus", "is_dome": False},
-        "odds": {"spread_home": -3.0, "moneyline_home": -155, "moneyline_away": 130, "total": 51.5},
+        "odds": {"spread_home": 3, "moneyline_home": -155, "moneyline_away": 130, "total": 51.5},
         "weather": {"temp_f": 78.0, "wind_mph": 5.0, "precipitation": False, "conditions": "Clear"},
         "factors": [
             {"label": "Team rating (Elo) edge", "value": 0.09, "direction": "home"},
@@ -151,6 +162,8 @@ _MOCK_CFB_GAMES = [
         "is_primetime": False,
         "is_divisional": False,
         "home_win_prob": 0.97,
+        "home_score": 45,
+        "away_score": 10,
         "venue": {"name": "Bryant-Denny Stadium", "city": "Tuscaloosa", "is_dome": False},
         "odds": None,
         "weather": {"temp_f": 88.0, "wind_mph": 4.0, "precipitation": False, "conditions": "Sunny"},
@@ -175,6 +188,8 @@ _MOCK_CFB_GAMES = [
         "is_primetime": False,
         "is_divisional": True,
         "home_win_prob": None,
+        "home_score": None,
+        "away_score": None,
         "venue": {
             "name": "Darrell K Royal-Texas Memorial Stadium",
             "city": "Austin",
@@ -256,6 +271,9 @@ def _games_for(sport: str) -> list[dict]:
 
 
 def _summary(g: dict, sport: str) -> GameSummary:
+    home_score = g.get("home_score")
+    away_score = g.get("away_score")
+    odds = g.get("odds") or {}
     return GameSummary(
         game_id=g["game_id"],
         sport=sport,
@@ -266,11 +284,27 @@ def _summary(g: dict, sport: str) -> GameSummary:
         status="scheduled",
         has_prediction=g["home_win_prob"] is not None,
         home_win_prob=g["home_win_prob"],
+        market_home_prob=market_home_prob(
+            odds.get("moneyline_home"), odds.get("moneyline_away"), odds.get("spread_home")
+        ),
+        home_score=home_score,
+        away_score=away_score,
+        prediction_correct=prediction_verdict(g["home_win_prob"], home_score, away_score),
     )
 
 
-def get_schedule(season: int, sport: str = SPORT_NFL) -> ScheduleOut:
-    games = [g for g in _games_for(sport) if season == MOCK_SEASON]
+def _matches_status(g: dict, status: str) -> bool:
+    """Mirrors _apply_status: keyed on scores, not a status field."""
+    both_scored = g.get("home_score") is not None and g.get("away_score") is not None
+    if status == "final":
+        return both_scored
+    if status == "upcoming":
+        return not both_scored
+    return True
+
+
+def get_schedule(season: int, sport: str = SPORT_NFL, status: str = "all") -> ScheduleOut:
+    games = [g for g in _games_for(sport) if season == MOCK_SEASON and _matches_status(g, status)]
     weeks: dict[int, list[GameSummary]] = {}
     for g in games:
         weeks.setdefault(g["week"], []).append(_summary(g, sport))
@@ -281,10 +315,16 @@ def get_schedule(season: int, sport: str = SPORT_NFL) -> ScheduleOut:
     )
 
 
-def get_games(season: int, week: int, sport: str = SPORT_NFL) -> list[GameSummary]:
+def get_games(
+    season: int, week: int, sport: str = SPORT_NFL, status: str = "all"
+) -> list[GameSummary]:
     if season != MOCK_SEASON:
         return []
-    return [_summary(g, sport) for g in _games_for(sport) if g["week"] == week]
+    return [
+        _summary(g, sport)
+        for g in _games_for(sport)
+        if g["week"] == week and _matches_status(g, status)
+    ]
 
 
 def _team_detail(abbr: str, sport: str, win_prob: float | None) -> TeamDetail:
@@ -309,13 +349,46 @@ def _team_detail(abbr: str, sport: str, win_prob: float | None) -> TeamDetail:
     )
 
 
+def get_record(season: int, sport: str | None = None) -> RecordOut:
+    if season != MOCK_SEASON:
+        return RecordOut(
+            sport=sport, season=season, correct=0, total=0, market_correct=0, sufficient=False
+        )
+    sports = [sport] if sport else [SPORT_NFL, SPORT_CFB]
+    correct = total = market_correct = 0
+    for s in sports:
+        for g in _games_for(s):
+            home_score, away_score = g.get("home_score"), g.get("away_score")
+            verdict = prediction_verdict(g["home_win_prob"], home_score, away_score)
+            if verdict is None:
+                continue
+            odds = g.get("odds") or {}
+            market_prob = market_home_prob(
+                odds.get("moneyline_home"), odds.get("moneyline_away"), odds.get("spread_home")
+            )
+            if market_prob is None:
+                continue
+            market_verdict = prediction_verdict(market_prob, home_score, away_score)
+            if market_verdict is None:
+                continue
+            total += 1
+            correct += verdict
+            market_correct += market_verdict
+    return RecordOut(
+        sport=sport, season=season, correct=correct, total=total,
+        market_correct=market_correct, sufficient=total >= 10,
+    )
+
+
 def get_prediction_detail(game_id: str) -> PredictionOut | None:
     sport = SPORT_CFB if game_id.startswith("cfb_") else SPORT_NFL
     g = next((g for g in _games_for(sport) if g["game_id"] == game_id), None)
     if g is None:
         return None
     prob = g["home_win_prob"]
-    version = "cfb-0.1.0-mock" if sport == SPORT_CFB else "0.1.0-mock"
+    home_score = g.get("home_score")
+    away_score = g.get("away_score")
+    version = "cfb-1.0.0-mock" if sport == SPORT_CFB else "1.0.0-mock"
     return PredictionOut(
         game_id=g["game_id"],
         sport=sport,
@@ -333,5 +406,8 @@ def get_prediction_detail(game_id: str) -> PredictionOut | None:
         narrative=g["narrative"],
         model_version=version if prob is not None else None,
         predicted_at=datetime(2026, 9, 3, 12, 0, tzinfo=UTC) if prob is not None else None,
-        prediction_status="available" if prob is not None else "pending",
+        prediction_status="ready" if prob is not None else "pending",
+        home_score=home_score,
+        away_score=away_score,
+        prediction_correct=prediction_verdict(prob, home_score, away_score),
     )

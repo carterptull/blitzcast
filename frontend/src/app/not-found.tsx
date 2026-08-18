@@ -12,7 +12,7 @@ export default function NotFound() {
             That matchup isn&apos;t on the schedule
           </h1>
           <p className="mt-4 max-w-md text-lg leading-relaxed text-chalk-soft">
-            No game found at this address — check the link, or head back to the week&apos;s slate.
+            No game found at this address. Check the link, or head back to the week&apos;s slate.
           </p>
           <Link
             href="/"

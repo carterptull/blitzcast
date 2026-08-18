@@ -14,7 +14,7 @@ export default function BackendDown() {
           </h1>
           <p className="mt-4 max-w-md text-lg leading-relaxed text-chalk-soft">
             The Blitzcast API isn&apos;t answering. If you&apos;re running locally, make sure the
-            backend is up — or set <code className="font-mono text-chalk">NEXT_PUBLIC_USE_MOCK=1</code>{" "}
+            backend is up, or set <code className="font-mono text-chalk">NEXT_PUBLIC_USE_MOCK=1</code>{" "}
             to browse the demo slate.
           </p>
           <Link

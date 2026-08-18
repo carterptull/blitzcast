@@ -25,6 +25,12 @@ SPORT_KEYS = {"nfl": "americanfootball_nfl", "cfb": "americanfootball_ncaaf"}
 SOURCE = "the-odds-api"
 
 
+def book_spread_to_home(point: float) -> float:
+    """Books quote negative when home is favored; storage follows nflverse
+    (positive = home favored), so the sign flips on the way in."""
+    return -float(point)
+
+
 def _consensus(event: dict, home_abbr: str, away_abbr: str) -> dict:
     """Take the first bookmaker that carries each market."""
     out: dict = {}
@@ -71,7 +77,8 @@ def main() -> None:
     remaining = resp.headers.get("x-requests-remaining")
 
     now = datetime.now(UTC)
-    lo, hi = now - timedelta(hours=6), now + timedelta(days=14)
+    # Starts at now, not earlier: reaching back would capture in-play lines.
+    lo, hi = now, now + timedelta(days=14)
     upserted = 0
     with session_scope() as db:
         ids = team_id_map(db, sport)
@@ -90,6 +97,7 @@ def main() -> None:
             )
         ).all()
         by_matchup = {(g.home_team_id, g.away_team_id): g for g in window_games}
+        unmatched = 0
 
         for event in events:
             try:
@@ -100,6 +108,7 @@ def main() -> None:
                 continue
             game = by_matchup.get((ids.get(home), ids.get(away)))
             if game is None:
+                unmatched += 1
                 continue
             markets = _consensus(event, home, away)
             odds = db.scalar(
@@ -112,14 +121,21 @@ def main() -> None:
             if h2h:
                 odds.moneyline_home, odds.moneyline_away = int(h2h[0]), int(h2h[1])
             if markets.get("spreads") is not None:
-                odds.spread_home = float(markets["spreads"])
+                odds.spread_home = book_spread_to_home(markets["spreads"])
             if markets.get("totals") is not None:
                 odds.total = float(markets["totals"])
             odds.captured_at = now
             upserted += 1
 
-    print(f"odds refresh ({args.sport}): upserted {upserted} games "
-          f"(requests remaining: {remaining})")
+    print(f"odds refresh ({args.sport}): upserted {upserted} games, "
+          f"{unmatched} unmatched (requests remaining: {remaining})")
+    if events and upserted == 0:
+        # Silence here would let a broken alias map feed stale market data
+        # into predictions while the job still exits 0.
+        print(
+            f"WARNING: matched none of {len(events)} events to scheduled games; "
+            "check the team-name alias map."
+        )
 
 
 if __name__ == "__main__":

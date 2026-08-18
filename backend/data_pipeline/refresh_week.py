@@ -1,6 +1,6 @@
-"""Weekly refresh orchestrator: schedule -> odds -> weather -> injuries ->
-prediction batch. Each step is independently re-runnable and a failure in
-one optional step does not block the rest.
+"""Weekly refresh orchestrator: schedule -> stats -> odds -> weather ->
+injuries -> prediction batch. Each step is independently re-runnable and a
+failure in one optional step does not block the rest.
 
 Usage: python -m data_pipeline.refresh_week [--season 2026] [--skip-predict]
 """
@@ -27,6 +27,8 @@ def main() -> None:
     season = str(args.season)
 
     ok = run_step("schedule sync", ["data_pipeline.refresh_schedule", "--season", season])
+    # Keeps the rolling EPA/turnover form features fed once games are final.
+    run_step("stats refresh", ["data_pipeline.refresh_stats", "--season", season])
     run_step("odds refresh", ["data_pipeline.refresh_odds"])
     run_step("weather refresh", ["data_pipeline.refresh_weather"])
     run_step("injury refresh", ["data_pipeline.refresh_injuries", "--season", season])

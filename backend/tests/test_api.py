@@ -1,5 +1,9 @@
 """API contract tests against a seeded SQLite database."""
 
+import pytest
+
+from ml.features import market_home_prob
+
 
 def test_health(client):
     response = client.get("/health")
@@ -55,7 +59,7 @@ def test_prediction_detail_available(client):
     response = client.get("/api/predictions/2026_01_BUF_KC")
     assert response.status_code == 200
     body = response.json()
-    assert body["prediction_status"] == "available"
+    assert body["prediction_status"] == "ready"
     assert body["home"]["win_prob"] == 0.61
     assert body["away"]["win_prob"] == 0.39
     assert body["home"]["win_prob"] + body["away"]["win_prob"] == 1.0
@@ -67,7 +71,7 @@ def test_prediction_detail_available(client):
     assert body["factors"][0]["label"] == "Team rating (Elo) edge"
     assert body["factors"][0]["direction"] == "home"
     assert body["narrative"] is None
-    assert body["model_version"] == "0.1.0"
+    assert body["model_version"] == "1.0.0"
 
 
 def test_prediction_detail_pending(client):
@@ -85,6 +89,77 @@ def test_prediction_unknown_game_404(client):
     assert response.status_code == 404
 
 
+def test_game_summary_exposes_scores_and_verdict(client):
+    body = client.get("/api/games?week=1&season=2026").json()
+    assert body, "expected week 1 games"
+    for g in body:
+        assert "home_score" in g and "away_score" in g
+        assert "prediction_correct" in g
+
+
+def test_prediction_detail_exposes_scores_and_verdict(client):
+    body = client.get("/api/predictions/2026_01_BUF_KC").json()
+    assert "home_score" in body and "away_score" in body
+    assert "prediction_correct" in body
+
+
+def test_game_summary_exposes_market_home_prob(client):
+    """market_home_prob is populated from the Game's own market columns
+    (no live Odds row seeded here) using the same de-vig arithmetic as
+    ml.features.market_home_prob -- not a duplicated implementation."""
+    body = client.get("/api/games?week=1&season=2026").json()
+    game = next(g for g in body if g["game_id"] == "2026_01_BUF_KC")
+    expected = market_home_prob(-130, 110, 2.5)
+    assert game["market_home_prob"] == pytest.approx(expected)
+
+
+def test_schedule_exposes_market_home_prob(client):
+    body = client.get("/api/schedule?season=2026").json()
+    game = next(
+        g for g in body["weeks"][0]["games"] if g["game_id"] == "2026_01_BUF_KC"
+    )
+    expected = market_home_prob(-130, 110, 2.5)
+    assert game["market_home_prob"] == pytest.approx(expected)
+
+
+def test_game_summary_market_home_prob_null_without_market_data(client):
+    """cfb_401800001 has no spread/moneyline columns and no Odds row."""
+    body = client.get("/api/games?week=1&season=2026&sport=cfb").json()
+    game = next(g for g in body if g["game_id"] == "cfb_401800001")
+    assert game["market_home_prob"] is None
+
+
+def test_games_filter_final_returns_only_finished(client):
+    body = client.get("/api/games?week=1&season=2026&status=final").json()
+    assert all(g["home_score"] is not None for g in body)
+
+
+def test_games_filter_upcoming_returns_only_unfinished(client):
+    body = client.get("/api/games?week=1&season=2026&status=upcoming").json()
+    assert all(g["home_score"] is None for g in body)
+
+
+def test_games_unknown_status_falls_back_to_all(client):
+    allg = client.get("/api/games?week=1&season=2026").json()
+    junk = client.get("/api/games?week=1&season=2026&status=banana").json()
+    assert len(junk) == len(allg)
+
+
+def test_games_filter_final_against_scored_fixture_data(client):
+    """The final filter must actually work against games that have scores,
+    not just trivially pass against an all-unscored week."""
+    body = client.get("/api/games?week=1&season=2025&status=final").json()
+    assert body, "expected week 1 2025 games"
+    assert all(g["home_score"] is not None for g in body)
+
+
+def test_games_filter_upcoming_against_scored_fixture_data(client):
+    """upcoming must genuinely exclude scored games, not just pass because
+    nothing in the queried week has a score."""
+    body = client.get("/api/games?week=1&season=2025&status=upcoming").json()
+    assert body == []
+
+
 def test_mock_mode(client, monkeypatch):
     from app.config import get_settings
 
@@ -93,9 +168,15 @@ def test_mock_mode(client, monkeypatch):
         teams = client.get("/api/teams").json()
         assert len(teams) == 32
         detail = client.get("/api/predictions/2026_01_BUF_KC").json()
-        assert detail["prediction_status"] == "available"
+        assert detail["prediction_status"] == "ready"
         assert detail["narrative"] is not None
         assert client.get("/api/predictions/unknown").status_code == 404
+        games = client.get("/api/games?week=1&season=2026").json()
+        buf_kc = next(g for g in games if g["game_id"] == "2026_01_BUF_KC")
+        expected = market_home_prob(-140, 120, 2.5)
+        assert buf_kc["market_home_prob"] == pytest.approx(expected)
+        sf_la = next(g for g in games if g["game_id"] == "2026_01_SF_LA")
+        assert sf_la["market_home_prob"] is not None  # has odds, no prediction yet
     finally:
         monkeypatch.setattr(get_settings(), "blitzcast_mock", False)
 
@@ -157,8 +238,8 @@ def test_prediction_detail_cfb(client):
     assert response.status_code == 200
     body = response.json()
     assert body["sport"] == "CFB"
-    assert body["prediction_status"] == "available"
-    assert body["model_version"] == "cfb-0.1.0"
+    assert body["prediction_status"] == "ready"
+    assert body["model_version"] == "cfb-1.0.0"
     assert body["home"]["rank"] == 7
     assert body["away"]["rank"] == 3
     assert body["home"]["conference"] == "SEC"
@@ -192,7 +273,7 @@ def test_mock_mode_cfb(client, monkeypatch):
         assert [w["week"] for w in body["weeks"]] == [1, 2]
         ranked = client.get("/api/predictions/cfb_401752873").json()
         assert ranked["sport"] == "CFB"
-        assert ranked["prediction_status"] == "available"
+        assert ranked["prediction_status"] == "ready"
         assert ranked["home"]["rank"] == 1
         assert ranked["narrative"] is not None
         tbd = client.get("/api/predictions/cfb_401753120").json()

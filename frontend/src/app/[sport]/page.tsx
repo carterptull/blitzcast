@@ -1,13 +1,26 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ApiUnreachableError, getGames, getSchedule } from "@/lib/api";
+import { ApiUnreachableError, getGames, getRecord, getSchedule, type StatusFilterValue } from "@/lib/api";
 import { CFB_WEEKS, fmtDayHeading, pickCfbDefaultWeek, pickDefaultWeek } from "@/lib/format";
 import { isSportSlug } from "@/lib/sport";
-import type { GameSummary, Schedule } from "@/lib/types";
+import type { GameSummary, Record, Schedule } from "@/lib/types";
 import BackendDown from "@/components/BackendDown";
+import Disagreements from "@/components/Disagreements";
 import FilterChips from "@/components/FilterChips";
 import GameCard from "@/components/GameCard";
+import RecordBanner from "@/components/RecordBanner";
+import StatusFilter from "@/components/StatusFilter";
 import WeekSelector from "@/components/WeekSelector";
+
+/** The record is secondary to the slate — never let its fetch failing take
+ *  down the page. */
+async function fetchRecordSafely(sport: "NFL" | "CFB"): Promise<Record | null> {
+  try {
+    return await getRecord(2026, sport);
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -17,21 +30,58 @@ interface Props {
     week?: string | string[];
     conf?: string | string[];
     top25?: string | string[];
+    status?: string | string[];
   }>;
 }
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
+const STATUS_VALUES: readonly string[] = ["all", "final", "upcoming"];
+const validStatus = (v: string | undefined): StatusFilterValue =>
+  STATUS_VALUES.includes(v ?? "") ? (v as StatusFilterValue) : "all";
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sport } = await params;
   if (sport === "cfb") {
     return {
-      title: "Blitzcast — College Football Win Probabilities",
+      title: "Blitzcast: College Football Win Probabilities",
       description:
-        "AI-powered win probabilities with plain-language reasoning for every 2026 college football matchup.",
+        "Every 2026 college football matchup, called before kickoff. Real win probabilities, explained like a human would.",
     };
   }
   return {};
+}
+
+/** Week counter shown beside the week selector.
+ *
+ *  Denominator (`total`) always follows the existing "predicted" convention:
+ *  every game currently displayed, regardless of grading. That doesn't
+ *  change here — only the numerator and wording do.
+ *
+ *  When every displayed game is final, the counter switches to grading:
+ *  `count` becomes the number of correctly-called verdicts
+ *  (`prediction_correct === true`). A final tie or a no-pick game has
+ *  `prediction_correct: null` — it's final but not graded, so it counts
+ *  toward the total (it's still a displayed, finished game) but not toward
+ *  the correct count. Any week with at least one non-final game keeps the
+ *  original "predicted" reading. */
+export function weekCounter(
+  games: GameSummary[]
+): { count: number; total: number; label: "predicted" | "correct" } {
+  const allFinal =
+    games.length > 0 && games.every((g) => g.home_score != null && g.away_score != null);
+  if (allFinal) {
+    return {
+      count: games.filter((g) => g.prediction_correct === true).length,
+      total: games.length,
+      label: "correct",
+    };
+  }
+  return {
+    count: games.filter((g) => g.has_prediction).length,
+    total: games.length,
+    label: "predicted",
+  };
 }
 
 function groupByDay(games: GameSummary[]): [string, GameSummary[]][] {
@@ -60,7 +110,7 @@ function Banner({ season, week }: { season: number; week: number }) {
           Every matchup, called before kickoff
         </h1>
         <p className="mt-4 max-w-xl text-lg italic leading-relaxed text-chalk-soft">
-          Win probabilities from a calibrated model — explained in plain language, never by
+          Win probabilities from a calibrated model, explained in plain language, never by
           guesswork.
         </p>
       </div>
@@ -95,40 +145,50 @@ function Slate({ games, sport, filtered }: { games: GameSummary[]; sport: "nfl" 
   );
 }
 
-async function NflSlate({ requestedWeek }: { requestedWeek: number }) {
+async function NflSlate({
+  requestedWeek,
+  status,
+}: {
+  requestedWeek: number;
+  status: StatusFilterValue;
+}) {
+  const recordPromise = fetchRecordSafely("NFL");
   let schedule: Schedule;
   try {
-    schedule = await getSchedule(2026, "NFL");
+    schedule = await getSchedule(2026, "NFL", status);
   } catch (e) {
     if (e instanceof ApiUnreachableError) return <BackendDown />;
     throw e;
   }
+  const record = await recordPromise;
 
   const weeks = schedule.weeks.map((w) => w.week);
   const selected = weeks.includes(requestedWeek) ? requestedWeek : pickDefaultWeek(schedule);
   const games = schedule.weeks.find((w) => w.week === selected)?.games ?? [];
-  const predicted = games.filter((g) => g.has_prediction).length;
+  const counter = weekCounter(games);
+  const filterQuery = status !== "all" ? `&status=${status}` : "";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      {record && <RecordBanner record={record} />}
       <Banner season={schedule.season} week={selected} />
 
-      {/* Week selector */}
       <div className="mt-8">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
             Select a week
           </h2>
           <span className="font-mono text-[11px] tabular-nums text-ink-soft">
-            {predicted}/{games.length} predicted
+            {counter.count}/{counter.total} {counter.label}
           </span>
         </div>
-        <WeekSelector weeks={weeks} selected={selected} basePath="/nfl" />
+        <WeekSelector weeks={weeks} selected={selected} basePath="/nfl" query={filterQuery} />
+        <StatusFilter sport="nfl" active={status} week={selected} />
       </div>
 
-      {/* Slate, grouped by day */}
       <div className="mt-8 space-y-8">
-        <Slate games={games} sport="nfl" filtered={false} />
+        <Disagreements games={games} sport="nfl" />
+        <Slate games={games} sport="nfl" filtered={status !== "all"} />
       </div>
     </div>
   );
@@ -138,22 +198,26 @@ async function CfbSlate({
   requestedWeek,
   conf,
   top25,
+  status,
 }: {
   requestedWeek: number;
   conf?: string;
   top25: boolean;
+  status: StatusFilterValue;
 }) {
   const weeks = Array.from({ length: CFB_WEEKS }, (_, i) => i + 1);
   const selected = weeks.includes(requestedWeek) ? requestedWeek : pickCfbDefaultWeek();
 
+  const recordPromise = fetchRecordSafely("CFB");
   // Per-week fetch — the CFB slate is 60+ games/week, never the whole season.
   let games: GameSummary[];
   try {
-    games = await getGames(selected, 2026, "CFB");
+    games = await getGames(selected, 2026, "CFB", status);
   } catch (e) {
     if (e instanceof ApiUnreachableError) return <BackendDown />;
     throw e;
   }
+  const record = await recordPromise;
 
   const conferences = [
     ...new Set(
@@ -170,21 +234,23 @@ async function CfbSlate({
     if (top25 && g.home.rank == null && g.away.rank == null) return false;
     return true;
   });
-  const predicted = filtered.filter((g) => g.has_prediction).length;
-  const filterQuery = `${activeConf ? `&conf=${encodeURIComponent(activeConf)}` : ""}${top25 ? "&top25=1" : ""}`;
+  const counter = weekCounter(filtered);
+  const confQuery = `${activeConf ? `&conf=${encodeURIComponent(activeConf)}` : ""}${top25 ? "&top25=1" : ""}`;
+  const statusQuery = status !== "all" ? `&status=${status}` : "";
+  const filterQuery = `${confQuery}${statusQuery}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      {record && <RecordBanner record={record} />}
       <Banner season={2026} week={selected} />
 
-      {/* Week selector + filter chips */}
       <div className="mt-8">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
             Select a week
           </h2>
           <span className="font-mono text-[11px] tabular-nums text-ink-soft">
-            {predicted}/{filtered.length} predicted
+            {counter.count}/{counter.total} {counter.label}
           </span>
         </div>
         <WeekSelector weeks={weeks} selected={selected} basePath="/cfb" query={filterQuery} />
@@ -193,12 +259,14 @@ async function CfbSlate({
           activeConf={activeConf}
           top25={top25}
           week={selected}
+          query={statusQuery}
         />
+        <StatusFilter sport="cfb" active={status} week={selected} query={confQuery} />
       </div>
 
-      {/* Slate, grouped by day */}
       <div className="mt-8 space-y-8">
-        <Slate games={filtered} sport="cfb" filtered={!!activeConf || top25} />
+        <Disagreements games={games} sport="cfb" />
+        <Slate games={filtered} sport="cfb" filtered={!!activeConf || top25 || status !== "all"} />
       </div>
     </div>
   );
@@ -210,9 +278,17 @@ export default async function SlatePage({ params, searchParams }: Props) {
 
   const sp = await searchParams;
   const requestedWeek = Number(one(sp.week));
+  const status = validStatus(one(sp.status));
 
   if (sport === "cfb") {
-    return <CfbSlate requestedWeek={requestedWeek} conf={one(sp.conf)} top25={one(sp.top25) === "1"} />;
+    return (
+      <CfbSlate
+        requestedWeek={requestedWeek}
+        conf={one(sp.conf)}
+        top25={one(sp.top25) === "1"}
+        status={status}
+      />
+    );
   }
-  return <NflSlate requestedWeek={requestedWeek} />;
+  return <NflSlate requestedWeek={requestedWeek} status={status} />;
 }

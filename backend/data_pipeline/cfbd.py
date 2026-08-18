@@ -32,7 +32,7 @@ def load_fbs_teams(year: int) -> pd.DataFrame:
 
 
 def load_fcs_teams(year: int) -> pd.DataFrame:
-    # [VERIFY] /teams has no classification filter param; filter client-side.
+    # /teams has no classification filter param; filter client-side.
     df = pd.json_normalize(_get("/teams", {"year": year}))
     return df[df["classification"].str.lower() == "fcs"].reset_index(drop=True)
 
@@ -87,7 +87,7 @@ def load_rankings(year: int, season_type: str = "regular") -> pd.DataFrame:
 def load_team_game_ppa(year: int, season_type: str = "regular") -> pd.DataFrame:
     """Team-game PPA (CFBD's EPA-per-play analogue), one row per (game, team)."""
     df = pd.json_normalize(_get("/ppa/games", {"year": year, "seasonType": season_type}))
-    # [VERIFY] nested field names offense.overall / defense.overall.
+    # CFBD nests these as offense.overall / defense.overall.
     return df.rename(
         columns={
             "gameId": "game_id",

@@ -1,3 +1,4 @@
+import { displayAbbr } from "./teams";
 import type { MatchupDetail, Schedule } from "./types";
 
 const ET = "America/New_York";
@@ -55,12 +56,15 @@ export function fmtMoneyline(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-/** Spread from the favored side: "KC -2.5", or "PK" for a pick'em. */
+/** Spread from the favored side: "KC -2.5", or "PK" for a pick'em.
+ *  spread_home is positive when the home team is favored. */
 export function fmtSpread(m: MatchupDetail): string {
-  if (!m.odds) return "—";
-  const s = m.odds.spread_home;
+  const s = m.odds?.spread_home;
+  if (s == null) return "—";
   if (s === 0) return "PK";
-  return s < 0 ? `${m.home.abbr} ${s}` : `${m.away.abbr} -${s}`;
+  const favored = s > 0 ? m.home : m.away;
+  const abbr = m.sport === "CFB" ? favored.abbr : displayAbbr(favored.abbr);
+  return `${abbr} -${Math.abs(s)}`;
 }
 
 /**
@@ -69,11 +73,15 @@ export function fmtSpread(m: MatchupDetail): string {
  * finale it sticks to the last week.
  */
 export function pickDefaultWeek(schedule: Schedule, now: Date = new Date()): number {
-  const cutoff = now.getTime() - 6 * 60 * 60 * 1000; // keep a week "current" through its last kickoff
+  // 12h past the last kickoff. An NFL week ends with Monday Night Football, so
+  // this keeps the finished slate up overnight and rolls it Tuesday morning.
+  const cutoff = now.getTime() - 12 * 60 * 60 * 1000;
   for (const w of schedule.weeks) {
-    // A TBD kickoff counts as upcoming.
-    if (w.games.some((g) => g.kickoff === null || new Date(g.kickoff).getTime() > cutoff))
-      return w.week;
+    const dated = w.games.filter((g) => g.kickoff !== null);
+    if (dated.some((g) => new Date(g.kickoff as string).getTime() > cutoff)) return w.week;
+    // Every dated game has kicked off, so a leftover TBD does not hold the
+    // week open. A week with nothing dated yet is still ahead of us.
+    if (dated.length === 0 && w.games.length > 0) return w.week;
   }
   return schedule.weeks[schedule.weeks.length - 1]?.week ?? 1;
 }
@@ -86,7 +94,9 @@ export const CFB_WEEKS = 15;
  * after it. Calendar-based because the CFB slate is fetched per-week.
  */
 export function pickCfbDefaultWeek(now: Date = new Date()): number {
-  const week1Monday = Date.UTC(2026, 7, 31);
+  // 04:00 UTC is Monday 00:00 ET; anchoring at plain UTC rolled the week over
+  // on Sunday evening.
+  const week1Monday = Date.UTC(2026, 7, 31, 4);
   const wk = Math.floor((now.getTime() - week1Monday) / (7 * 24 * 60 * 60 * 1000)) + 1;
   return Math.min(Math.max(wk, 1), CFB_WEEKS);
 }

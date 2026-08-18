@@ -106,9 +106,12 @@ def upsert_injuries(db: Session, rows: list[dict], season: int) -> int:
                 report_date=None if not report_date else datetime.fromisoformat(report_date).date(),
             )
         )
-    game_ids = list({r.game_id for r in records})
-    if game_ids:
-        db.execute(delete(Injury).where(Injury.game_id.in_(game_ids)))
+    # Clear every upcoming game being refreshed, not just those with new rows.
+    # A team that reports fully healthy sends no rows, and scoping the delete
+    # to the batch would leave last week's injuries feeding the features.
+    refreshed = {gid for gid in next_game.values() if gid is not None}
+    if refreshed:
+        db.execute(delete(Injury).where(Injury.game_id.in_(refreshed)))
     db.add_all(records)
     db.flush()
     return len(records)

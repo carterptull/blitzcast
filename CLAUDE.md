@@ -51,6 +51,11 @@ Full setup + env vars: [README.md](./README.md) and
   prediction rows, not the app release.
 - **Leakage rule (ML):** every feature for game G uses only data from
   strictly before G's kickoff. Tests enforce this — keep it that way.
+- **Completion invariant:** never key "is this game over" off the
+  `Game.status` column. It's derived, unindexed, and has been wrong before
+  (set final on the home score alone). Always check
+  `home_score is not None and away_score is not None` directly, at every
+  call site (status filter, verdict grading, the season record).
 - **LLM boundary:** Claude narrates model output only; it never predicts,
   never alters probabilities. Guardrails live in `narrate.py`.
 - **API keys** live in gitignored `.env` files (examples checked in). All
@@ -60,3 +65,12 @@ Full setup + env vars: [README.md](./README.md) and
 - **Comments:** minimal, clean, simple.
 - Python: SQLAlchemy 2.x typed `Mapped` style, ruff-clean. Schema changes
   go through Alembic migrations, never manual edits.
+- **Adding an API field:** this repo has shipped three separate
+  contract-drift bugs from `frontend/src/lib/types.ts` disagreeing with
+  `backend/app/schemas.py` on nullability or enum values. A new field
+  touches all five of these, in the same change: `backend/app/schemas.py`;
+  the builder in `backend/app/services/predictions.py`; the mock path in
+  `backend/app/mock_data.py`; `frontend/src/lib/types.ts` (match
+  nullability exactly); and `frontend/src/lib/mock.ts` /
+  `frontend/src/lib/mockCfb.ts`. Assert it in
+  `frontend/src/lib/__tests__/api.test.ts`.
