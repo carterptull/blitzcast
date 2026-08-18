@@ -31,6 +31,7 @@ describe("GameCard", () => {
     is_primetime: false,
     status: "scheduled",
     has_prediction: true,
+    market_home_prob: null,
     home_score: null,
     away_score: null,
     prediction_correct: null,
@@ -155,6 +156,7 @@ describe("GameCard", () => {
       is_primetime: false,
       status: "scheduled",
       has_prediction: true,
+      market_home_prob: null,
       home_score: null,
       away_score: null,
       prediction_correct: null,
@@ -206,6 +208,17 @@ describe("GameCard", () => {
   test("final game with no prediction shows score but no verdict", () => {
     render(<GameCard game={{ ...finalGame(null), home_win_prob: undefined }} />);
     expect(screen.getByText("27")).toBeInTheDocument();
+    expect(screen.queryByText(/called it|missed/i)).not.toBeInTheDocument();
+  });
+
+  test("final game with has_prediction false does not show 'Prediction pending'", () => {
+    render(
+      <GameCard
+        game={{ ...finalGame(null), home_win_prob: undefined, has_prediction: false }}
+      />
+    );
+    expect(screen.getByText("27")).toBeInTheDocument();
+    expect(screen.queryByText(/prediction pending/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/called it|missed/i)).not.toBeInTheDocument();
   });
 

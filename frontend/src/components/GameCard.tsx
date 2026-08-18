@@ -140,7 +140,7 @@ export default function GameCard({
           >
             {verdict ? "Called it" : "Missed"}
           </span>
-        ) : !game.has_prediction ? (
+        ) : !game.has_prediction && !final ? (
           <span className="ml-auto text-[9px] tracking-[0.15em]">Prediction pending</span>
         ) : (
           <span className="ml-auto text-gold-text opacity-0 transition-opacity group-hover:opacity-100 motion-reduce:transition-none">

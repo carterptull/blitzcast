@@ -19,6 +19,18 @@ export default function ReasoningPanel({ matchup }: { matchup: MatchupDetail }) 
   const favored = m.home.win_prob !== null && m.home.win_prob >= 0.5 ? m.home : m.away;
   const favoredAbbr = m.sport === "CFB" ? favored.abbr : displayAbbr(favored.abbr);
 
+  if (pending && final) {
+    return (
+      <section className="rounded-xl border border-edge bg-surface p-6 sm:p-8">
+        <SectionLabel>From the booth</SectionLabel>
+        <p className="mt-4 text-lg italic leading-relaxed text-ink-soft">
+          This one wrapped up before the model ever weighed in. There&apos;s no prediction on
+          record for this game, so there&apos;s no call to grade here.
+        </p>
+      </section>
+    );
+  }
+
   if (pending) {
     return (
       <section className="rounded-xl border border-edge bg-surface p-6 sm:p-8">

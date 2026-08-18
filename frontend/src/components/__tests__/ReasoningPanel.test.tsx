@@ -90,6 +90,19 @@ describe("ReasoningPanel", () => {
     expect(screen.queryByText(/the call missed/i)).not.toBeInTheDocument();
   });
 
+  test("final matchup with no prediction on record shows finished copy, not the pending copy", () => {
+    const m: MatchupDetail = {
+      ...baseMatchup,
+      prediction_status: "pending",
+      home_score: 17,
+      away_score: 24,
+      prediction_correct: null,
+    };
+    render(<ReasoningPanel matchup={m} />);
+    expect(screen.queryByText(/hasn't weighed in on this one yet/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/wrapped up before the model ever weighed in/i)).toBeInTheDocument();
+  });
+
   test("backtest-reconstructed predictions are labeled as such", () => {
     render(<ReasoningPanel matchup={{ ...baseMatchup, model_version: "backtest-2024" }} />);
     expect(screen.getByText(/reconstructed from a backtest/i)).toBeInTheDocument();
