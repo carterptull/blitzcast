@@ -1,14 +1,26 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ApiUnreachableError, getGames, getSchedule, type StatusFilterValue } from "@/lib/api";
+import { ApiUnreachableError, getGames, getRecord, getSchedule, type StatusFilterValue } from "@/lib/api";
 import { CFB_WEEKS, fmtDayHeading, pickCfbDefaultWeek, pickDefaultWeek } from "@/lib/format";
 import { isSportSlug } from "@/lib/sport";
-import type { GameSummary, Schedule } from "@/lib/types";
+import type { GameSummary, Record, Schedule } from "@/lib/types";
 import BackendDown from "@/components/BackendDown";
+import Disagreements from "@/components/Disagreements";
 import FilterChips from "@/components/FilterChips";
 import GameCard from "@/components/GameCard";
+import RecordBanner from "@/components/RecordBanner";
 import StatusFilter from "@/components/StatusFilter";
 import WeekSelector from "@/components/WeekSelector";
+
+/** The record is secondary to the slate — never let its fetch failing take
+ *  down the page. */
+async function fetchRecordSafely(sport: "NFL" | "CFB"): Promise<Record | null> {
+  try {
+    return await getRecord(2026, sport);
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +50,38 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
   }
   return {};
+}
+
+/** Week counter shown beside the week selector.
+ *
+ *  Denominator (`total`) always follows the existing "predicted" convention:
+ *  every game currently displayed, regardless of grading. That doesn't
+ *  change here — only the numerator and wording do.
+ *
+ *  When every displayed game is final, the counter switches to grading:
+ *  `count` becomes the number of correctly-called verdicts
+ *  (`prediction_correct === true`). A final tie or a no-pick game has
+ *  `prediction_correct: null` — it's final but not graded, so it counts
+ *  toward the total (it's still a displayed, finished game) but not toward
+ *  the correct count. Any week with at least one non-final game keeps the
+ *  original "predicted" reading. */
+export function weekCounter(
+  games: GameSummary[]
+): { count: number; total: number; label: "predicted" | "correct" } {
+  const allFinal =
+    games.length > 0 && games.every((g) => g.home_score != null && g.away_score != null);
+  if (allFinal) {
+    return {
+      count: games.filter((g) => g.prediction_correct === true).length,
+      total: games.length,
+      label: "correct",
+    };
+  }
+  return {
+    count: games.filter((g) => g.has_prediction).length,
+    total: games.length,
+    label: "predicted",
+  };
 }
 
 function groupByDay(games: GameSummary[]): [string, GameSummary[]][] {
@@ -108,6 +152,7 @@ async function NflSlate({
   requestedWeek: number;
   status: StatusFilterValue;
 }) {
+  const recordPromise = fetchRecordSafely("NFL");
   let schedule: Schedule;
   try {
     schedule = await getSchedule(2026, "NFL", status);
@@ -115,15 +160,17 @@ async function NflSlate({
     if (e instanceof ApiUnreachableError) return <BackendDown />;
     throw e;
   }
+  const record = await recordPromise;
 
   const weeks = schedule.weeks.map((w) => w.week);
   const selected = weeks.includes(requestedWeek) ? requestedWeek : pickDefaultWeek(schedule);
   const games = schedule.weeks.find((w) => w.week === selected)?.games ?? [];
-  const predicted = games.filter((g) => g.has_prediction).length;
+  const counter = weekCounter(games);
   const filterQuery = status !== "all" ? `&status=${status}` : "";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      {record && <RecordBanner record={record} />}
       <Banner season={schedule.season} week={selected} />
 
       <div className="mt-8">
@@ -132,7 +179,7 @@ async function NflSlate({
             Select a week
           </h2>
           <span className="font-mono text-[11px] tabular-nums text-ink-soft">
-            {predicted}/{games.length} predicted
+            {counter.count}/{counter.total} {counter.label}
           </span>
         </div>
         <WeekSelector weeks={weeks} selected={selected} basePath="/nfl" query={filterQuery} />
@@ -140,6 +187,7 @@ async function NflSlate({
       </div>
 
       <div className="mt-8 space-y-8">
+        <Disagreements games={games} sport="nfl" />
         <Slate games={games} sport="nfl" filtered={status !== "all"} />
       </div>
     </div>
@@ -160,6 +208,7 @@ async function CfbSlate({
   const weeks = Array.from({ length: CFB_WEEKS }, (_, i) => i + 1);
   const selected = weeks.includes(requestedWeek) ? requestedWeek : pickCfbDefaultWeek();
 
+  const recordPromise = fetchRecordSafely("CFB");
   // Per-week fetch — the CFB slate is 60+ games/week, never the whole season.
   let games: GameSummary[];
   try {
@@ -168,6 +217,7 @@ async function CfbSlate({
     if (e instanceof ApiUnreachableError) return <BackendDown />;
     throw e;
   }
+  const record = await recordPromise;
 
   const conferences = [
     ...new Set(
@@ -184,13 +234,14 @@ async function CfbSlate({
     if (top25 && g.home.rank == null && g.away.rank == null) return false;
     return true;
   });
-  const predicted = filtered.filter((g) => g.has_prediction).length;
+  const counter = weekCounter(filtered);
   const confQuery = `${activeConf ? `&conf=${encodeURIComponent(activeConf)}` : ""}${top25 ? "&top25=1" : ""}`;
   const statusQuery = status !== "all" ? `&status=${status}` : "";
   const filterQuery = `${confQuery}${statusQuery}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      {record && <RecordBanner record={record} />}
       <Banner season={2026} week={selected} />
 
       <div className="mt-8">
@@ -199,7 +250,7 @@ async function CfbSlate({
             Select a week
           </h2>
           <span className="font-mono text-[11px] tabular-nums text-ink-soft">
-            {predicted}/{filtered.length} predicted
+            {counter.count}/{counter.total} {counter.label}
           </span>
         </div>
         <WeekSelector weeks={weeks} selected={selected} basePath="/cfb" query={filterQuery} />
@@ -214,6 +265,7 @@ async function CfbSlate({
       </div>
 
       <div className="mt-8 space-y-8">
+        <Disagreements games={games} sport="cfb" />
         <Slate games={filtered} sport="cfb" filtered={!!activeConf || top25 || status !== "all"} />
       </div>
     </div>

@@ -36,9 +36,23 @@ export interface GameSummary {
   /** Frontend extension: compact win-prob hint for cards. Optional — the
    *  card degrades to a "prediction ready" state when absent. */
   home_win_prob?: number | null;
+  /** De-vigged market win probability for the home team; null when no
+   *  market data is available for this game. */
+  market_home_prob: number | null;
   home_score: number | null;
   away_score: number | null;
   prediction_correct: boolean | null;
+}
+
+// Mirrors the backend's RecordOut. `sport` is null when a record spans both
+// sports (not currently exposed by the UI, but the field is nullable there).
+export interface Record {
+  sport: string | null;
+  season: number;
+  correct: number;
+  total: number;
+  market_correct: number;
+  sufficient: boolean;
 }
 
 export interface ScheduleWeek {

@@ -63,6 +63,25 @@ function verdict(
   return (homeProb > 0.5) === (homeScore > awayScore);
 }
 
+function moneylineToProb(ml: number): number {
+  return ml < 0 ? -ml / (-ml + 100) : 100 / (ml + 100);
+}
+
+/** Mirrors the backend's market_home_prob (ml/features.py): de-vigged
+ *  moneyline probability, falling back to a spread-based estimate. */
+function marketHomeProb(odds: Odds | null): number | null {
+  if (!odds) return null;
+  if (odds.moneyline_home != null && odds.moneyline_away != null) {
+    const pHome = moneylineToProb(odds.moneyline_home);
+    const pAway = moneylineToProb(odds.moneyline_away);
+    return pHome / (pHome + pAway);
+  }
+  if (odds.spread_home != null) {
+    return 1 / (1 + Math.pow(10, (-odds.spread_home * 25) / 400));
+  }
+  return null;
+}
+
 const WEEK1: Week1Spec[] = [
   {
     away: "BUF",
@@ -324,6 +343,7 @@ function week1Games(): GameSummary[] {
     has_prediction: s.homeProb !== null,
     sport: "NFL",
     home_win_prob: s.homeProb,
+    market_home_prob: marketHomeProb(s.odds),
     home_score: s.homeScore ?? null,
     away_score: s.awayScore ?? null,
     prediction_correct: verdict(s.homeProb, s.homeScore, s.awayScore),
@@ -372,6 +392,7 @@ function generatedWeekGames(week: number): GameSummary[] {
       has_prediction: false,
       sport: "NFL",
       home_win_prob: null,
+      market_home_prob: null,
       home_score: null,
       away_score: null,
       prediction_correct: null,

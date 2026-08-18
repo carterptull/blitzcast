@@ -4,7 +4,7 @@
 // game ids are globally unique.
 
 import { mockGames, mockMatchup, mockSchedule, mockTeams } from "./mock";
-import type { GameSummary, MatchupDetail, Schedule, Sport, Team } from "./types";
+import type { GameSummary, MatchupDetail, Record, Schedule, Sport, Team } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
@@ -63,6 +63,15 @@ export async function getGames(
   return get<GameSummary[]>(
     `/api/games?week=${week}&season=${season}&sport=${sport}&status=${status}`
   );
+}
+
+export async function getRecord(season = 2026, sport: Sport = "NFL"): Promise<Record> {
+  if (MOCK) {
+    // Demo fixture — deliberately shows the model trailing the market, same
+    // as the real record does, rather than an implausibly clean number.
+    return { sport, season, correct: 11, total: 16, market_correct: 12, sufficient: true };
+  }
+  return get<Record>(`/api/record?sport=${sport}&season=${season}`);
 }
 
 export async function getMatchup(gameId: string): Promise<MatchupDetail> {

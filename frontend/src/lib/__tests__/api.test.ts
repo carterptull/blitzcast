@@ -145,6 +145,31 @@ describe("API Client", () => {
         expect(g).toHaveProperty("prediction_correct");
       }
     });
+
+    test("GameSummary carries market_home_prob, present for games with odds", async () => {
+      process.env.NEXT_PUBLIC_USE_MOCK = "1";
+      const { getGames } = await import("../api");
+      const games = await getGames(1, 2026, "NFL");
+      expect(games.length).toBeGreaterThan(0);
+      for (const g of games) {
+        expect(g).toHaveProperty("market_home_prob");
+      }
+      const withOdds = games.find((g) => g.game_id === "2026_01_BUF_KC");
+      expect(withOdds?.market_home_prob).not.toBeNull();
+    });
+
+    test("Record contract has required fields", async () => {
+      process.env.NEXT_PUBLIC_USE_MOCK = "1";
+      const { getRecord } = await import("../api");
+      const record = await getRecord(2026, "NFL");
+
+      expect(record).toHaveProperty("sport");
+      expect(record).toHaveProperty("season");
+      expect(record).toHaveProperty("correct");
+      expect(record).toHaveProperty("total");
+      expect(record).toHaveProperty("market_correct");
+      expect(record).toHaveProperty("sufficient");
+    });
   });
 
   describe("Sport Parameter", () => {
