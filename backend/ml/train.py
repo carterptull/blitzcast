@@ -48,6 +48,22 @@ def fbs_vs_fbs(df: pd.DataFrame) -> pd.Series:
     return (df["home_tier"] == "FBS") & (df["away_tier"] == "FBS")
 
 
+def assert_temporally_disjoint(train_df: pd.DataFrame, calib_df: pd.DataFrame) -> None:
+    """Every training kickoff must precede every calibration kickoff.
+
+    Without this, widening TRAIN_SEASONS to include the season being predicted
+    would leak silently: no existing test covers train.py's split."""
+    if train_df.empty or calib_df.empty:
+        return
+    latest_train = train_df["kickoff"].max()
+    earliest_calib = calib_df["kickoff"].min()
+    if latest_train >= earliest_calib:
+        raise ValueError(
+            f"training and calibration windows overlap: "
+            f"latest train {latest_train} >= earliest calibration {earliest_calib}"
+        )
+
+
 def fit_model(
     train_df: pd.DataFrame,
     calib_df: pd.DataFrame,
@@ -84,6 +100,7 @@ def main() -> None:
 
     train_df = df[df["season"].isin(TRAIN_SEASONS)]
     calib_df = df[df["season"] == CALIB_SEASON]
+    assert_temporally_disjoint(train_df, calib_df)
     calib_fit_df = calib_df[fbs_vs_fbs(calib_df)] if sport == SPORT_CFB else None
     print(f"training rows: {len(train_df)}, calibration rows: {len(calib_df)}")
 

@@ -43,6 +43,7 @@ def default_week(
             Game.season == season,
             Game.sport == sport,
             Game.home_score.is_(None),
+            Game.away_score.is_(None),
         )
         .group_by(Game.week)
         .order_by(Game.week)
