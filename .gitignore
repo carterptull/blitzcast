@@ -23,6 +23,10 @@ venv/
 *.joblib
 models/*.bin
 
+# Exception: the current model per sport is committed for deploy (see DECISIONS.md)
+!backend/ml/artifacts/model_1.0.0.joblib
+!backend/ml/artifacts/cfb/model_cfb-1.0.0.joblib
+
 # Data
 *.csv
 *.parquet
