@@ -1,0 +1,7 @@
+{
+  "$schema": "railway.app/railway.schema.json",
+  "deploy": {
+    "startCommand": "cd backend && python -m data_pipeline.refresh_week_cfb",
+    "cronSchedule": "0 10 * 8,9,10,11,12,1 *"
+  }
+}

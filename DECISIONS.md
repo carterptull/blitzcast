@@ -182,3 +182,18 @@ the frontend swappable or independently deployable later. **Alternative:** a Pyt
 frontend (e.g. Jinja/HTMX): would avoid the contract-sync overhead, but trades away Next.js's
 component/theming ergonomics for a UI that's meant to look polished and be mobile-friendly;
 rejected.
+
+## Committing the trained model artifacts, as an exception
+
+`backend/ml/artifacts/` is gitignored by default (only `latest.json` is normally tracked), but
+the two current *latest* model files (`model_1.0.0.joblib`, `model_cfb-1.0.0.joblib`) are a
+deliberate exception, carved out in `.gitignore`. **Why:** `ml/train.py` pins no random seed, so
+retraining on a fresh machine (a deploy target, for instance) would not reproduce these exact
+weights, and the accuracy numbers already published in `README.md` and the `/how-it-works` page
+describe these specific files, not whatever a new retrain would produce. The files themselves are
+small (roughly 350KB combined), so committing them costs nothing in repo size. **Alternative:** a
+Railway Volume with a manual upload step, or retraining as part of first deploy: both add
+infrastructure or a determinism risk to solve a problem the tiny file size doesn't actually pose;
+rejected for this release. Whoever retrains the model (season-end only, see the walk-forward
+backfill decision above) needs to re-commit the new file and update the `.gitignore` exception if
+the filename changes.
