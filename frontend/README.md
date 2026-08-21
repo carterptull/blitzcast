@@ -45,6 +45,7 @@ Copy `.env.example` to `.env.local` and fill in what you need:
 | Var | Purpose |
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | Backend API base URL (dev default `http://localhost:8000`) |
+| `NEXT_PUBLIC_SITE_URL` | Production origin; drives `metadataBase`, `sitemap.ts`, `robots.ts`, and OG image URLs |
 | `NEXT_PUBLIC_BUYMEACOFFEE_URL` | Support link; the footer button is hidden when unset |
 | `NEXT_PUBLIC_USE_MOCK` | Set to `1` to serve fixture data instead of calling the backend |
 
