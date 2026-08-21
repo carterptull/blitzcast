@@ -4,6 +4,7 @@ pydantic
 pydantic-settings
 sqlalchemy
 psycopg[binary]
+psycopg2-binary
 alembic
 pandas
 numpy
