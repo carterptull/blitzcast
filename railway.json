@@ -1,6 +1,6 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "deploy": {
-    "startCommand": "cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    "startCommand": "python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
   }
 }
