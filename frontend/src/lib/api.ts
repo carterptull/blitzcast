@@ -30,7 +30,9 @@ export type StatusFilterValue = "all" | "final" | "upcoming";
 async function get<T>(path: string): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { cache: "no-store" });
+    // Predictions only change on the weekly cron refresh, so a short
+    // revalidation window avoids a live round trip on every week click.
+    res = await fetch(`${BASE}${path}`, { next: { revalidate: 30 } });
   } catch {
     throw new ApiUnreachableError();
   }

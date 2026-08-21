@@ -22,8 +22,6 @@ async function fetchRecordSafely(sport: "NFL" | "CFB"): Promise<Record | null> {
   }
 }
 
-export const dynamic = "force-dynamic";
-
 interface Props {
   params: Promise<{ sport: string }>;
   searchParams: Promise<{

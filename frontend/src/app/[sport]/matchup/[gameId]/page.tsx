@@ -11,7 +11,7 @@ import MatchupHero from "@/components/MatchupHero";
 import ReasoningPanel from "@/components/ReasoningPanel";
 import StatTicker from "@/components/StatTicker";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 interface Props {
   params: Promise<{ sport: string; gameId: string }>;

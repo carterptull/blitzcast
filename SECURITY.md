@@ -7,7 +7,7 @@ Response times are best effort, not contractual.
 
 | Version | Supported |
 |---|---|
-| 1.0.0 (latest release) | Yes |
+| 1.0.1 (latest release) | Yes |
 | Older pre-1.0 tags | No |
 
 Only the latest release and the current `main` receive security fixes.

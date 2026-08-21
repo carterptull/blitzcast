@@ -56,7 +56,7 @@ refreshes print a message and exit; narration writes `null` and continues.
 | Refresh injuries (NFL) | `python -m data_pipeline.refresh_injuries` |
 | Full weekly refresh + predict (NFL) | `python -m data_pipeline.refresh_week` |
 | Seed teams/conferences (CFB) | `python -m data_pipeline.seed_cfb` |
-| Historical backfill (CFB, 2021-2025) | `python -m data_pipeline.backfill_cfb` |
+| Historical backfill (CFB, 2021-2026) | `python -m data_pipeline.backfill_cfb` |
 | Sync current-season schedule (CFB) | `python -m data_pipeline.refresh_schedule_cfb [--season 2026]` |
 | Refresh AP/Coaches polls (CFB) | `python -m data_pipeline.refresh_polls_cfb` |
 | Full weekly refresh + predict (CFB) | `python -m data_pipeline.refresh_week_cfb` |

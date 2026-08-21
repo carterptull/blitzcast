@@ -113,7 +113,7 @@ def backfill_team_game_stats(db: Session, season: int) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", type=int, default=2021)
-    parser.add_argument("--end", type=int, default=2025)
+    parser.add_argument("--end", type=int, default=2026)
     args = parser.parse_args()
 
     if not get_settings().cfbd_api_key:
