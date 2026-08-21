@@ -197,3 +197,15 @@ infrastructure or a determinism risk to solve a problem the tiny file size doesn
 rejected for this release. Whoever retrains the model (season-end only, see the walk-forward
 backfill decision above) needs to re-commit the new file and update the `.gitignore` exception if
 the filename changes.
+
+## Short revalidation window over `no-store` for slate/matchup fetches
+
+The frontend's API client caches every GET for 30 seconds (`next: { revalidate: 30 }`) instead of
+bypassing the cache entirely. **Why:** predictions only change on the weekly cron refresh, so
+`no-store` bought no real freshness — every week-selector click was a live Vercel-to-Railway-to-
+Postgres round trip, which read as instant on desktop broadband but was a noticeable stall on
+mobile/cellular, especially for CFB's larger per-week payload. A 30-second window is short enough
+that a mid-refresh visitor never sees meaningfully stale odds, and long enough to absorb repeat
+navigation within a single browsing session. **Alternative:** a longer window (minutes) tuned
+tighter to the cron cadence: would cache more aggressively, but risks a visitor seeing a stale
+score during a live game for no real latency benefit over 30 seconds; rejected.

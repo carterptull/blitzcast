@@ -6,7 +6,9 @@ plus a broadcaster-style explanation of the key factors behind it, built on
 a trained, calibrated XGBoost model with SHAP explainability. Claude
 narrates the model's output; it never makes the prediction.
 
-**Version: 1.0.0** (see
+**Live at [blitzcast.app](https://blitzcast.app)**
+
+**Version: 1.0.1** (see
 [CHANGELOG](./CHANGELOG.md) and [releases](https://github.com/carterptull/blitzcast/releases))
 
 Technical decision log: [DECISIONS.md](./DECISIONS.md) · Release history:
@@ -128,6 +130,22 @@ In-season weekly refresh (odds → weather → injuries → predictions):
 narration falls back to the factor list, and the frontend has a full mock
 mode (`NEXT_PUBLIC_USE_MOCK=1`) plus the backend's `BLITZCAST_MOCK=1`.
 
+## Deployment
+
+Production runs on Railway (backend API + Postgres + two weekly cron jobs
+for the NFL/CFB refresh) and Vercel (frontend), behind the `blitzcast.app`
+custom domain on Cloudflare. `railway.json` sets the backend's start
+command, which runs `alembic upgrade head` before `uvicorn` on every
+deploy. The two `railway-*-cron.json` files configure the standalone
+refresh services.
+
+First deploy on a fresh database needs the one-time bootstrap in order:
+`seed` → `seed_cfb` → `backfill` → `backfill_cfb` →
+`backfill_predictions --sport nfl` → `backfill_predictions --sport cfb` →
+`predict_week`. `backfill_cfb` only loads seasons through its `--end`
+default; the current season needs `seed_cfb` to have already run (it seeds
+the CFB team table `backfill_cfb` depends on to resolve opponents).
+
 ## Repo structure
 
 ```
@@ -144,6 +162,8 @@ blitzcast/
 │   ├── tests/           pytest suite (148 tests)
 │   └── README.md        every backend command
 ├── docker/              docker-compose.yml (Postgres 16)
+├── railway.json         backend service config (start command, migrations)
+├── railway-*-cron.json  weekly NFL/CFB refresh cron services
 ├── .github/workflows/   CI: ruff + pytest, lint + build
 ├── DECISIONS.md         technical decision log
 ├── CHANGELOG.md         release history

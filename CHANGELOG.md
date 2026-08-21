@@ -6,6 +6,34 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-08-21
+
+First production deploy: Railway (backend API + Postgres + weekly NFL/CFB
+refresh crons) and Vercel (frontend) behind `blitzcast.app`.
+
+### Fixed
+- `data_pipeline.backfill`'s `backfill_injuries` passed pandas `NaN`
+  directly into the `status` column. Mixing `NaN` and string values in the
+  same batch insert made psycopg2 misinfer the column type from the `NaN`
+  rows and reject every row with an actual status string.
+- `backfill_cfb`'s `--end` default was still 2025, a season behind the NFL
+  backfill's default; the current season silently never loaded without an
+  explicit override.
+- `railway.json`'s start command included a redundant `cd backend &&`
+  left over from before the service's Root Directory was set, breaking
+  every deploy.
+- `psycopg2-binary` was missing from `requirements.txt`; Alembic imports it
+  directly and failed at migration time even though the app itself runs on
+  `psycopg` (v3).
+
+### Changed
+- The frontend API client now revalidates every 30 seconds
+  (`next: { revalidate: 30 }`) instead of `cache: "no-store"`, and the
+  matchup detail page dropped `force-dynamic` in favor of the same window.
+  Predictions only change on the weekly cron refresh, so the previous
+  every-request round trip to Railway bought no real freshness — it only
+  cost latency, most noticeable on mobile/cellular connections.
+
 ## [1.0.0] — 2026-08-17
 
 First public release. Model artifacts are retrained and stamped `1.0.0`
