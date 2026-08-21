@@ -95,7 +95,7 @@ def backfill_injuries(db: Session, seasons: list[int]) -> int:
                 team_id=team_id,
                 player_name=row.full_name,
                 position=row.position,
-                status=row.report_status,
+                status=None if pd.isna(row.report_status) else row.report_status,
                 report_date=None if pd.isna(row.date_modified) else row.date_modified.date(),
             )
         )
