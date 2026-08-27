@@ -6,6 +6,13 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-08-26
+
+### Security
+- Added a `Content-Security-Policy: frame-ancestors` header scoping which
+  sites may embed blitzcast.app in an iframe to itself and cartertull.com,
+  closing a previously-unrestricted clickjacking gap.
+
 ## [1.0.1] — 2026-08-21
 
 First production deploy: Railway (backend API + Postgres + weekly NFL/CFB
