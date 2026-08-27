@@ -209,3 +209,16 @@ that a mid-refresh visitor never sees meaningfully stale odds, and long enough t
 navigation within a single browsing session. **Alternative:** a longer window (minutes) tuned
 tighter to the cron cadence: would cache more aggressively, but risks a visitor seeing a stale
 score during a live game for no real latency benefit over 30 seconds; rejected.
+
+## Scoping `frame-ancestors` instead of leaving embedding unrestricted
+
+`frontend/next.config.ts` now sends `Content-Security-Policy: frame-ancestors 'self'
+https://cartertull.com https://www.cartertull.com` on every route. **Why:** the app previously
+sent no framing-control header at all, so any site could iframe blitzcast.app for clickjacking —
+a gap that only became worth closing once the portfolio at cartertull.com started deliberately
+embedding it in a window. Scoping to the two origins that need it (the portfolio, plus `'self'`
+for blitzcast.app's own pages) closes the general hole without breaking the one embed that's
+supposed to work. No `X-Frame-Options` is set alongside it: it can't list multiple origins, and
+CSP's `frame-ancestors` overrides it in every browser that honors both, so it would be dead
+weight rather than a fallback. **Alternative:** leaving embedding unrestricted: simplest, but
+that's the clickjacking gap this closes; rejected.
