@@ -8,7 +8,7 @@ narrates the model's output; it never makes the prediction.
 
 **Live at [blitzcast.app](https://blitzcast.app)**
 
-**Version: 1.0.2** (see
+**Version: 1.0.3** (see
 [CHANGELOG](./CHANGELOG.md) and [releases](https://github.com/carterptull/blitzcast/releases))
 
 Technical decision log: [DECISIONS.md](./DECISIONS.md) · Release history:

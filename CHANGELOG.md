@@ -6,6 +6,16 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-08-27
+
+### Fixed
+- Added a site-wide default `opengraph-image`. Only matchup pages had a
+  dedicated share-card image; the homepage and every other route had no
+  `og:image` at all, so link previews on LinkedIn and Discord fell back to
+  scraping the page for any image they could find (a team logo from a game
+  card) or showed no image at all. The new default renders the same
+  turf-and-wordmark card used as the matchup page's own fallback.
+
 ## [1.0.2] — 2026-08-26
 
 ### Security
