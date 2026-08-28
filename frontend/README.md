@@ -22,9 +22,11 @@ over HTTP and owns no model logic of its own.
 | `/[sport]/matchup/[gameId]` | Matchup detail: probability, factors, narration, final score and verdict once played |
 | `/how-it-works` | Methodology page: model inputs, the leakage rule, the LLM boundary, the honest Vegas comparison |
 
-`/[sport]` and `/[sport]/matchup/[gameId]` also render `opengraph-image.tsx`
-(and a paired `twitter` card) for social previews, and are covered by the
-root `sitemap.ts`/`robots.ts` (current season only, 1-hour cache).
+Every route renders an `opengraph-image.tsx` (and a paired `twitter` card)
+for social previews: `/[sport]/matchup/[gameId]` has its own per-game
+card, and everything else (`/`, `/[sport]`, `/how-it-works`) falls back to
+the root-level default. All routes are covered by the root
+`sitemap.ts`/`robots.ts` (current season only, 1-hour cache).
 
 ## Commands
 
