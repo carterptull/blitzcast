@@ -77,6 +77,11 @@ class Game(Base):
     home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.team_id"))
     away_team_id: Mapped[int] = mapped_column(ForeignKey("teams.team_id"))
     stadium_id: Mapped[int | None] = mapped_column(ForeignKey("stadiums.stadium_id"))
+    # Neutral-site games (nflverse location != "Home") have no Team-derived
+    # stadium; venue_name is the raw nflverse venue string so weather/display
+    # aren't silently dropped for them.
+    venue_name: Mapped[str | None] = mapped_column(String(120))
+    is_neutral_site: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_primetime: Mapped[bool] = mapped_column(Boolean, default=False)
     is_divisional: Mapped[bool] = mapped_column(Boolean, default=False)
     home_score: Mapped[int | None] = mapped_column(Integer)
