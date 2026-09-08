@@ -11,7 +11,7 @@ const baseMatchup: MatchupDetail = {
   season: 2026,
   week: 1,
   kickoff: "2026-09-10T20:20:00Z",
-  venue: { name: "Levi's Stadium", city: "Santa Clara", is_dome: false },
+  venue: { name: "Levi's Stadium", city: "Santa Clara", is_dome: false, is_neutral_site: false },
   is_primetime: false,
   is_divisional: false,
   home: {
@@ -54,6 +54,25 @@ describe("MatchupHero", () => {
     expect(screen.getByText("62%")).toBeInTheDocument();
     expect(screen.getByText("38%")).toBeInTheDocument();
     expect(screen.queryByText("Final")).not.toBeInTheDocument();
+  });
+
+  test("neutral-site game shows the real venue name and a Neutral site badge", () => {
+    const neutral: MatchupDetail = {
+      ...baseMatchup,
+      venue: { name: "Melbourne Cricket Ground", city: null, is_dome: null, is_neutral_site: true },
+    };
+    render(<MatchupHero matchup={neutral} />);
+    expect(screen.getByText("Melbourne Cricket Ground")).toBeInTheDocument();
+    expect(screen.getByText("Neutral site")).toBeInTheDocument();
+  });
+
+  test("game with no venue data at all falls back to Venue TBD", () => {
+    const noVenue: MatchupDetail = {
+      ...baseMatchup,
+      venue: { name: null, city: null, is_dome: null, is_neutral_site: false },
+    };
+    render(<MatchupHero matchup={noVenue} />);
+    expect(screen.getByText("Venue TBD")).toBeInTheDocument();
   });
 
   test("final matchup renders both scores", () => {

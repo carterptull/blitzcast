@@ -133,6 +133,8 @@ describe("API Client", () => {
       expect(matchup).toHaveProperty("away");
       expect(matchup).toHaveProperty("prediction_status");
       expect(["ready", "pending"]).toContain(matchup.prediction_status);
+      expect(matchup.venue).toHaveProperty("is_neutral_site");
+      expect(typeof matchup.venue.is_neutral_site).toBe("boolean");
     });
 
     test("GameSummary carries scores and verdict", async () => {

@@ -53,7 +53,14 @@ export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
     ["Moneyline", ml.length > 0 ? ml.join(" / ") : "—"],
     ["Total", m.odds?.total != null ? `O/U ${m.odds.total}` : "—"],
     ["Weather", weatherValue],
-    ["Venue", m.venue.name ? `${m.venue.name} · ${m.venue.city}` : "Neutral site"],
+    [
+      "Venue",
+      m.venue.name
+        ? m.venue.city
+          ? `${m.venue.name} · ${m.venue.city}`
+          : m.venue.name
+        : "Venue TBD",
+    ],
     ["Kickoff", m.kickoff !== null ? fmtKickoff(m.kickoff) : "TBD"],
   ];
 

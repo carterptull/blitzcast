@@ -91,7 +91,14 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
             <TbdBadge onTurf />
           )}
           <span aria-hidden="true">·</span>
-          <span>{m.venue.name ? `${m.venue.name}, ${m.venue.city}` : "Neutral site"}</span>
+          <span>
+            {m.venue.name
+              ? m.venue.city
+                ? `${m.venue.name}, ${m.venue.city}`
+                : m.venue.name
+              : "Venue TBD"}
+          </span>
+          {m.venue.is_neutral_site ? <Badge>Neutral site</Badge> : null}
           {m.is_primetime ? <Badge>Prime time</Badge> : null}
           {m.is_divisional ? <Badge>{cfb ? "Conference game" : "Divisional"}</Badge> : null}
           {final ? <Badge>Final</Badge> : null}

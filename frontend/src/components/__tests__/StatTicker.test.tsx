@@ -11,7 +11,7 @@ const baseMatchup: MatchupDetail = {
   season: 2026,
   week: 1,
   kickoff: "2026-09-10T20:20:00Z",
-  venue: { name: "Levi's Stadium", city: "Santa Clara", is_dome: false },
+  venue: { name: "Levi's Stadium", city: "Santa Clara", is_dome: false, is_neutral_site: false },
   is_primetime: false,
   is_divisional: false,
   home: {
@@ -45,6 +45,16 @@ describe("StatTicker", () => {
   test("does not render a Final cell before the game is over", () => {
     render(<StatTicker matchup={baseMatchup} />);
     expect(screen.queryByText("Final")).not.toBeInTheDocument();
+  });
+
+  test("neutral-site game with no city shows just the venue name, not a null city", () => {
+    const neutral: MatchupDetail = {
+      ...baseMatchup,
+      venue: { name: "Melbourne Cricket Ground", city: null, is_dome: null, is_neutral_site: true },
+    };
+    render(<StatTicker matchup={neutral} />);
+    expect(screen.getByText("Melbourne Cricket Ground")).toBeInTheDocument();
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument();
   });
 
   test("renders a Final cell with both scores once the game is over", () => {

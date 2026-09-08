@@ -78,10 +78,14 @@ export interface PredictionTeam {
 }
 
 export interface Venue {
-  // Null for neutral-site games where nflverse doesn't report a venue.
+  // Null only if the source genuinely has no venue at all. Neutral-site
+  // games (is_neutral_site true) still populate name from the raw venue
+  // string; city/is_dome stay null since there's no Stadium row for most
+  // international venues.
   name: string | null;
   city: string | null;
   is_dome: boolean | null;
+  is_neutral_site: boolean;
 }
 
 // Any single market can be missing: nflverse often carries a spread with no
