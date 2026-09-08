@@ -222,3 +222,69 @@ supposed to work. No `X-Frame-Options` is set alongside it: it can't list multip
 CSP's `frame-ancestors` overrides it in every browser that honors both, so it would be dead
 weight rather than a fallback. **Alternative:** leaving embedding unrestricted: simplest, but
 that's the clickjacking gap this closes; rejected.
+
+## Neutral-site games capture a raw venue name instead of relying on Team.stadium_id
+
+`Game.venue_name` and `Game.is_neutral_site` are new columns, populated straight from
+nflverse's `stadium`/`location` schedule fields. **Why:** `stadium_id` was being derived purely
+from the home team's normal home stadium, so any neutral-site game (an international game, or
+any row where nflverse's `location` isn't `"Home"`) got `stadium_id = NULL` with zero venue
+information recoverable anywhere downstream — this broke both weather (`refresh_weather.py`
+skipped it identically to a dome) and the matchup page (blank venue block). Confirmed via
+nflverse's own schedule data that the raw venue name (e.g. "Melbourne Cricket Ground") is
+already present in the feed and simply wasn't being read. Weather for these games is now fetched
+by geocoding the venue name string through Visual Crossing rather than lat/lon, since most
+international venues have no `Stadium` row. **Alternative:** seed a `Stadium` row for every
+possible international venue in advance: more precise (real lat/lon, dome status) but requires
+maintaining a venue list by hand every season as the international slate changes; venue-name
+geocoding needs no maintenance and degrades to a clean failure (skip, not a wrong answer) if
+Visual Crossing can't resolve a name.
+
+## Market-factor SHAP direction is grounded in the raw value, not the SHAP sign
+
+`ml/explain.py`'s `top_factors()` derives `direction` for `market_spread_home` and
+`market_home_prob` from the feature's own raw value (positive/`>0.5` = home favored), not from
+whether that feature's SHAP contribution was locally positive or negative. **Why:** which team
+the betting market favors is an independently checkable fact, not a model inference — but a
+tree ensemble's SHAP attribution for one feature can point the opposite way from that feature's
+own value near a toss-up line (reproduced live: `cfb_401856682`, OSU@TEX Week 2 2026, had
+`market_spread_home = +1.5` — home/Texas favored, matching the live odds — while its SHAP
+contribution was negative, so the narration said the market favored Ohio State). Confirmed this
+wasn't stale data or a column-order bug by rebuilding the feature row from the live database and
+reproducing the identical SHAP sign. No other feature has this treatment, since none of the
+others have an independent ground truth to check against — SHAP sign is still the right answer
+for e.g. `elo_diff`. **Alternative:** leave SHAP sign as the sole source of truth for every
+feature: simpler, and defensible as "faithfully describing the model," but it lets the narration
+state something checkably false about real market data, which conflicts with the LLM boundary
+principle that narration should never contradict real numbers. **No `MODEL_VERSION` bump**: the
+model's weights and features are unchanged; only how a factor's direction is *labeled* changed.
+
+## Narration guardrail checks favorite/underdog attribution, not just percentage magnitude
+
+`narrate.py`'s `_percentages_consistent` guardrail only ever checked that a cited percentage's
+*magnitude* matched the home/away win probability, never which *team* it (or "favorite"/"the
+edge" language) was attached to. **Why:** found live in production — three CFB Week 1 2026
+narrations correctly cited the model's own percentage while calling the underdog "a slight
+favorite" (`cfb_401858210`, `cfb_401856677`, `cfb_401864502`), passing the existing check because
+the number was right even though the team label wasn't. Added
+`_favorite_attribution_consistent`: for each "favorite"/"favored" mention, the nearest team name
+appearing *before* it in the same sentence must be the real favorite. **Known gap:** matches only
+a team's school name/abbreviation, not mascot nicknames (e.g. "the Bruins" for UCLA) — a
+narrative that names only the mascot isn't checked. **Alternative:** a full team-name-to-mascot
+dictionary for exhaustive coverage: meaningfully more complete, but a much larger maintenance
+surface (every FBS + NFL mascot) for a guardrail whose failure mode is just "retry, then fall
+back to no narration" rather than showing wrong data; can be revisited if mascot-only phrasing
+turns out to be common.
+
+## CFBD's -100000 "no quote" sentinel filtered at ingestion, not just at use
+
+`data_pipeline/cfbd.py`'s `load_lines()` now converts any moneyline with `abs(value) >= 100_000`
+to `None` before it ever reaches the database; `ml/features.py`'s `market_home_prob()` carries
+the same guard defensively. **Why:** CFBD returns `-100000` as a "no real price quoted" marker on
+the extreme side of lopsided blowouts, not a genuine price. Found live: 12 CFB Week 1/2 2026 rows
+(e.g. `cfb_401856665`, a 57-0 game) had this stored as a real moneyline, which corrupted the
+de-vigged `market_home_prob` toward 0.5 for a real blowout instead of falling back to the spread.
+**Alternative:** guard only in `market_home_prob()`: would fix the derived feature but leave the
+misleading sentinel sitting in `games.home_moneyline`/`away_moneyline` for any other consumer
+(the raw odds display, future features) to trip over again; fixing it at the ingestion source is
+the same cost and closes the whole class of bug.

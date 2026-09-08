@@ -336,9 +336,10 @@ def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
         week=game.week,
         kickoff=game.kickoff_time,
         venue=VenueOut(
-            name=game.stadium.name if game.stadium else None,
+            name=game.stadium.name if game.stadium else game.venue_name,
             city=game.stadium.city if game.stadium else None,
             is_dome=game.stadium.is_dome if game.stadium else None,
+            is_neutral_site=game.is_neutral_site,
         ),
         is_primetime=game.is_primetime,
         is_divisional=game.is_divisional,

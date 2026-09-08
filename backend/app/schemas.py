@@ -58,6 +58,7 @@ class VenueOut(BaseModel):
     name: str | None
     city: str | None
     is_dome: bool | None
+    is_neutral_site: bool = False
 
 
 class TeamDetail(BaseModel):

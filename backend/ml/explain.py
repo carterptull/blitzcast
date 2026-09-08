@@ -49,6 +49,18 @@ def make_explainer(model) -> shap.TreeExplainer:
     return shap.TreeExplainer(model)
 
 
+# market_spread_home/market_home_prob represent a checkable fact (which
+# team the market favors), not a model inference -- their raw value must
+# always decide "direction", never the model's local SHAP sign. A tree
+# ensemble's SHAP attribution for a feature can legitimately point the
+# opposite way from that feature's own value near a toss-up line, which
+# would otherwise let the narration claim the market favors the wrong team.
+_MARKET_GROUND_TRUTH = {
+    "market_spread_home": lambda raw: raw > 0,
+    "market_home_prob": lambda raw: raw > 0.5,
+}
+
+
 def top_factors(
     explainer: shap.TreeExplainer,
     row: pd.DataFrame,
@@ -66,12 +78,17 @@ def top_factors(
     for idx in order:
         feature = row.columns[idx]
         value = float(shap_values[idx] * scale)
+        ground_truth = _MARKET_GROUND_TRUTH.get(feature)
+        if ground_truth is not None:
+            direction = "home" if ground_truth(float(row.iloc[0][feature])) else "away"
+        else:
+            direction = "home" if value >= 0 else "away"
         factors.append(
             {
                 "feature": feature,
                 "label": labels.get(feature, feature),
                 "value": round(value, 4),
-                "direction": "home" if value >= 0 else "away",
+                "direction": direction,
             }
         )
     return factors

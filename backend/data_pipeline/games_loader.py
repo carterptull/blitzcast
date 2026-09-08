@@ -79,9 +79,10 @@ def upsert_games(db: Session, schedules: pd.DataFrame) -> int:
             game.kickoff_time = _kickoff_utc(row.gameday, _opt(row.gametime))
         game.home_team_id = ids[home]
         game.away_team_id = ids[away]
-        game.stadium_id = (
-            stadium_by_team.get(ids[home]) if row.location == "Home" else None
-        )
+        is_neutral = row.location != "Home"
+        game.stadium_id = None if is_neutral else stadium_by_team.get(ids[home])
+        game.is_neutral_site = is_neutral
+        game.venue_name = _opt(getattr(row, "stadium", None))
         game.is_primetime = False if is_placeholder_week else _is_primetime(_opt(row.gametime))
         game.is_divisional = bool(row.div_game)
         home_score = _opt(row.home_score)

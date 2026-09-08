@@ -87,6 +87,56 @@ def _percentages_consistent(text: str, home_win_prob: float) -> bool:
     return True
 
 
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+_FAVORITE_RE = re.compile(r"favorite|favored|the edge|an edge")
+_NAME_WORD_RE = re.compile(r"[A-Za-z']+")
+
+
+def _name_words(name: str | None) -> list[str]:
+    """Words worth matching a team by (city, mascot, etc). Broadcasters say
+    "Kansas City" or "the Chiefs", rarely the full "Kansas City Chiefs"."""
+    return [w for w in _NAME_WORD_RE.findall(name or "") if len(w) > 3]
+
+
+def _team_mention_positions(sentence_lower: str, name: str | None, abbr: str | None) -> list[int]:
+    positions = []
+    if abbr:
+        pattern = rf"\b{re.escape(abbr.lower())}\b"
+        positions += [m.start() for m in re.finditer(pattern, sentence_lower)]
+    for word in _name_words(name):
+        positions += [m.start() for m in re.finditer(re.escape(word.lower()), sentence_lower)]
+    return positions
+
+
+def _favorite_attribution_consistent(text: str, payload: dict) -> bool:
+    """The model can cite the right percentage while naming the wrong team
+    as favorite (real bug: "Mississippi State comes in as a slight
+    favorite... but Minnesota's got this at 56 percent" when Minnesota was
+    the actual 56% favorite). For each "favorite"/"favored" occurrence,
+    the nearest team name mentioned *before* it in the same sentence must
+    be the real favorite, not the underdog -- both teams can appear in the
+    same sentence, so sentence-level presence alone isn't precise enough.
+    Known gap: this only knows a team's school name and abbreviation, not
+    mascot nicknames (e.g. "the Bruins" for UCLA), so a narrative that uses
+    only a mascot name isn't caught."""
+    home_is_favorite = payload["home_win_prob"] >= 0.5
+    favorite = (payload["home_name"], payload["home_abbr"]) if home_is_favorite \
+        else (payload["away_name"], payload["away_abbr"])
+    underdog = (payload["away_name"], payload["away_abbr"]) if home_is_favorite \
+        else (payload["home_name"], payload["home_abbr"])
+    for sentence in _SENTENCE_RE.split(text):
+        low = sentence.lower()
+        favorite_positions = _team_mention_positions(low, *favorite)
+        underdog_positions = _team_mention_positions(low, *underdog)
+        for kw_match in _FAVORITE_RE.finditer(low):
+            kw_pos = kw_match.start()
+            nearest_favorite = max((p for p in favorite_positions if p < kw_pos), default=-1)
+            nearest_underdog = max((p for p in underdog_positions if p < kw_pos), default=-1)
+            if nearest_underdog > nearest_favorite:
+                return False
+    return True
+
+
 def _call_api(
     client: anthropic.Anthropic, model: str, system: str, user_content: str
 ) -> str:
@@ -120,9 +170,13 @@ def narrate(payload: dict) -> str | None:
     for attempt in range(2):
         try:
             text = _call_api(client, settings.anthropic_model, system, user_content)
-            if text and _percentages_consistent(text, payload["home_win_prob"]):
+            if (
+                text
+                and _percentages_consistent(text, payload["home_win_prob"])
+                and _favorite_attribution_consistent(text, payload)
+            ):
                 return text
-            logger.warning("narration failed percentage sanity check; retrying")
+            logger.warning("narration failed percentage/attribution sanity check; retrying")
         except Exception as exc:
             logger.warning("narration attempt %d failed: %s", attempt + 1, exc)
         if attempt == 0:

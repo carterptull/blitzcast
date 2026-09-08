@@ -67,6 +67,7 @@ def test_prediction_detail_available(client):
     assert body["home"]["record"] == "0-0"
     assert body["away"]["record"] == "0-0"
     assert body["venue"]["name"] == "Test Field"
+    assert body["venue"]["is_neutral_site"] is False
     assert body["odds"]["spread_home"] == 2.5
     assert body["factors"][0]["label"] == "Team rating (Elo) edge"
     assert body["factors"][0]["direction"] == "home"
@@ -87,6 +88,42 @@ def test_prediction_detail_pending(client):
 def test_prediction_unknown_game_404(client):
     response = client.get("/api/predictions/2026_99_XX_YY")
     assert response.status_code == 404
+
+
+def test_prediction_detail_neutral_site_venue(client, db):
+    """A neutral-site game (no Team-derived stadium) surfaces its real
+    venue name instead of a blank venue block."""
+    from datetime import UTC, datetime
+
+    from app.models import SPORT_NFL, Game, Team
+
+    kc = db.query(Team).filter(Team.sport == SPORT_NFL, Team.abbr == "KC").one()
+    dal = db.query(Team).filter(Team.sport == SPORT_NFL, Team.abbr == "DAL").one()
+    db.add(
+        Game(
+            game_id="2026_03_KC_DAL_NEUTRAL",
+            season=2026, week=3,
+            game_date=datetime(2026, 9, 27, tzinfo=UTC).date(),
+            kickoff_time=datetime(2026, 9, 27, 17, 0, tzinfo=UTC),
+            home_team_id=dal.team_id,
+            away_team_id=kc.team_id,
+            stadium_id=None,
+            venue_name="Melbourne Cricket Ground",
+            is_neutral_site=True,
+            is_primetime=False, is_divisional=False,
+            status="scheduled",
+        )
+    )
+    db.commit()
+    response = client.get("/api/predictions/2026_03_KC_DAL_NEUTRAL")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["venue"] == {
+        "name": "Melbourne Cricket Ground",
+        "city": None,
+        "is_dome": None,
+        "is_neutral_site": True,
+    }
 
 
 def test_game_summary_exposes_scores_and_verdict(client):

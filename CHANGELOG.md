@@ -6,6 +6,36 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-09-08
+
+### Fixed
+- Neutral-site NFL games (international games, ~8 per season) were
+  silently losing weather and venue data: the schedule loader only ever
+  derived a game's stadium from its home team's normal venue, so any
+  neutral-site row got no venue at all. Now captures the real venue name
+  from nflverse and fetches weather by venue-name geocoding. The matchup
+  page shows the real venue (e.g. "Melbourne Cricket Ground") with a
+  "Neutral site" badge instead of a blank venue block.
+- A CFB Week 2 matchup's SHAP factor list and narration stated the
+  betting market favored the wrong team for a near-toss-up spread — a
+  real SHAP-local-attribution quirk on tree ensembles, not stale or
+  corrupted data. Market-derived factors now use the raw market value to
+  decide direction instead of the model's local SHAP sign.
+- Narration could correctly cite the model's win probability while naming
+  the *wrong team* as the favorite (found in 3 of 99 CFB Week 1 games).
+  Added a guardrail checking favorite/underdog attribution, not just
+  percentage magnitude.
+- CFBD's `-100000` "no real price quoted" sentinel was being stored and
+  used as a genuine moneyline, corrupting the market win-probability
+  feature toward 50/50 for real blowouts (12 CFB Week 1/2 games affected).
+  Now filtered at ingestion and defensively in the feature itself.
+
+### Investigated, not a bug
+- An NFL Week 1 game displaying as kicking off on a Wednesday was flagged
+  during review; confirmed the stored date and kickoff time agree with
+  each other (a real Wednesday season-opener slot), not a timezone or
+  off-by-one bug.
+
 ## [1.0.3] — 2026-08-27
 
 ### Fixed

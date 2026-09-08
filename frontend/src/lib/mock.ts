@@ -442,7 +442,7 @@ export function mockMatchup(id: string): MatchupDetail | null {
       season: SEASON,
       week: 1,
       kickoff: iso(spec.kickoff),
-      venue: { name: home.stadium.name, city: home.stadium.city, is_dome: home.stadium.isDome },
+      venue: { name: home.stadium.name, city: home.stadium.city, is_dome: home.stadium.isDome, is_neutral_site: false },
       is_primetime: !!spec.primetime,
       is_divisional:
         TEAMS[spec.home].conference === TEAMS[spec.away].conference &&
@@ -486,7 +486,7 @@ export function mockMatchup(id: string): MatchupDetail | null {
       season: SEASON,
       week: w,
       kickoff: g.kickoff,
-      venue: { name: home.stadium.name, city: home.stadium.city, is_dome: home.stadium.isDome },
+      venue: { name: home.stadium.name, city: home.stadium.city, is_dome: home.stadium.isDome, is_neutral_site: false },
       is_primetime: g.is_primetime,
       is_divisional: home.conference === away.conference && home.division === away.division,
       home: { abbr: g.home.abbr, name: home.nickname, record: "0-0", logo_url: logoUrl(g.home.abbr), win_prob: null },

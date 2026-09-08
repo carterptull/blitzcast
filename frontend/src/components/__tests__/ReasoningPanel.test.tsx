@@ -11,7 +11,7 @@ const baseMatchup: MatchupDetail = {
   season: 2026,
   week: 1,
   kickoff: "2026-09-10T20:20:00Z",
-  venue: { name: "Levi's Stadium", city: "Santa Clara", is_dome: false },
+  venue: { name: "Levi's Stadium", city: "Santa Clara", is_dome: false, is_neutral_site: false },
   is_primetime: false,
   is_divisional: false,
   home: {

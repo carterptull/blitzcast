@@ -83,6 +83,52 @@ def test_percentage_sanity_helper():
     assert narrate_mod._percentages_consistent("no numbers here", 0.63)
 
 
+def test_favorite_attribution_rejects_underdog_called_favorite():
+    """Real bug found in production: the model correctly cites the right
+    percentage but calls the underdog the favorite (cfb_401856677,
+    MSST @ MINN, home_win_prob=0.556 -- MINN is the actual favorite)."""
+    payload = {
+        **PAYLOAD,
+        "home_name": "Minnesota",
+        "home_abbr": "MINN",
+        "away_name": "Mississippi State",
+        "away_abbr": "MSST",
+        "home_win_prob": 0.556,
+    }
+    text = (
+        "Mississippi State comes in as a slight favorite on the road here, "
+        "but Minnesota's got this thing pretty close to a coin flip at 56 "
+        "percent to win."
+    )
+    assert not narrate_mod._favorite_attribution_consistent(text, payload)
+
+
+def test_favorite_attribution_accepts_correct_call():
+    payload = {**PAYLOAD, "home_win_prob": 0.556}
+    text = (
+        "Kansas City comes in as a slight favorite here at 56 percent, but "
+        "Buffalo can absolutely make this a coin flip."
+    )
+    assert narrate_mod._favorite_attribution_consistent(text, payload)
+
+
+def test_favorite_attribution_ignores_text_with_no_favorite_language():
+    assert narrate_mod._favorite_attribution_consistent(
+        "Buffalo hangs around with a 37 percent shot at the upset.", PAYLOAD
+    )
+
+
+def test_wrong_favorite_rejected_end_to_end(settings_with_key, monkeypatch):
+    monkeypatch.setattr(narrate_mod.time, "sleep", lambda _: None)
+    payload = {**PAYLOAD, "home_win_prob": 0.556}
+    client = MagicMock()
+    client.messages.create.return_value = _mock_response(
+        "Buffalo comes in as a slight favorite here, sitting at 56 percent."
+    )
+    with patch.object(narrate_mod.anthropic, "Anthropic", return_value=client):
+        assert narrate_mod.narrate(payload) is None
+
+
 CFB_PAYLOAD = {
     "sport": "CFB",
     "home_name": "Alabama",

@@ -1,6 +1,8 @@
 """Fetch kickoff weather (forecast or historical) from the Visual Crossing
-Timeline API for upcoming outdoor games. Domed/roofed and no-stadium
-(international) games are skipped.
+Timeline API for upcoming outdoor games. Domed/roofed games are skipped.
+Neutral-site games (no Team-derived stadium) are looked up by their raw
+venue name instead of lat/lon, since most international venues have no
+Stadium row; a game with neither a stadium nor a venue name is skipped.
 
 Usage: python -m data_pipeline.refresh_weather [--days 8] [--sport nfl|cfb]
 """
@@ -20,9 +22,12 @@ from app.models import SPORT_CFB, SPORT_NFL, Game, Weather
 BASE_URL = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
 
 
-def fetch_day(lat: float, lon: float, day: str, api_key: str) -> dict:
+def fetch_day(location: str, day: str, api_key: str) -> dict:
+    """`location` is a Visual Crossing Timeline API location: either a
+    "lat,lon" pair or a free-text place name (used for neutral-site games,
+    which have no Stadium row to pull coordinates from)."""
     resp = requests.get(
-        f"{BASE_URL}/{lat},{lon}/{day}",
+        f"{BASE_URL}/{location}/{day}",
         params={"key": api_key, "unitGroup": "us", "include": "hours"},
         timeout=30,
     )
@@ -70,13 +75,19 @@ def main() -> None:
         ).all()
         for game in games:
             stadium = game.stadium
-            if stadium is None or stadium.is_dome:
+            if stadium is not None and stadium.is_dome:
+                skipped += 1
+                continue
+            if stadium is not None:
+                location = f"{stadium.lat},{stadium.lon}"
+            elif game.venue_name:
+                location = game.venue_name
+            else:
                 skipped += 1
                 continue
             try:
                 payload = fetch_day(
-                    stadium.lat,
-                    stadium.lon,
+                    location,
                     game.game_date.isoformat(),
                     settings.visual_crossing_api_key,
                 )
@@ -103,7 +114,7 @@ def main() -> None:
 
     print(
         f"weather refresh ({args.sport}): updated {updated}, skipped {skipped} "
-        f"(dome/international), failed {failed}"
+        f"(dome, or no venue known), failed {failed}"
     )
 
 
