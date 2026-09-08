@@ -57,7 +57,24 @@ Full setup + env vars: [README.md](./README.md) and
   `home_score is not None and away_score is not None` directly, at every
   call site (status filter, verdict grading, the season record).
 - **LLM boundary:** Claude narrates model output only; it never predicts,
-  never alters probabilities. Guardrails live in `narrate.py`.
+  never alters probabilities. Guardrails live in `narrate.py` — they check
+  both percentage magnitude (`_percentages_consistent`) and team
+  attribution (`_favorite_attribution_consistent`); a checkable fact
+  (which team is actually favored) must never be misstated even if the
+  cited number is correct.
+- **Market-factor SHAP direction:** in `ml/explain.py`, `market_spread_home`
+  and `market_home_prob`'s displayed `direction` comes from the feature's
+  own raw value, never the SHAP sign — these represent an independently
+  checkable fact (which team the market favors), and a tree ensemble's
+  local SHAP attribution can legitimately point the other way near a
+  toss-up line. Every other feature still uses SHAP sign; only add a
+  feature to `_MARKET_GROUND_TRUTH` if it has a similar independent truth
+  to check against.
+- **Neutral-site games:** `Game.venue_name`/`is_neutral_site` hold the raw
+  nflverse venue for games with no Team-derived stadium (`stadium_id`
+  NULL). `refresh_weather.py` fetches these by venue-name geocoding
+  instead of lat/lon; don't reintroduce a bare `stadium is None: skip`
+  check without also checking `venue_name`.
 - **API keys** live in gitignored `.env` files (examples checked in). All
   jobs degrade gracefully when keys are missing — preserve that property.
 - **Odds API budget:** free tier, 500 req/month — odds are fetched by the

@@ -151,7 +151,9 @@ serve fixture data so the frontend can develop without a database.
   Teams, venues, games, betting lines, team-game PPA, and AP/Coaches
   polls. Every CFB job exits early when the key is missing.
 - **Visual Crossing** (`VISUAL_CROSSING_API_KEY`): kickoff forecasts for
-  upcoming outdoor games; domes and international games are skipped.
+  upcoming outdoor games; domes are skipped. Neutral-site/international
+  games are looked up by venue name (geocoded by Visual Crossing) rather
+  than lat/lon, since most have no `Stadium` row.
 - **Claude API** (`ANTHROPIC_API_KEY`): narrates the model output only,
   never computes the prediction.
 
