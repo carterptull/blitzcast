@@ -45,6 +45,17 @@ def load_games(year: int, season_type: str = "regular") -> pd.DataFrame:
     return pd.json_normalize(_get("/games", {"year": year, "seasonType": season_type}))
 
 
+
+# CFBD uses this as a "no real price quoted" marker on the extreme side of
+# lopsided blowouts, not a genuine moneyline -- store it as missing rather
+# than a real (and wildly misleading) price.
+_NO_QUOTE_SENTINEL = 100_000
+
+
+def _real_moneyline(value):
+    return None if value is None or abs(value) >= _NO_QUOTE_SENTINEL else value
+
+
 def load_lines(year: int, season_type: str = "regular") -> pd.DataFrame:
     """Betting lines flattened to one row per (game, provider)."""
     rows = []
@@ -56,8 +67,8 @@ def load_lines(year: int, season_type: str = "regular") -> pd.DataFrame:
                     "provider": line.get("provider"),
                     "spread": line.get("spread"),
                     "over_under": line.get("overUnder"),
-                    "home_moneyline": line.get("homeMoneyline"),
-                    "away_moneyline": line.get("awayMoneyline"),
+                    "home_moneyline": _real_moneyline(line.get("homeMoneyline")),
+                    "away_moneyline": _real_moneyline(line.get("awayMoneyline")),
                 }
             )
     return pd.DataFrame(

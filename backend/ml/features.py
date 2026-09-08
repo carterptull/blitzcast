@@ -89,9 +89,20 @@ def moneyline_to_prob(ml: float) -> float:
     return 100.0 / (ml + 100.0)
 
 
+# CFBD returns this as a "no real price quoted" marker on the extreme side
+# of lopsided blowouts, not a genuine moneyline -- treating it as real
+# corrupts the de-vigged probability toward 0.5 for a real blowout.
+_NO_QUOTE_SENTINEL = 100_000
+
+
 def market_home_prob(home_ml, away_ml, spread_home) -> float | None:
     """De-vigged moneyline probability; spread-based fallback (25 Elo/point)."""
-    if home_ml is not None and away_ml is not None:
+    if (
+        home_ml is not None
+        and away_ml is not None
+        and abs(home_ml) < _NO_QUOTE_SENTINEL
+        and abs(away_ml) < _NO_QUOTE_SENTINEL
+    ):
         p_home = moneyline_to_prob(home_ml)
         p_away = moneyline_to_prob(away_ml)
         return p_home / (p_home + p_away)
