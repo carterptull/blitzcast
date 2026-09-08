@@ -13,7 +13,35 @@ def _row(game_id, season, week, gameday, gametime, home="KC", away="BUF"):
         "gametime": gametime, "home_team": home, "away_team": away, "location": "Home",
         "home_score": None, "away_score": None, "div_game": False,
         "spread_line": None, "total_line": None, "home_moneyline": None, "away_moneyline": None,
+        "stadium": None,
     }
+
+
+def test_neutral_site_game_captures_venue_name_and_flag(db):
+    """A neutral-site row (nflverse location='Neutral') must not silently
+    drop its venue — stadium_id stays NULL (no home team's stadium
+    applies) but the raw venue name and a neutral-site flag are kept."""
+    row = _row("2026_01_BUF_KC", 2026, 1, "2026-09-10", "20:35", "KC", "BUF")
+    row["location"] = "Neutral"
+    row["stadium"] = "Melbourne Cricket Ground"
+    schedules = pd.DataFrame([row])
+    upsert_games(db, schedules)
+    game = db.query(Game).filter(Game.game_id == "2026_01_BUF_KC").one()
+    assert game.stadium_id is None
+    assert game.venue_name == "Melbourne Cricket Ground"
+    assert game.is_neutral_site is True
+
+
+def test_home_game_still_gets_venue_name(db):
+    """Non-neutral games also get venue_name populated (from the same
+    nflverse column), just with is_neutral_site False."""
+    row = _row("2026_03_D", 2026, 3, "2026-09-24", "13:00", "KC", "BUF")
+    row["stadium"] = "GEHA Field at Arrowhead Stadium"
+    schedules = pd.DataFrame([row])
+    upsert_games(db, schedules)
+    game = db.query(Game).filter(Game.game_id == "2026_03_D").one()
+    assert game.is_neutral_site is False
+    assert game.venue_name == "GEHA Field at Arrowhead Stadium"
 
 
 def test_week_with_uniform_gametime_treated_as_tbd(db):
