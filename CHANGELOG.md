@@ -6,6 +6,17 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.7] — 2026-09-09
+
+### Added
+- CFB's daily weekly-refresh cron now fetches real kickoff weather
+  (temp/wind/precipitation) for outdoor games, same as NFL. CFB games
+  already carry real stadium coordinates from CFBD; the weather script
+  itself worked all along, it just was never wired into the CFB
+  orchestrator. Checked against the Visual Crossing free tier's 1000
+  records/day. Display-only for now — the current CFB model was trained
+  before this existed, so it can't yet use it in predictions.
+
 ## [1.0.6] — 2026-09-08
 
 ### Security

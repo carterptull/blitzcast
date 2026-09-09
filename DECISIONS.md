@@ -303,3 +303,19 @@ wrong. **Alternative:** one combined guardrail that always checks favorite langu
 whichever ground truth (model or market) is "the real one": there isn't a single real one —
 model-vs-market disagreement is a legitimate, common, desired thing to narrate — so the two need
 separate, differently-scoped checks rather than one.
+
+## CFB weather wired into the daily cron after all
+
+`refresh_week_cfb.py` (run daily by Railway's cron, not weekly) now includes a
+`refresh_weather --sport cfb` step. **Why:** the original decision to omit it assumed CFB had no
+stadium coordinates to fetch weather by; that's wrong — CFBD's own venue data gives CFB games a
+real `Stadium` row (unlike NFL, which derives `stadium_id` from the home team), confirmed by
+manually running `refresh_weather --sport cfb` and getting real weather for 85 of 86 games. The
+free-tier budget concern was real but re-checked: an 8-day CFB slate is at most ~170 games/day,
+comfortably under Visual Crossing's 1000 records/day even alongside NFL's own daily run.
+**Caveat, not a reason to skip this:** the already-trained CFB model saw zero-variance weather in
+every historical row (never populated before), so its trees have no split on temp/wind/precip —
+this is purely a display and future-training improvement, not something that changes any current
+prediction. **Alternative:** leave it manual-only, as discovered: works, but relies on someone
+remembering to run it every week: the automated version costs nothing extra worth worrying about
+at this volume and removes that dependency on manual upkeep.
