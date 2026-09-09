@@ -41,6 +41,7 @@ export default function Header() {
                 <Link
                   key={t.slug}
                   href={`/${t.slug}`}
+                  prefetch={false}
                   aria-current={active ? "page" : undefined}
                   className={`rounded-md px-2.5 py-1 font-mono text-[11px] font-medium uppercase tracking-[0.18em] transition-colors sm:px-3 ${
                     active

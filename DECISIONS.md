@@ -334,3 +334,10 @@ many near-simultaneous requests without requiring a real visitor to click quickl
 **Alternative:** upgrade to Vercel Pro for System Bypass Rules: doesn't actually help, since
 bypass rules only exempt IPs you name in advance, not arbitrary real visitors; the fix has to be
 not generating the burst in the first place.
+
+**Follow-up:** the week selector alone wasn't enough — re-running the same live reproduction
+against the deployed fix still 503'd. `GameCard` (10-16+ links per slate page) turned out to be
+the dominant contributor, plus smaller lists in `StatusFilter`, `FilterChips`, and
+`Disagreements`, plus `Header`'s sport toggle (renders on every page). All got the same
+`prefetch={false}` treatment; true singleton nav links (logo, footer, matchup back-link) were
+left alone since one instance per page can't create a burst.

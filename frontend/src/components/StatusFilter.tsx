@@ -53,6 +53,7 @@ export default function StatusFilter({ sport, active, week, query = "" }: Props)
               key={value}
               href={href(value)}
               scroll={false}
+              prefetch={false}
               aria-current={isActive ? "true" : undefined}
               className={`${base} ${isActive ? on : off}`}
             >

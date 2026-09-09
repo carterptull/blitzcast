@@ -5,10 +5,21 @@ import { render, screen } from "@testing-library/react";
 import GameCard from "../GameCard";
 import type { GameSummary } from "@/lib/types";
 
-// Mock Next.js Link component to avoid routing issues in tests
+// Mock Next.js Link, forwarding `prefetch` as a data attribute so tests
+// can assert on it (the real Link strips it from the DOM).
 jest.mock("next/link", () => {
-  const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
+  const MockLink = ({
+    children,
+    href,
+    prefetch,
+  }: {
+    children: React.ReactNode;
+    href: string;
+    prefetch?: boolean;
+  }) => (
+    <a href={href} data-prefetch={String(prefetch)}>
+      {children}
+    </a>
   );
   MockLink.displayName = "MockLink";
   return MockLink;
@@ -101,6 +112,11 @@ describe("GameCard", () => {
 
     const link = screen.getByRole("link");
     expect(link).toHaveAttribute("href", "/cfb/matchup/2026_01_KC_SF");
+  });
+
+  test("does not prefetch (a slate renders many of these at once)", () => {
+    render(<GameCard game={baseGame} />);
+    expect(screen.getByRole("link")).toHaveAttribute("data-prefetch", "false");
   });
 
   test("renders TBD badge when kickoff is null", () => {

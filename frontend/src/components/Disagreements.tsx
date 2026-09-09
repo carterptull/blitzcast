@@ -62,6 +62,7 @@ export default function Disagreements({
           <Link
             key={game.game_id}
             href={`/${sport}/matchup/${game.game_id}`}
+            prefetch={false}
             className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-edge px-3 py-2 text-sm transition-colors hover:border-gold/60"
           >
             <span className="font-mono uppercase tracking-wide">
