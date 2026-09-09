@@ -118,6 +118,66 @@ def test_favorite_attribution_ignores_text_with_no_favorite_language():
     )
 
 
+def test_market_attribution_rejects_wrong_team_favored_by_vegas():
+    """Real bug found live, post-fix: the model favors the away team
+    overall (so 'X favored' passes the general favorite check), but the
+    same narrative separately claims Vegas favors that same team when the
+    raw spread actually favors home (cfb_401856682, OSU@TEX: spread_home
+    =+1.5 favors home/Texas, but narration said 'Vegas has Ohio State
+    favored by a point and a half')."""
+    payload = {
+        **PAYLOAD,
+        "home_name": "Texas",
+        "home_abbr": "TEX",
+        "away_name": "Ohio State",
+        "away_abbr": "OSU",
+        "home_win_prob": 0.452,
+        "spread_home": 1.5,
+    }
+    text = (
+        "Ohio State comes in with the edge here at 55 percent. The Vegas "
+        "line has Ohio State favored by a point and a half, and that's "
+        "where the smart money is."
+    )
+    assert not narrate_mod._market_attribution_consistent(text, payload)
+
+
+def test_market_attribution_accepts_correct_call():
+    payload = {
+        **PAYLOAD,
+        "home_name": "Texas",
+        "home_abbr": "TEX",
+        "away_name": "Ohio State",
+        "away_abbr": "OSU",
+        "home_win_prob": 0.452,
+        "spread_home": 1.5,
+    }
+    text = "The Vegas line has Texas favored by a point and a half at home."
+    assert narrate_mod._market_attribution_consistent(text, payload)
+
+
+def test_market_attribution_skipped_without_a_spread():
+    payload = {**PAYLOAD, "spread_home": None}
+    text = "The Vegas line has Buffalo favored here."
+    assert narrate_mod._market_attribution_consistent(text, payload)
+
+
+def test_market_attribution_ignores_non_market_sentences():
+    """The model is allowed to disagree with the market -- only sentences
+    that actually reference the market are checked."""
+    payload = {
+        **PAYLOAD,
+        "home_name": "Texas",
+        "home_abbr": "TEX",
+        "away_name": "Ohio State",
+        "away_abbr": "OSU",
+        "home_win_prob": 0.452,
+        "spread_home": 1.5,
+    }
+    text = "Ohio State is the model's pick here at 55 percent."
+    assert narrate_mod._market_attribution_consistent(text, payload)
+
+
 def test_wrong_favorite_rejected_end_to_end(settings_with_key, monkeypatch):
     monkeypatch.setattr(narrate_mod.time, "sleep", lambda _: None)
     payload = {**PAYLOAD, "home_win_prob": 0.556}

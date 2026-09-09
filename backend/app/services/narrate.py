@@ -108,24 +108,28 @@ def _team_mention_positions(sentence_lower: str, name: str | None, abbr: str | N
     return positions
 
 
-def _favorite_attribution_consistent(text: str, payload: dict) -> bool:
-    """The model can cite the right percentage while naming the wrong team
-    as favorite (real bug: "Mississippi State comes in as a slight
-    favorite... but Minnesota's got this at 56 percent" when Minnesota was
-    the actual 56% favorite). For each "favorite"/"favored" occurrence,
-    the nearest team name mentioned *before* it in the same sentence must
-    be the real favorite, not the underdog -- both teams can appear in the
-    same sentence, so sentence-level presence alone isn't precise enough.
-    Known gap: this only knows a team's school name and abbreviation, not
-    mascot nicknames (e.g. "the Bruins" for UCLA), so a narrative that uses
-    only a mascot name isn't caught."""
-    home_is_favorite = payload["home_win_prob"] >= 0.5
+def _favorite_language_matches(
+    text: str,
+    home_is_favorite: bool,
+    payload: dict,
+    sentence_filter: "re.Pattern[str] | None" = None,
+) -> bool:
+    """For each "favorite"/"favored" occurrence in a sentence (optionally
+    restricted to sentences matching `sentence_filter`), the nearest team
+    name mentioned *before* it in that sentence must be `home_is_favorite`'s
+    team, not the other one -- both teams can appear in the same sentence,
+    so sentence-level presence alone isn't precise enough. Known gap: this
+    only knows a team's school name and abbreviation, not mascot nicknames
+    (e.g. "the Bruins" for UCLA), so a narrative using only a mascot name
+    isn't caught."""
     favorite = (payload["home_name"], payload["home_abbr"]) if home_is_favorite \
         else (payload["away_name"], payload["away_abbr"])
     underdog = (payload["away_name"], payload["away_abbr"]) if home_is_favorite \
         else (payload["home_name"], payload["home_abbr"])
     for sentence in _SENTENCE_RE.split(text):
         low = sentence.lower()
+        if sentence_filter is not None and not sentence_filter.search(low):
+            continue
         favorite_positions = _team_mention_positions(low, *favorite)
         underdog_positions = _team_mention_positions(low, *underdog)
         for kw_match in _FAVORITE_RE.finditer(low):
@@ -135,6 +139,36 @@ def _favorite_attribution_consistent(text: str, payload: dict) -> bool:
             if nearest_underdog > nearest_favorite:
                 return False
     return True
+
+
+def _favorite_attribution_consistent(text: str, payload: dict) -> bool:
+    """The model can cite the right percentage while naming the wrong team
+    as favorite (real bug: "Mississippi State comes in as a slight
+    favorite... but Minnesota's got this at 56 percent" when Minnesota was
+    the actual 56% favorite)."""
+    return _favorite_language_matches(text, payload["home_win_prob"] >= 0.5, payload)
+
+
+_MARKET_MENTION_RE = re.compile(
+    r"vegas|the (?:betting )?line|the spread|the market|smart money|the book|oddsmaker"
+)
+
+
+def _market_attribution_consistent(text: str, payload: dict) -> bool:
+    """A sentence can correctly call the model's own pick "the favorite"
+    while, in the same breath, calling the market's favorite the wrong
+    team (real bug: model favors the away team overall, so "X favored"
+    passes the general favorite check, but the same sentence separately
+    claims "Vegas has X favored" when the raw spread favors home). Only
+    checked when a raw spread is available, and only against sentences
+    that actually reference the market (Vegas/the line/the spread/etc),
+    since the model's own pick is allowed to differ from the market's."""
+    spread_home = payload.get("spread_home")
+    if spread_home is None or spread_home == 0:
+        return True
+    return _favorite_language_matches(
+        text, spread_home > 0, payload, sentence_filter=_MARKET_MENTION_RE
+    )
 
 
 def _call_api(
@@ -174,6 +208,7 @@ def narrate(payload: dict) -> str | None:
                 text
                 and _percentages_consistent(text, payload["home_win_prob"])
                 and _favorite_attribution_consistent(text, payload)
+                and _market_attribution_consistent(text, payload)
             ):
                 return text
             logger.warning("narration failed percentage/attribution sanity check; retrying")
