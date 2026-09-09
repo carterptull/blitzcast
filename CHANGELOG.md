@@ -6,6 +6,17 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.8] — 2026-09-09
+
+### Fixed
+- Root-caused and fixed the intermittent 503s first noticed on the week
+  slate: Next.js prefetches every visible link by default, and the week
+  selector renders every week (up to 18) at once, firing a burst of
+  near-simultaneous requests that tripped Vercel's automatic DDoS
+  mitigation. Reproduced live, confirmed via Vercel's Firewall dashboard
+  it wasn't the backend (Railway showed 0% error rate throughout).
+  Disabled prefetch on the week-selector links.
+
 ## [1.0.7] — 2026-09-09
 
 ### Added

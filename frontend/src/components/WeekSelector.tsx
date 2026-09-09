@@ -27,9 +27,14 @@ export default function WeekSelector({ weeks, selected, basePath, query = "" }: 
           const active = w === selected;
           return (
             <li key={w}>
+              {/* prefetch off: every week is visible at once, and letting
+                  Next.js prefetch all of them on mount tripped Vercel's
+                  automatic DDoS mitigation (a burst of near-simultaneous
+                  requests from one client reads as an attack pattern). */}
               <Link
                 href={`${basePath}?week=${w}${query}`}
                 scroll={false}
+                prefetch={false}
                 aria-current={active ? "page" : undefined}
                 className={`flex min-w-[3.25rem] flex-col items-center rounded-lg border px-3 py-1.5 transition-colors ${
                   active
