@@ -6,10 +6,21 @@ import { render, screen } from "@testing-library/react";
 import Disagreements from "../Disagreements";
 import type { GameSummary } from "@/lib/types";
 
-// Mock Next.js Link component to avoid routing issues in tests
+// Mock Next.js Link, forwarding `prefetch` as a data attribute so tests
+// can assert on it (the real Link strips it from the DOM).
 jest.mock("next/link", () => {
-  const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
+  const MockLink = ({
+    children,
+    href,
+    prefetch,
+  }: {
+    children: React.ReactNode;
+    href: string;
+    prefetch?: boolean;
+  }) => (
+    <a href={href} data-prefetch={String(prefetch)}>
+      {children}
+    </a>
   );
   MockLink.displayName = "MockLink";
   return MockLink;
@@ -90,5 +101,11 @@ describe("Disagreements", () => {
     const games = [game({ game_id: "2026_01_XYZ", home_win_prob: 0.75, market_home_prob: 0.4 })];
     render(<Disagreements games={games} sport="cfb" />);
     expect(screen.getByRole("link")).toHaveAttribute("href", "/cfb/matchup/2026_01_XYZ");
+  });
+
+  test("does not prefetch", () => {
+    const games = [game({ game_id: "2026_01_XYZ", home_win_prob: 0.75, market_home_prob: 0.4 })];
+    render(<Disagreements games={games} sport="nfl" />);
+    expect(screen.getByRole("link")).toHaveAttribute("data-prefetch", "false");
   });
 });

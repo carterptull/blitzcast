@@ -41,6 +41,7 @@ export default function FilterChips({ conferences, activeConf, top25, week, quer
         <Link
           href={href(activeConf, !top25)}
           scroll={false}
+          prefetch={false}
           aria-current={top25 ? "true" : undefined}
           className={`${base} ${top25 ? on : off}`}
         >
@@ -56,6 +57,7 @@ export default function FilterChips({ conferences, activeConf, top25, week, quer
         <Link
           href={href(null, top25)}
           scroll={false}
+          prefetch={false}
           aria-current={!activeConf ? "true" : undefined}
           className={`${base} ${!activeConf ? on : off}`}
         >
@@ -68,6 +70,7 @@ export default function FilterChips({ conferences, activeConf, top25, week, quer
               key={c}
               href={href(active ? null : c, top25)}
               scroll={false}
+              prefetch={false}
               aria-current={active ? "true" : undefined}
               className={`${base} ${active ? on : off}`}
             >

@@ -81,8 +81,12 @@ export default function GameCard({
     : homeProb !== null && homeProb > 0.5;
 
   return (
+    // prefetch off: a slate page renders many of these at once, and letting
+    // Next.js prefetch every visible card tripped Vercel's automatic DDoS
+    // mitigation (see WeekSelector.tsx and DECISIONS.md).
     <Link
       href={`/${sport}/matchup/${game.game_id}`}
+      prefetch={false}
       className="group block rounded-xl border border-edge bg-surface p-4 transition-all hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-lg hover:shadow-stripe-a/10 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
     >
       <div className="space-y-2.5">
