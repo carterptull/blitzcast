@@ -6,6 +6,17 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.9] — 2026-09-09
+
+### Fixed
+- The 1.0.8 fix (disabling prefetch on the week selector) wasn't
+  sufficient on its own — verified live it was still reproducible.
+  Every other bulk-rendered link list had the same problem: GameCard
+  (the dominant contributor, 10-16+ per slate page), StatusFilter,
+  FilterChips, and Disagreements. Disabled prefetch on all of them, plus
+  Header's sport toggle (renders on every page). Re-verified live with
+  the same reproduction steps against the deployed fix.
+
 ## [1.0.8] — 2026-09-09
 
 ### Fixed
