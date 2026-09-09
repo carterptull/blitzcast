@@ -70,10 +70,16 @@ refreshes print a message and exit; narration writes `null` and continues.
 | Lint | `python -m ruff check .` |
 
 `--sport` defaults to `nfl` on every ML/prediction command, including
-`refresh_weather` (a full FBS slate would burn the Visual Crossing free
-tier). CFB has no weather or injuries refresh: `refresh_schedule_cfb`,
-`refresh_odds --sport cfb`, and `refresh_polls_cfb` are the only in-season
-CFB syncs, bundled by `refresh_week_cfb`.
+`refresh_weather`. CFB has no injury refresh (no standardized CFB injury
+report exists): `refresh_schedule_cfb`, `refresh_odds --sport cfb`,
+`refresh_weather --sport cfb`, and `refresh_polls_cfb` are the in-season
+CFB syncs, bundled by `refresh_week_cfb`. CFB games get real stadium
+coordinates from CFBD (unlike NFL's Team-derived `stadium_id`), so
+weather works there too, checked against the Visual Crossing free tier's
+1000 records/day. It's currently display-only for CFB, though: the
+trained CFB model saw zero-variance weather in every historical row (it
+was never populated before), so its trees have no split on it, and this
+can't change any existing model's predictions until a future retrain.
 
 `refresh_stats` re-ingests play-by-play into `team_game_stats`, which feeds
 the rolling EPA and turnover form features. It runs inside `refresh_week`
@@ -151,9 +157,11 @@ serve fixture data so the frontend can develop without a database.
   Teams, venues, games, betting lines, team-game PPA, and AP/Coaches
   polls. Every CFB job exits early when the key is missing.
 - **Visual Crossing** (`VISUAL_CROSSING_API_KEY`): kickoff forecasts for
-  upcoming outdoor games; domes are skipped. Neutral-site/international
-  games are looked up by venue name (geocoded by Visual Crossing) rather
-  than lat/lon, since most have no `Stadium` row.
+  upcoming outdoor games (both NFL and CFB); domes are skipped. Neutral-
+  site/international games are looked up by venue name (geocoded by
+  Visual Crossing) rather than lat/lon, since most have no `Stadium` row.
+  A daily 8-day-ahead CFB slate is checked against the free tier's 1000
+  records/day and stays comfortably under it alongside NFL's own run.
 - **Claude API** (`ANTHROPIC_API_KEY`): narrates the model output only,
   never computes the prediction.
 
