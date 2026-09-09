@@ -6,6 +6,15 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.6] — 2026-09-08
+
+### Security
+- Bumped `next` (16.3.0 → 16.3.3, fixes 2 critical unauthenticated RCE
+  advisories), `js-yaml` (4.3.1 → 4.3.2, fixes a high-severity CPU DoS),
+  and `sharp` (0.35.0 → 0.35.4, fixes 2 high-severity libheif
+  vulnerabilities). Applied manually rather than merging Dependabot's own
+  PRs, to avoid `dependabot[bot]` appearing in the contributor graph.
+
 ## [1.0.5] — 2026-09-08
 
 ### Fixed
