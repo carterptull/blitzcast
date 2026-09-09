@@ -319,3 +319,18 @@ this is purely a display and future-training improvement, not something that cha
 prediction. **Alternative:** leave it manual-only, as discovered: works, but relies on someone
 remembering to run it every week: the automated version costs nothing extra worth worrying about
 at this volume and removes that dependency on manual upkeep.
+
+## Root-caused the intermittent 503s: disable prefetch on the week selector, not a backend fix
+
+`WeekSelector`'s `<Link>`s now render with `prefetch={false}`. **Why:** reproduced live by
+navigating the site while watching Vercel's dashboard: rapid week/sport switching triggered a
+burst of near-simultaneous RSC prefetch requests (several sharing the exact same `_rsc` cache
+token), and several came back 503. Vercel's Firewall showed the actual cause: its own automatic
+DDoS mitigation was denying/challenging the burst (23 denied + 2 challenged requests in one
+hour), not a backend or database problem — confirmed separately via Railway's logs/metrics
+showing 0% error rate the whole time. Next.js prefetches every visible `Link` by default; the
+week selector renders every week (up to 18) at once, so simply having that row mount fires that
+many near-simultaneous requests without requiring a real visitor to click quickly at all.
+**Alternative:** upgrade to Vercel Pro for System Bypass Rules: doesn't actually help, since
+bypass rules only exempt IPs you name in advance, not arbitrary real visitors; the fix has to be
+not generating the burst in the first place.
