@@ -288,3 +288,18 @@ de-vigged `market_home_prob` toward 0.5 for a real blowout instead of falling ba
 misleading sentinel sitting in `games.home_moneyline`/`away_moneyline` for any other consumer
 (the raw odds display, future features) to trip over again; fixing it at the ingestion source is
 the same cost and closes the whole class of bug.
+
+## A second, separate narration guardrail for market-specific attribution
+
+`_favorite_attribution_consistent` checks favorite/underdog language against the *model's own*
+win probability; a distinct `_market_attribution_consistent` checks it against the *raw spread*,
+scoped only to sentences that reference the market (Vegas/the line/the spread/etc). **Why:**
+regenerating predictions after the first attribution fix landed, this exact split surfaced live
+on the fix's own target game (`cfb_401856682`, OSU@TEX): the model favors Ohio State overall, so
+"Ohio State favored" passed the general check even in a sentence that was actually describing
+what Vegas thinks (which favors Texas). The model is allowed to disagree with the market; a
+sentence attributing an opinion to Vegas specifically is not allowed to get Vegas's opinion
+wrong. **Alternative:** one combined guardrail that always checks favorite language against
+whichever ground truth (model or market) is "the real one": there isn't a single real one —
+model-vs-market disagreement is a legitimate, common, desired thing to narrate — so the two need
+separate, differently-scoped checks rather than one.

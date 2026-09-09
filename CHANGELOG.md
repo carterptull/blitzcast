@@ -6,6 +6,15 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.5] — 2026-09-08
+
+### Fixed
+- Follow-up to the 1.0.4 narration attribution fix: found live in the very
+  prediction it targeted, a narrative could correctly call the model's own
+  pick "the favorite" while separately claiming "Vegas has X favored" for
+  a team the raw spread doesn't actually favor. Added a second guardrail
+  scoped to sentences that reference the market specifically.
+
 ## [1.0.4] — 2026-09-08
 
 ### Fixed
