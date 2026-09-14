@@ -366,3 +366,17 @@ generated from imports or the ORM would show structure faithfully but none of th
 version stamp and re-check table make drift visible rather than silent. **Alternative:** generate
 an ER diagram from `app/models.py` and module graphs from imports on every build: never stale, but
 noisy, and blind to exactly the constraints the diagrams exist to explain; rejected.
+
+## `predict_week` gates on kickoff time, not only on a recorded score
+
+`unplayed_game_ids()` now excludes a game once its `kickoff_time` has passed, in addition to
+excluding games with a recorded score. **Why:** the app has no live/in-progress game state (see
+README's known limitations), so a game that has kicked off but hasn't posted a final score yet
+still has both `home_score`/`away_score` NULL. Without this gate, the daily cron would
+re-predict it: the inputs are unchanged (still pre-game data, nothing live leaks in), but
+`predicted_at` was silently restamped to a time after kickoff, which misrepresents when the call
+was actually made. A NULL kickoff (a still-TBD future game) stays eligible regardless of `now`,
+matching how `default_week` already treats it. **Alternative:** add a live/in-progress game
+state so the app can show something meaningful mid-game: solves a different, larger problem this
+fix has no need for; not re-touching a row once its kickoff is behind `now` is enough to keep
+`predicted_at` honest.

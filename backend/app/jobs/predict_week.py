@@ -115,10 +115,19 @@ def build_narration_payload(
     return payload
 
 
-def unplayed_game_ids(db: Session, season: int, week: int, sport: str) -> set[str]:
-    """Game ids in the week with no score yet. Both scores must be absent: a
-    row with one side scored has started, and re-predicting it would restamp
-    predicted_at after the result was known."""
+def unplayed_game_ids(
+    db: Session, season: int, week: int, sport: str, now: datetime | None = None
+) -> set[str]:
+    """Game ids in the week with no score yet and no kickoff in the past.
+    Both scores must be absent: a row with one side scored has started, and
+    re-predicting it would restamp predicted_at after the result was known.
+    A past kickoff excludes it too, even with both scores still NULL: a game
+    already underway (or one whose final score just hasn't landed yet) would
+    otherwise get re-predicted with identical pre-game inputs but a
+    predicted_at that lies about when the call was actually made. A NULL
+    kickoff is a still-TBD future game and stays eligible regardless of
+    `now`."""
+    now = now or datetime.now(UTC)
     rows = db.scalars(
         select(Game.game_id).where(
             Game.season == season,
@@ -126,6 +135,7 @@ def unplayed_game_ids(db: Session, season: int, week: int, sport: str) -> set[st
             Game.week == week,
             Game.home_score.is_(None),
             Game.away_score.is_(None),
+            (Game.kickoff_time.is_(None)) | (Game.kickoff_time > now),
         )
     )
     return set(rows)

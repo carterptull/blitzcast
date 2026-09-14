@@ -42,9 +42,13 @@ on an identical set of games. See "Record always paired with the market baseline
 with no scores, but treats a week as done 36 hours after the latest kickoff among its
 still-unscored games, so a cancelled game can't pin the daily job to an old week forever.
 
-**Known edge, tracked separately:** "unplayed" means both scores are NULL, so a game already in
-progress when a cron runs is re-predicted. Its inputs don't change (the odds refresh only captures
-lines for games that haven't kicked off), but `predicted_at` is re-stamped after kickoff.
+**Kickoff-gated, not just score-gated.** "Unplayed" isn't only "both scores are NULL":
+`unplayed_game_ids()` also excludes a game once its kickoff has passed, even with no score yet.
+Without that, a game already underway (or one whose final score simply hasn't landed from the
+data source yet) would get silently re-predicted on the next cron, with a `predicted_at` that
+lies about when the call was actually made, even though the inputs are unchanged (there's no
+live/in-progress data to leak in). A NULL kickoff is a still-TBD future game and stays eligible
+regardless of `now`, matching how `default_week` already treats it.
 
 ---
-_Last updated: 2026-09-14 · reflects v1.0.10_
+_Last updated: 2026-09-14 · reflects v1.0.11_
