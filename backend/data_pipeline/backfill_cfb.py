@@ -2,7 +2,7 @@
 and poll rankings for 5 seasons. CFB injuries are intentionally not loaded
 (no standardized report — the injury features stay inert at 0.0).
 
-Usage: python -m data_pipeline.backfill_cfb [--start 2021] [--end 2025]
+Usage: python -m data_pipeline.backfill_cfb [--start 2021] [--end 2026]
 """
 
 import argparse
