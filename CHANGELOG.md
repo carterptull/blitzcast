@@ -6,6 +6,17 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.11] — 2026-09-14
+
+### Fixed
+- `predict_week`'s unplayed-game selection now also excludes any game whose
+  kickoff has already passed, not just games with a recorded score.
+  Previously a game already underway, or one whose final score simply
+  hadn't landed from the data source yet, still had both scores NULL and
+  would get silently re-predicted by the next daily cron: identical
+  pre-game inputs, but `predicted_at` restamped to a time after kickoff. A
+  NULL (still-TBD) kickoff stays eligible regardless of the current time.
+
 ## [1.0.10] — 2026-09-14
 
 ### Added
