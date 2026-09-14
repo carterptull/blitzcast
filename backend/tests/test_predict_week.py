@@ -1,6 +1,6 @@
 """predict_week selection predicates and narration payload shaping."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import select
@@ -109,11 +109,16 @@ def test_unplayed_game_ids_excludes_finished_games(db):
 
     game = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
     week = game.week
-    assert "2026_01_BUF_KC" in unplayed_game_ids(db, 2026, week, SPORT_NFL)
+    before_kickoff = game.kickoff_time - timedelta(hours=1)
+    assert "2026_01_BUF_KC" in unplayed_game_ids(
+        db, 2026, week, SPORT_NFL, now=before_kickoff
+    )
 
     game.home_score, game.away_score = 27, 24
     db.commit()
-    assert "2026_01_BUF_KC" not in unplayed_game_ids(db, 2026, week, SPORT_NFL)
+    assert "2026_01_BUF_KC" not in unplayed_game_ids(
+        db, 2026, week, SPORT_NFL, now=before_kickoff
+    )
 
 
 def test_unplayed_game_ids_excludes_a_half_scored_row(db):
@@ -121,9 +126,48 @@ def test_unplayed_game_ids_excludes_a_half_scored_row(db):
     from app.jobs.predict_week import unplayed_game_ids
 
     game = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    before_kickoff = game.kickoff_time - timedelta(hours=1)
     game.home_score, game.away_score = 27, None
     db.commit()
-    assert "2026_01_BUF_KC" not in unplayed_game_ids(db, 2026, game.week, SPORT_NFL)
+    assert "2026_01_BUF_KC" not in unplayed_game_ids(
+        db, 2026, game.week, SPORT_NFL, now=before_kickoff
+    )
+
+
+def test_unplayed_game_ids_excludes_a_kicked_off_but_unscored_game(db):
+    """A game that has kicked off but has no score yet (data lag, or a game
+    still in progress) must not be re-predicted, even though both scores are
+    still NULL -- re-predicting it would restamp predicted_at after kickoff
+    while showing the exact same pre-game inputs."""
+    from app.jobs.predict_week import unplayed_game_ids
+
+    game = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    after_kickoff = game.kickoff_time + timedelta(hours=3)
+    assert "2026_01_BUF_KC" not in unplayed_game_ids(
+        db, 2026, game.week, SPORT_NFL, now=after_kickoff
+    )
+
+
+def test_unplayed_game_ids_still_includes_an_upcoming_game(db):
+    """The same game, checked before its kickoff, is still a normal target."""
+    from app.jobs.predict_week import unplayed_game_ids
+
+    game = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    before_kickoff = game.kickoff_time - timedelta(hours=1)
+    assert "2026_01_BUF_KC" in unplayed_game_ids(
+        db, 2026, game.week, SPORT_NFL, now=before_kickoff
+    )
+
+
+def test_unplayed_game_ids_includes_null_kickoff_regardless_of_now(db):
+    """A TBD (NULL) kickoff is a future game by definition and must stay
+    eligible no matter how far forward `now` is."""
+    from app.jobs.predict_week import unplayed_game_ids
+
+    far_future = datetime(2030, 1, 1, tzinfo=UTC)
+    assert "cfb_401800002" in unplayed_game_ids(
+        db, 2026, 2, SPORT_CFB, now=far_future
+    )
 
 
 def test_default_week_skips_a_stale_week_with_a_permanently_unscored_game(db):
