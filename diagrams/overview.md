@@ -64,4 +64,4 @@ back is the whole of Claude's influence: text, or nothing at all.
 | How is it hosted and secured? | [`deployment-security.md`](deployment-security.md) |
 
 ---
-_Last updated: 2026-09-14 · reflects v1.0.10_
+_Last updated: 2026-09-14 · reflects v1.0.11_

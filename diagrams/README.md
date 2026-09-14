@@ -23,7 +23,11 @@ These are hand-maintained, not generated. Each file ends with a stamp
 (`Last updated: <date> · reflects v<version>`, the version taken from `frontend/package.json`),
 so a stale diagram is visible rather than silent.
 
-Update a diagram in the same PR as a change to what it shows:
+Bump every diagram's footer to the current release version on each release, even ones whose
+content didn't change this time; the stamp is a "still accurate as of this version" claim, not
+a record of when the file itself was last edited. Content is a separate question from the
+stamp: re-verify what a diagram actually shows only when a change touches one of the areas
+below, and update its Mermaid source and prose then, not on every release.
 
 | If you change... | Re-check |
 | --- | --- |
@@ -47,4 +51,4 @@ A routine UI or copy change doesn't need a diagram update.
 - Verify by viewing the rendered file on github.com. Reading the source is not verification.
 
 ---
-_Last updated: 2026-09-14 · reflects v1.0.10_
+_Last updated: 2026-09-14 · reflects v1.0.11_
