@@ -36,8 +36,9 @@ Every file: short intro, one Mermaid block, 2-3 "why it's built this way" notes 
    model artifacts, GitHub Actions CI.
 4. **`er-diagram.md`** (erDiagram): `stadiums`, `teams`, `games`, `team_game_stats`,
    `team_ratings`, `odds`, `weather`, `injuries`, `poll_ranks`, `predictions` with PK/FK/unique
-   constraints. Notes: completion keyed on scores not `status`; `odds` is history (newest
-   `captured_at` wins); `predictions` unique on `(game_id, model_version)` and `backtest-*` rows
+   constraints. Notes: completion keyed on scores not `status`; `odds` holds one upserted
+   snapshot per `(game_id, source)` with `captured_at` refreshed on each run, falling back to
+   `games`' closing lines when absent; `predictions` unique on `(game_id, model_version)` and `backtest-*` rows
    are excluded from slate + record but shown (labeled) on the matchup page.
 5. **`prediction-request-sequence.md`** (sequence): browser → Next server component
    (`revalidate = 30`) → `GET /api/predictions/{game_id}` → mock / 404 / pending / ready
@@ -76,7 +77,9 @@ Every file: short intro, one Mermaid block, 2-3 "why it's built this way" notes 
 - **CLAUDE.md:** routes (`/[sport]`, `/[sport]/matchup/[gameId]`, `/how-it-works`);
   `MODEL_VERSION` 1.0.0 / `cfb-1.0.0`; committed-artifact exception; diagrams pointer; branding
   carve-out; "no em dashes in user-visible text" rule carried over from `next_steps.md`.
-- **backend/README.md:** committed-artifact exception; CFB backfill default 2021-2025.
+- **backend/README.md:** committed-artifact exception; diagrams pointer.
+- **`data_pipeline/backfill_cfb.py`:** usage docstring says `[--end 2025]`; the argparse default
+  is 2026 (fixed in 1.0.1), so the docstring is the stale side.
 - **Branding prose:** `frontend/next.config.ts` comment, `DECISIONS.md`, `CHANGELOG.md`.
 - **CI:** add `npm test` to the frontend job.
 - **Dependencies:** pin top-level `requirements.txt` packages with `==` to the versions
