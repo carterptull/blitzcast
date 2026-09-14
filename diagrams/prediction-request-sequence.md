@@ -63,7 +63,8 @@ latency on mobile. See "Short revalidation window over `no-store`" in
 **Two details worth knowing:** this read takes the newest prediction of *any* `model_version`
 (the slate and `/api/record` exclude `backtest-*` rows; the matchup page instead shows a
 reconstructed row with a label). And if Railway is unreachable, `api.ts` throws
-`ApiUnreachableError`, which surfaces through the route's error boundary (`src/app/error.tsx`).
+`ApiUnreachableError`, which the page catches to render its `BackendDown` state (metadata falls
+back to a plain "Matchup" title); `src/app/error.tsx` only handles other, unexpected errors.
 
 ---
 _Last updated: 2026-09-14 · reflects v1.0.10_

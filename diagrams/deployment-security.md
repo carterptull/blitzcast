@@ -7,7 +7,7 @@ leaked API keys, dependency vulnerabilities, and availability.
 ```mermaid
 flowchart LR
     visitor(["👤 Visitor browser"])
-    portfolio(["🖼️ Portfolio site<br/><small>the one allowed external frame-ancestor</small>"])
+    portfolio(["🖼️ Portfolio site<br/><small>the only allowed external frame-ancestor<br/>apex and www origins</small>"])
     researcher(["🔎 Security researcher"])
 
     subgraph cf["Cloudflare"]
@@ -16,7 +16,7 @@ flowchart LR
 
     subgraph vercel["Vercel"]
         firewall["Firewall<br/><small>automatic DDoS mitigation</small>"]
-        next["Next.js app<br/><small>headers() on every route<br/>CSP frame-ancestors 'self' + portfolio origin</small>"]
+        next["Next.js app<br/><small>headers() on every route<br/>CSP frame-ancestors 'self' + portfolio origins</small>"]
         wellknown["/.well-known/security.txt<br/><small>static, frontend/public</small>"]
     end
 

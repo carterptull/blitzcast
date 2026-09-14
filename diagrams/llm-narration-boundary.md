@@ -20,7 +20,7 @@ flowchart TB
         claude["Claude Haiku 4.5<br/><small>messages.create, max_tokens 300</small>"]
     end
 
-    clean["_plain_punctuation()<br/><small>dashes become commas<br/>surrounding markdown symbols stripped</small>"]
+    clean["_call_api() then _plain_punctuation()<br/><small>surrounding markdown symbols stripped<br/>em and en dashes become commas, spacing tidied</small>"]
     g1{"_percentages_consistent<br/><small>every percentage within 1 point of<br/>the home or away probability?</small>"}
     g2{"_favorite_attribution_consistent<br/><small>favorite, favored, or the edge attached<br/>to the team the model actually favors?</small>"}
     g3{"_market_attribution_consistent<br/><small>in sentences about Vegas, the line, or the spread,<br/>favorite matches the raw spread's sign?</small>"}
@@ -68,8 +68,9 @@ misstating which team *Vegas* favored, which the market check now catches. Marke
 direction is also grounded in raw data upstream, for the same reason. See the three narration and
 SHAP-direction entries in [`DECISIONS.md`](../DECISIONS.md).
 
-**Known gap:** team matching uses school names and abbreviations, not mascots, so a sentence that
-names a team only as "the Bruins" isn't checked.
+**Known gap (CFB only):** team matching uses every word of a team's stored name plus its
+abbreviation. NFL names include the nickname ("Buffalo Bills"), but CFB names are school names,
+so a CFB sentence that names a team only by mascot ("the Bruins") isn't checked.
 
 ---
 _Last updated: 2026-09-14 · reflects v1.0.10_

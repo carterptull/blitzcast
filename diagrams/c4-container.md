@@ -18,7 +18,7 @@ flowchart TB
         db[("<b>Postgres 16</b><br/><small>schema managed by Alembic<br/>persistent volume</small>")]
     end
 
-    artifacts[["<b>Model artifacts, committed to git</b><br/><small>backend/ml/artifacts/latest.json<br/>model_1.0.0.joblib · cfb/model_cfb-1.0.0.joblib</small>"]]
+    artifacts[["<b>Model artifacts, committed to git</b><br/><small>backend/ml/artifacts/latest.json · cfb/latest.json<br/>model_1.0.0.joblib · cfb/model_cfb-1.0.0.joblib</small>"]]
 
     subgraph github["GitHub"]
         ci["<b>CI</b><br/><small>backend: ruff + pytest<br/>frontend: eslint + jest + next build</small>"]

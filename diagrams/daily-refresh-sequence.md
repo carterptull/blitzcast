@@ -70,8 +70,10 @@ after each game, so a crash halfway through a ~100-game CFB slate keeps what fin
 re-run simply overwrites the same rows.
 
 **Free-tier budgets are set here, not by traffic.** The Odds API is called once per sport per day
-(about 60 of its 500 monthly requests); Visual Crossing stays under 1,000 records a day even
-with CFB's 8-day window. See "Odds API: one batch call per day, never per request" in
+(about 60 calls a month when both seasons overlap). Each call requests three markets, and The
+Odds API bills markets × regions, so that is roughly 180 of the 500 monthly credits;
+`refresh_odds` logs the remaining quota after every run. Visual Crossing stays under 1,000
+records a day even with CFB's 8-day window. See "Odds API: one batch call per day, never per request" in
 [`DECISIONS.md`](../DECISIONS.md).
 
 **Schedules are UTC and season-scoped:** `0 9 * 9,10,11,12,1,2 *` (NFL) and

@@ -100,7 +100,8 @@ retrains a model per holdout season (2023-2025) that has never seen that
 season, scores it, and writes the result under a distinct
 `backtest-1.0.0` / `backtest-cfb-1.0.0` model version, mirroring
 `ml/backtest.py`. The shipped model artifact is never used for this,
-since it trained on 2023-2025 and its accuracy on them would be in-sample.
+since it trained on 2022-2024 and calibrated on 2025, so its accuracy on
+them would be in-sample.
 Rows written this way are excluded from `/api/record` and from the slate's
 prediction probability, and are labeled "Reconstructed from a backtest,
 not a live call made before kickoff" on the matchup page. Its own ad-hoc

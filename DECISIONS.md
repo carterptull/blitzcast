@@ -130,7 +130,7 @@ was built to leave behind; rejected.
 `app/jobs/backfill_predictions.py` reconstructs 2023-2025 predictions with a model retrained per
 holdout season that has never seen that season, mirroring `ml/backtest.py`, rather than by simply
 running the shipped `1.0.0` artifact over historical games. **Why:** the shipped model trained on
-2023-2025, so scoring it against those same seasons would be in-sample and read as a far better
+2022-2024 and calibrated on 2025, so scoring it against those same seasons would be in-sample and read as a far better
 season record than the model has ever actually produced on unseen games. Rows are stamped with a
 distinct `backtest-*` model version specifically so they can never leak into `/api/record` or the
 slate's live probability. **Alternative:** run the shipped model over history for speed and

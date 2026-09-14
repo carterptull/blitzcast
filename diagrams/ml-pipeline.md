@@ -60,7 +60,8 @@ same games, and the model lands close to the line without beating it. The README
 tables come from here.
 
 **Backfilled history is labeled so it can't flatter the model.** The shipped model trained on
-2023-2025, so scoring it on those seasons would be in-sample. `backfill_predictions` instead
+2022-2024 and calibrated on 2025, so scoring it on any backfilled season (2023-2025) would be
+in-sample. `backfill_predictions` instead
 reuses the walk-forward models and writes them under `backtest-*` versions that the live record
 ignores. See "Backfilled predictions from walk-forward retraining, not the shipped model".
 

@@ -33,14 +33,14 @@ the probability is exactly 0.5; otherwise it compares the side the model favored
 that won. The same function drives the "Called it" / "Missed" badge on the slate and matchup page.
 
 **The season record is stricter than the badge.** `/api/record` only counts a game when the
-*market* can be graded the same way (a de-vigged market probability exists and isn't exactly
-0.5), and it ignores `backtest-*` rows entirely, so the model and the market are always compared
+*market* can be graded the same way (a market probability exists, de-vigged from moneylines or
+derived from the spread when they're missing, and isn't exactly 0.5), and it ignores `backtest-*` rows entirely, so the model and the market are always compared
 on an identical set of games. See "Record always paired with the market baseline" in
 [`DECISIONS.md`](../DECISIONS.md).
 
 **Which week gets predicted:** `default_week()` picks the earliest week that still has a game
-with no scores, but treats a week as done 36 hours after its last kickoff, so a cancelled game
-can't pin the daily job to an old week forever.
+with no scores, but treats a week as done 36 hours after the latest kickoff among its
+still-unscored games, so a cancelled game can't pin the daily job to an old week forever.
 
 **Known edge, tracked separately:** "unplayed" means both scores are NULL, so a game already in
 progress when a cron runs is re-predicted. Its inputs don't change (the odds refresh only captures

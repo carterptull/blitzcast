@@ -42,8 +42,8 @@ fails a guardrail) predictions still ship, just without narration. See
 [`llm-narration-boundary.md`](llm-narration-boundary.md).
 
 **ESPN shows up for two unrelated reasons:** the NFL injury refresh reads ESPN's unofficial
-injuries endpoint (falling back to nflverse if it fails), and NFL team logos come from ESPN's
-CDN. CFB logos come from CollegeFootballData instead.
+injuries endpoint (falling back to nflverse if it fails), and team logos load from ESPN's CDN.
+That includes CFB: the logo URLs are seeded from CollegeFootballData, but they point at ESPN.
 
 ---
 _Last updated: 2026-09-14 · reflects v1.0.10_

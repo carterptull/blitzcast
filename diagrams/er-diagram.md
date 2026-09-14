@@ -131,7 +131,7 @@ erDiagram
 **Completion lives in two nullable columns, not in `status`.** A game is over when
 `home_score` and `away_score` are both present, checked directly at every call site: the
 `?status=` filter, the verdict badge, the season record. `status` is derived and unindexed, and
-the NFL loader has set it from the home score alone before. See "Completion keyed on scores,
+the NFL loader still sets it from the home score alone. See "Completion keyed on scores,
 never on `Game.status`" in [`DECISIONS.md`](../DECISIONS.md).
 
 **`predictions` is unique on `(game_id, model_version)`, and that constraint does real work.**
