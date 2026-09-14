@@ -2,8 +2,9 @@ import type { NextConfig } from "next";
 
 // No X-Frame-Options here: it can't express multiple allowed origins, and CSP
 // frame-ancestors overrides it in every browser that supports both, so setting
-// both would just be dead weight. cartertull.com embeds this app in a window;
-// 'self' keeps that possible if blitzcast.app ever frames its own pages.
+// both would just be dead weight. The external origins below are the
+// maintainer's portfolio site, which embeds this app in a window; 'self' keeps
+// that possible if blitzcast.app ever frames its own pages.
 const securityHeaders = [
   {
     key: "Content-Security-Policy",

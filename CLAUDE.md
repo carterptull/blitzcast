@@ -8,23 +8,33 @@ choices.
 ## Architecture
 
 - **`frontend/`** — Next.js 16 + TypeScript + Tailwind v4 (App Router,
-  `src/`). Routes: `/` (week slate) and `/matchup/[gameId]`. Typed API
+  `src/`). Routes: `/` (redirects to `/nfl`), `/[sport]` (week slate for
+  `nfl`/`cfb`), `/[sport]/matchup/[gameId]`, `/how-it-works`. Typed API
   client in `src/lib/api.ts`; contract types in `src/lib/types.ts`; mock
-  fixtures in `src/lib/mock.ts` (`NEXT_PUBLIC_USE_MOCK=1`).
+  fixtures in `src/lib/mock.ts` and `src/lib/mockCfb.ts`
+  (`NEXT_PUBLIC_USE_MOCK=1`).
 - **`backend/app/`** — FastAPI. Contract endpoints: `/api/teams`,
   `/api/schedule`, `/api/games`, `/api/predictions/{game_id}`. Predictions
   are **cached rows** written by `app/jobs/predict_week.py` — never computed
   per-request. Narration in `app/services/narrate.py` (Claude, guardrailed).
 - **`backend/ml/`** — Elo (`elo.py`), leakage-safe features
   (`features.py`), XGBoost + Platt calibration (`train.py`), walk-forward
-  backtest vs Vegas (`backtest.py`), SHAP (`explain.py`). Artifact bundle in
-  `ml/artifacts/` (gitignored) + `latest.json` (committed).
+  backtest vs Vegas (`backtest.py`), SHAP (`explain.py`). `ml/artifacts/` is
+  gitignored except `latest.json` and the current model per sport
+  (`model_1.0.0.joblib`, `cfb/model_cfb-1.0.0.joblib`), committed on purpose
+  (see DECISIONS.md).
 - **`backend/data_pipeline/`** — idempotent upsert loaders: seeds,
   historical backfill (nflverse via `nflreadpy`), weekly refreshes (odds,
   weather, injuries), `refresh_week.py` orchestrator. All external team
   names route through `team_names.py`.
 - **Postgres 16** via `docker/docker-compose.yml`; schema managed by
   Alembic (`backend/alembic/`).
+- **`diagrams/`** — hand-maintained Mermaid architecture diagrams (start at
+  `diagrams/overview.md`). When a change alters something one of them shows
+  (schema, a pipeline step or cron schedule, a narration guardrail, the
+  prediction read path, ML training windows, security headers), update that
+  diagram and its footer stamp in the same PR. The re-check table and
+  GitHub Mermaid syntax rules are in `diagrams/README.md`.
 
 ## Commands
 
@@ -45,10 +55,19 @@ Full setup + env vars: [README.md](./README.md) and
 
 - **Branding:** public-facing identity is "Paymon" / "Paymon Software"
   only. Never put the maintainer's real name in code, comments, or docs.
+  The one functional exception is the portfolio origin inside
+  `frontend/next.config.ts`'s `frame-ancestors` CSP value, which has to name
+  the embedding domain; everywhere else, call it "the maintainer's
+  portfolio site".
+- **User-visible copy:** no em dashes or en dashes anywhere a visitor can
+  see (UI text, narration, `security.txt`). Check both the literal
+  characters and the `&mdash;`/`&ndash;` entities: a past bug shipped
+  through the entity form after a literal-character grep missed it.
 - **Version:** SemVer, single source of truth is `frontend/package.json`'s
   `version` field (displayed in the footer); releases are tagged on GitHub.
-  `MODEL_VERSION` (0.1.0) is separate — it stamps ML artifacts and
-  prediction rows, not the app release.
+  `MODEL_VERSION` (`1.0.0`; `MODEL_VERSION_CFB` `cfb-1.0.0`) is separate —
+  it stamps ML artifacts and prediction rows, not the app release.
+  `security.txt`'s `Expires` date needs renewing before 2027-09-14.
 - **Leakage rule (ML):** every feature for game G uses only data from
   strictly before G's kickoff. Tests enforce this — keep it that way.
 - **Completion invariant:** never key "is this game over" off the
@@ -82,6 +101,10 @@ Full setup + env vars: [README.md](./README.md) and
 - **Comments:** minimal, clean, simple.
 - Python: SQLAlchemy 2.x typed `Mapped` style, ruff-clean. Schema changes
   go through Alembic migrations, never manual edits.
+- **Python dependencies are pinned** (`==`) in `backend/requirements.txt`
+  and `requirements-dev.txt`. The committed `.joblib` models were saved
+  under the pinned xgboost/scikit-learn, so bump those only together with a
+  retrain and a re-commit of the artifacts.
 - **Adding an API field:** this repo has shipped three separate
   contract-drift bugs from `frontend/src/lib/types.ts` disagreeing with
   `backend/app/schemas.py` on nullability or enum values. A new field
