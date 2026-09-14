@@ -6,6 +6,44 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.10] — 2026-09-14
+
+### Added
+- `diagrams/`: ten hand-maintained Mermaid architecture diagrams (C4
+  context and container, the Postgres ER diagram, the prediction request
+  and daily refresh sequences, the LLM narration guardrail boundary, the
+  ML train/validate/serve pipeline, the game lifecycle, and deployment and
+  security), indexed in `diagrams/README.md` with a re-check table, and
+  linked from the READMEs and CLAUDE.md.
+- `/.well-known/security.txt` (RFC 9116) pointing researchers at private
+  vulnerability reporting. Expires 2027-09-14; renewal is noted in
+  SECURITY.md and CLAUDE.md.
+- DECISIONS.md entries for pinning Python dependencies and for
+  hand-maintained diagrams.
+
+### Changed
+- CI now runs the frontend Jest suite on every push and pull request.
+  Previously only lint and build ran, despite the README saying both test
+  suites were covered.
+- `backend/requirements.txt` and `requirements-dev.txt` pin every
+  top-level dependency to the versions production was running. Unpinned,
+  any rebuild that missed Railway's cache could silently change the
+  xgboost/scikit-learn versions the committed model files were saved with.
+- `next` and `eslint-config-next` 16.3.3 → 16.3.5 (patch releases; no
+  open advisories).
+
+### Fixed
+- Stale documentation: the README's hardcoded version (1.0.3) is now a
+  release badge; SECURITY.md's supported-versions table names "Latest
+  release" instead of a number; the crons are described as daily, not
+  weekly; hardcoded test counts removed; CLAUDE.md's routes,
+  `MODEL_VERSION`, and committed-artifact notes corrected; the
+  `backfill_cfb` usage docstring now matches its `--end 2026` default.
+- `railway-cfb-cron.json`'s `$schema` URL was missing its `https://`.
+- The portfolio embed is described generically in DECISIONS.md,
+  CHANGELOG.md, and `next.config.ts` comments; the CSP value itself is
+  unchanged.
+
 ## [1.0.9] — 2026-09-09
 
 ### Fixed
@@ -101,8 +139,8 @@ follow [SemVer](https://semver.org/).
 
 ### Security
 - Added a `Content-Security-Policy: frame-ancestors` header scoping which
-  sites may embed blitzcast.app in an iframe to itself and cartertull.com,
-  closing a previously-unrestricted clickjacking gap.
+  sites may embed blitzcast.app in an iframe to itself and the maintainer's
+  portfolio site, closing a previously-unrestricted clickjacking gap.
 
 ## [1.0.1] — 2026-08-21
 

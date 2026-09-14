@@ -1,0 +1,8 @@
+# Blitzcast by Paymon Software.
+# Please report vulnerabilities privately through the Contact link, not in a public issue.
+Contact: https://github.com/carterptull/blitzcast/security/advisories/new
+Expires: 2027-09-14T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://blitzcast.app/.well-known/security.txt
+Canonical: https://www.blitzcast.app/.well-known/security.txt
+Policy: https://github.com/carterptull/blitzcast/blob/main/SECURITY.md

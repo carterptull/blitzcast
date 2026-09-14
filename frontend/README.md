@@ -21,6 +21,7 @@ over HTTP and owns no model logic of its own.
 | `/[sport]` | Week slate for `nfl` or `cfb`, with a season record banner, status filter, and disagreements panel |
 | `/[sport]/matchup/[gameId]` | Matchup detail: probability, factors, narration, final score and verdict once played |
 | `/how-it-works` | Methodology page: model inputs, the leakage rule, the LLM boundary, the honest Vegas comparison |
+| `/.well-known/security.txt` | Static RFC 9116 security contact, served from `public/` |
 
 Every route renders an `opengraph-image.tsx` (and a paired `twitter` card)
 for social previews: `/[sport]/matchup/[gameId]` has its own per-game
@@ -75,4 +76,5 @@ inconsistent interpretation between the two slates, not a bug.
 
 Setup for the whole project, including the backend and database, lives in
 the [root README](../README.md). Backend commands are in
-[backend/README.md](../backend/README.md).
+[backend/README.md](../backend/README.md). The request path, caching, and
+security headers are drawn in [diagrams/](../diagrams/README.md).

@@ -8,14 +8,14 @@ narrates the model's output; it never makes the prediction.
 
 **Live at [blitzcast.app](https://blitzcast.app)**
 
-**Version: 1.0.3** (see
-[CHANGELOG](./CHANGELOG.md) and [releases](https://github.com/carterptull/blitzcast/releases))
+[![Latest release](https://img.shields.io/github/v/release/carterptull/blitzcast)](https://github.com/carterptull/blitzcast/releases)
+[![CI](https://github.com/carterptull/blitzcast/actions/workflows/ci.yml/badge.svg)](https://github.com/carterptull/blitzcast/actions/workflows/ci.yml)
 
-Technical decision log: [DECISIONS.md](./DECISIONS.md) · Release history:
+Architecture diagrams: [diagrams/](./diagrams/README.md) · Technical decision
+log: [DECISIONS.md](./DECISIONS.md) · Release history:
 [CHANGELOG.md](./CHANGELOG.md) · Vulnerability reporting:
 [SECURITY.md](./SECURITY.md) · Backend commands:
-[backend/README.md](./backend/README.md) · License:
-[LICENSE](./LICENSE)
+[backend/README.md](./backend/README.md) · License: [LICENSE](./LICENSE)
 
 ## How it works
 
@@ -34,6 +34,10 @@ Technical decision log: [DECISIONS.md](./DECISIONS.md) · Release history:
    can never change or invent the numbers.
 5. **Frontend** (`frontend/`): Next.js + Tailwind, with a week slate,
    turf-hero matchup pages, light/dark themes, mobile-first.
+
+The whole system in one picture: [diagrams/overview.md](./diagrams/overview.md).
+The guardrails around step 4 are drawn in
+[diagrams/llm-narration-boundary.md](./diagrams/llm-narration-boundary.md).
 
 ## Finished games and the season record
 
@@ -119,7 +123,9 @@ copy .env.example .env.local      # set NEXT_PUBLIC_BUYMEACOFFEE_URL etc.
 npm run dev                        # http://localhost:3000, tabs at /nfl and /cfb
 ```
 
-In-season weekly refresh (odds → weather → injuries → predictions):
+In-season daily refresh, the same commands the Railway crons run
+(schedule → stats → odds → weather → injuries → predictions; CFB swaps
+stats and injuries for polls):
 
 ```powershell
 .venv\Scripts\python -m data_pipeline.refresh_week        # NFL
@@ -132,12 +138,15 @@ mode (`NEXT_PUBLIC_USE_MOCK=1`) plus the backend's `BLITZCAST_MOCK=1`.
 
 ## Deployment
 
-Production runs on Railway (backend API + Postgres + two weekly cron jobs
-for the NFL/CFB refresh) and Vercel (frontend), behind the `blitzcast.app`
-custom domain on Cloudflare. `railway.json` sets the backend's start
-command, which runs `alembic upgrade head` before `uvicorn` on every
-deploy. The two `railway-*-cron.json` files configure the standalone
-refresh services.
+Production runs on Railway (backend API + Postgres + two daily cron jobs
+for the NFL/CFB refresh, in-season months only) and Vercel (frontend),
+behind the `blitzcast.app` custom domain on Cloudflare. `railway.json` sets
+the backend's start command, which runs `alembic upgrade head` before
+`uvicorn` on every deploy. The two `railway-*-cron.json` files configure the
+standalone refresh services and their UTC schedules. Diagrams:
+[c4-container.md](./diagrams/c4-container.md),
+[daily-refresh-sequence.md](./diagrams/daily-refresh-sequence.md),
+[deployment-security.md](./diagrams/deployment-security.md).
 
 First deploy on a fresh database needs the one-time bootstrap in order:
 `seed` → `seed_cfb` → `backfill` → `backfill_cfb` →
@@ -159,12 +168,14 @@ blitzcast/
 │   │                    (per-sport artifacts: ml/artifacts/, ml/artifacts/cfb/)
 │   ├── data_pipeline/   seeds + nflverse/CFBD/odds/weather/injury loaders
 │   │                    (NFL and *_cfb.py CFB counterparts)
-│   ├── tests/           pytest suite (148 tests)
+│   ├── tests/           pytest suite
 │   └── README.md        every backend command
+├── diagrams/            Mermaid architecture diagrams (start with overview.md)
+├── docs/                design specs and implementation plans
 ├── docker/              docker-compose.yml (Postgres 16)
 ├── railway.json         backend service config (start command, migrations)
-├── railway-*-cron.json  weekly NFL/CFB refresh cron services
-├── .github/workflows/   CI: ruff + pytest, lint + build
+├── railway-*-cron.json  daily NFL/CFB refresh cron services
+├── .github/workflows/   CI: ruff + pytest, eslint + jest + build
 ├── DECISIONS.md         technical decision log
 ├── CHANGELOG.md         release history
 ├── SECURITY.md          vulnerability reporting policy
@@ -174,12 +185,11 @@ blitzcast/
 ## Testing
 
 ```powershell
-cd backend  && .venv\Scripts\python -m pytest     # 148 tests
-cd frontend && npm test                           # 114 tests
-cd frontend && npm run lint && npm run build
+cd backend  && .venv\Scripts\python -m ruff check . && .venv\Scripts\python -m pytest
+cd frontend && npm run lint && npm test && npm run build
 ```
 
-CI runs both suites on every push/PR.
+CI runs all of the above on every pull request and every push to `main`.
 
 ## Known limitations
 

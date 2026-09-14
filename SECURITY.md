@@ -7,8 +7,8 @@ Response times are best effort, not contractual.
 
 | Version | Supported |
 |---|---|
-| 1.0.3 (latest release) | Yes |
-| Older pre-1.0 tags | No |
+| Latest release | Yes |
+| Anything older | No |
 
 Only the latest release and the current `main` receive security fixes.
 
@@ -37,3 +37,12 @@ The app serves read-only sports predictions and stores no user accounts
 or personal data. Reports about missing hardening on third-party
 services, or about rate limits on free-tier data providers, are welcome
 but are likely to be triaged as low priority.
+
+## security.txt
+
+[`/.well-known/security.txt`](https://blitzcast.app/.well-known/security.txt)
+([RFC 9116](https://www.rfc-editor.org/rfc/rfc9116)) points researchers at the
+private reporting link above. It lives in
+`frontend/public/.well-known/security.txt`, and its `Expires` field
+(currently 2027-09-14) must be renewed before it lapses: an expired file
+tells researchers the contact information is no longer maintained.

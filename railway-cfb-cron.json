@@ -1,5 +1,5 @@
 {
-  "$schema": "railway.app/railway.schema.json",
+  "$schema": "https://railway.app/railway.schema.json",
   "deploy": {
     "startCommand": "python -m data_pipeline.refresh_week_cfb",
     "cronSchedule": "0 10 * 8,9,10,11,12,1 *"

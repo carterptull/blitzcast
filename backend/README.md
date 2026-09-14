@@ -3,6 +3,12 @@
 Python/FastAPI service that owns the data pipeline, the win-probability
 model, and the prediction API. Built by Paymon Software.
 
+How the pieces fit together is drawn in [`../diagrams/`](../diagrams/README.md):
+the [daily refresh](../diagrams/daily-refresh-sequence.md), the
+[prediction read path](../diagrams/prediction-request-sequence.md), the
+[narration guardrails](../diagrams/llm-narration-boundary.md), the
+[ML pipeline](../diagrams/ml-pipeline.md), and the [schema](../diagrams/er-diagram.md).
+
 ## Setup
 
 Requires Python 3.13 and Docker Desktop (for Postgres).
@@ -13,6 +19,9 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 copy .env.example .env   # then paste real API keys into .env
 ```
+
+Dependencies are pinned to the versions production runs. Don't bump
+xgboost or scikit-learn without retraining; see `CLAUDE.md`.
 
 Start Postgres (from the repo root):
 
@@ -91,7 +100,8 @@ retrains a model per holdout season (2023-2025) that has never seen that
 season, scores it, and writes the result under a distinct
 `backtest-1.0.0` / `backtest-cfb-1.0.0` model version, mirroring
 `ml/backtest.py`. The shipped model artifact is never used for this,
-since it trained on 2023-2025 and its accuracy on them would be in-sample.
+since it trained on 2022-2024 and calibrated on 2025, so its accuracy on
+them would be in-sample.
 Rows written this way are excluded from `/api/record` and from the slate's
 prediction probability, and are labeled "Reconstructed from a backtest,
 not a live call made before kickoff" on the matchup page. Its own ad-hoc
@@ -171,8 +181,10 @@ XGBoost (shallow, regularized) + Platt calibration on a time-aware holdout.
 Features are leakage-safe home-minus-away diffs (Elo, rolling EPA/form,
 rest, injuries incl. QB status, weather, market). Walk-forward backtest
 results live in [`ml/reports/backtest.md`](ml/reports/backtest.md).
-Artifacts in `ml/artifacts/` are gitignored; retrain with `python -m
-ml.train`.
+`ml/artifacts/` is gitignored except `latest.json` and the current model per
+sport, which are committed so a deploy serves exactly the model the
+published numbers describe (see `DECISIONS.md`). A retrain
+(`python -m ml.train`) produces new weights and needs a re-commit.
 
 `ml/train.py` asserts the training and calibration windows are temporally
 disjoint (`assert_temporally_disjoint`, raises if the latest training

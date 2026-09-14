@@ -130,7 +130,7 @@ was built to leave behind; rejected.
 `app/jobs/backfill_predictions.py` reconstructs 2023-2025 predictions with a model retrained per
 holdout season that has never seen that season, mirroring `ml/backtest.py`, rather than by simply
 running the shipped `1.0.0` artifact over historical games. **Why:** the shipped model trained on
-2023-2025, so scoring it against those same seasons would be in-sample and read as a far better
+2022-2024 and calibrated on 2025, so scoring it against those same seasons would be in-sample and read as a far better
 season record than the model has ever actually produced on unseen games. Rows are stamped with a
 distinct `backtest-*` model version specifically so they can never leak into `/api/record` or the
 slate's live probability. **Alternative:** run the shipped model over history for speed and
@@ -212,11 +212,11 @@ score during a live game for no real latency benefit over 30 seconds; rejected.
 
 ## Scoping `frame-ancestors` instead of leaving embedding unrestricted
 
-`frontend/next.config.ts` now sends `Content-Security-Policy: frame-ancestors 'self'
-https://cartertull.com https://www.cartertull.com` on every route. **Why:** the app previously
-sent no framing-control header at all, so any site could iframe blitzcast.app for clickjacking —
-a gap that only became worth closing once the portfolio at cartertull.com started deliberately
-embedding it in a window. Scoping to the two origins that need it (the portfolio, plus `'self'`
+`frontend/next.config.ts` now sends `Content-Security-Policy: frame-ancestors 'self'` plus the
+maintainer's portfolio site's origins on every route. **Why:** the app previously sent no
+framing-control header at all, so any site could iframe blitzcast.app for clickjacking — a gap
+that only became worth closing once the maintainer's portfolio site started deliberately
+embedding it in a window. Scoping to the origins that need it (the portfolio, plus `'self'`
 for blitzcast.app's own pages) closes the general hole without breaking the one embed that's
 supposed to work. No `X-Frame-Options` is set alongside it: it can't list multiple origins, and
 CSP's `frame-ancestors` overrides it in every browser that honors both, so it would be dead
@@ -341,3 +341,28 @@ the dominant contributor, plus smaller lists in `StatusFilter`, `FilterChips`, a
 `Disagreements`, plus `Header`'s sport toggle (renders on every page). All got the same
 `prefetch={false}` treatment; true singleton nav links (logo, footer, matchup back-link) were
 left alone since one instance per page can't create a burst.
+
+## Python dependencies pinned to what production already runs
+
+`backend/requirements.txt` and `requirements-dev.txt` pin every top-level package with `==`, set
+to the versions production's image had resolved rather than to the newest releases. **Why:** the
+file was unpinned, so any Railway rebuild that missed its cache would install whatever was newest
+that day. That quietly undercut the committed-artifact decision above: the `.joblib` models were
+saved under a specific xgboost and scikit-learn, and a silent upgrade can change how they load or
+predict. Railway's build log showed the install layer cached (keyed on the file's contents), so
+the versions were reconstructed from PyPI release dates as of the file's last change, then
+verified in a clean virtualenv with `pip check`, both model artifacts loading, and the full test
+suite. **Alternative:** a full lockfile with transitive dependencies (`pip-tools` or `uv`):
+stronger, but more tooling than a 20-package service needs today; top-level pins cover the
+packages whose drift actually matters.
+
+## Hand-maintained architecture diagrams instead of generated ones
+
+`diagrams/` holds Mermaid diagrams written by hand, each stamped with the date and app version it
+reflects, with a "re-check when you change X" table in `diagrams/README.md`. **Why:** the parts of
+this system worth drawing are decisions, not call graphs: that a page view never runs the model,
+where the LLM boundary sits and what guards it, why completion is keyed on scores. A diagram
+generated from imports or the ORM would show structure faithfully but none of that intent. The
+version stamp and re-check table make drift visible rather than silent. **Alternative:** generate
+an ER diagram from `app/models.py` and module graphs from imports on every build: never stale, but
+noisy, and blind to exactly the constraints the diagrams exist to explain; rejected.
