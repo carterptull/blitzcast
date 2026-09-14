@@ -15,11 +15,11 @@ released as 1.0.10 (the maintainer cuts the GitHub release and tag manually afte
 |---|---|
 | Where diagrams live | Root `diagrams/`, linked from README and CLAUDE.md |
 | Diagram set | All 10 below (plus an index `README.md`) |
-| `cartertull.com` references | Keep the literal origin only in the `frame-ancestors` CSP value (functionally required); reword surrounding prose to "the maintainer's portfolio site"; add a CLAUDE.md carve-out naming the CSP value as the sole exception |
+| Portfolio-domain references | Keep the literal origin only in the `frame-ancestors` CSP value (functionally required); reword surrounding prose to "the maintainer's portfolio site"; add a CLAUDE.md carve-out naming the CSP value as the sole exception |
 | Code/config fixes | All four: `npm test` in CI, pin Python deps, `next` 16.3.5, cron `$schema` URL |
 | PR shape | One branch, one PR, version 1.0.10 |
 | Side cleanup | Delete merged local branches, delete `next_steps.md` (backed up first), add `security.txt` |
-| Commit identity | Carter Tull, no AI co-author or session trailers |
+| Commit identity | The repo's existing human git identity, no AI co-author or session trailers |
 
 ## Diagram set
 
