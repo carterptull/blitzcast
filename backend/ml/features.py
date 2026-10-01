@@ -245,7 +245,7 @@ def _elo_pregame(
 def _team_form(games: pd.DataFrame, stats: pd.DataFrame) -> pd.DataFrame:
     """Post-game rolling form per (team, played game): last-5 EPA/margin/win%,
     last-3 turnover differential. Consumed via as-of merge."""
-    played = games[games["home_score"].notna()]
+    played = games[games["home_score"].notna() & games["away_score"].notna()]
     home = played[["game_id", "kickoff", "home_team_id", "home_score", "away_score"]].copy()
     home.columns = ["game_id", "kickoff", "team_id", "pts_for", "pts_against"]
     away = played[["game_id", "kickoff", "away_team_id", "away_score", "home_score"]].copy()
@@ -468,7 +468,7 @@ def build_features(
         df["poll_strength_diff"] = df["home_poll_strength"] - df["away_poll_strength"]
 
     df["home_win"] = np.where(
-        df["home_score"].isna(),
+        df["home_score"].isna() | df["away_score"].isna(),
         np.nan,
         (df["home_score"] > df["away_score"]).astype(float),
     )

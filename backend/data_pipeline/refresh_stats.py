@@ -30,7 +30,11 @@ def main() -> None:
         played = db.scalar(
             select(func.count())
             .select_from(Game)
-            .where(Game.season == args.season, Game.home_score.is_not(None))
+            .where(
+                Game.season == args.season,
+                Game.home_score.is_not(None),
+                Game.away_score.is_not(None),
+            )
         )
         if not played:
             print(f"team_game_stats refresh: no final games for {args.season} yet, skipping.")

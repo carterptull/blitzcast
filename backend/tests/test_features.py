@@ -86,3 +86,16 @@ def test_market_home_prob_ignores_no_quote_sentinel():
     # Two genuine, merely large, favorites are untouched.
     assert market_home_prob(-1725, 900, None) is not None
     assert 0.5 < market_home_prob(-1725, 900, None) < 1.0
+
+
+def test_half_scored_game_is_not_treated_as_played(db):
+    """Completion invariant: a row with only one score has not finished."""
+    week1 = db.scalars(select(Game).where(Game.game_id == "2025_01_BUF_KC")).one()
+    week1.away_score = None
+    db.flush()
+
+    df = build_features(db)
+    assert pd.isna(_feature_row(df, "2025_01_BUF_KC")["home_win"])
+    # KC's week-2 form must not include the half-scored week-1 game.
+    before = _feature_row(df, "2025_02_BUF_KC")["point_margin_diff"]
+    assert pd.isna(before) or before == 0
