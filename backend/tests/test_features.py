@@ -99,3 +99,23 @@ def test_half_scored_game_is_not_treated_as_played(db):
     # KC's week-2 form must not include the half-scored week-1 game.
     before = _feature_row(df, "2025_02_BUF_KC")["point_margin_diff"]
     assert pd.isna(before) or before == 0
+
+
+def test_no_line_game_gets_elo_imputed_market_and_a_flag(db):
+    game = db.scalars(select(Game).where(Game.game_id == "2026_01_BUF_KC")).one()
+    game.spread_line = None
+    game.home_moneyline = None
+    game.away_moneyline = None
+    db.flush()
+
+    row = _feature_row(build_features(db), "2026_01_BUF_KC")
+    assert row["has_market_line"] == 0.0
+    expected = (row["elo_diff"] + 55.0) / 25.0  # NFL HFA 55, 25 Elo per point
+    assert abs(row["market_spread_home"] - expected) < 1e-9
+    assert 0.0 < row["market_home_prob"] < 1.0
+
+
+def test_lined_game_keeps_its_market_and_flag(db):
+    row = _feature_row(build_features(db), "2026_01_PHI_DAL")
+    assert row["has_market_line"] == 1.0
+    assert row["market_spread_home"] == -3.5

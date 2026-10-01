@@ -44,3 +44,10 @@ def test_market_spread_negative_still_favors_away():
     by_feature = {f["feature"]: f for f in factors}
     assert by_feature["market_spread_home"]["direction"] == "away"
     assert by_feature["market_home_prob"]["direction"] == "away"
+
+
+def test_market_factors_are_skipped_when_no_line_exists():
+    row = pd.DataFrame([{"market_spread_home": 4.0, "market_home_prob": 0.6, "elo_diff": 80.0}])
+    explainer = _FakeExplainer([0.30, 0.20, 0.05])
+    factors = top_factors(explainer, row, home_win_prob=0.7, n=3, market_available=False)
+    assert [f["feature"] for f in factors] == ["elo_diff"]

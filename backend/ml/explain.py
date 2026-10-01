@@ -67,13 +67,17 @@ def top_factors(
     home_win_prob: float,
     n: int = 4,
     sport: str = SPORT_NFL,
+    market_available: bool = True,
 ) -> list[dict]:
     """Top-n features by |SHAP|. `value` is the approximate probability-space
     contribution; positive always means "toward the home team"."""
     labels = feature_labels(sport)
     shap_values = np.asarray(explainer.shap_values(row))[0]
     scale = home_win_prob * (1.0 - home_win_prob)
-    order = np.argsort(-np.abs(shap_values))[:n]
+    ranked = np.argsort(-np.abs(shap_values))
+    if not market_available:
+        ranked = [i for i in ranked if row.columns[i] not in _MARKET_GROUND_TRUTH]
+    order = list(ranked)[:n]
     factors = []
     for idx in order:
         feature = row.columns[idx]

@@ -134,7 +134,7 @@ def main() -> None:
         y = eval_df["home_win"].astype(int).to_numpy()
 
         market = eval_df["market_home_prob"].to_numpy(dtype=float)
-        has_market = ~np.isnan(market)
+        has_market = eval_df["has_market_line"].to_numpy(dtype=float) == 1.0
 
         m = season_metrics(y, probs)
         v = season_metrics(y[has_market], market[has_market])

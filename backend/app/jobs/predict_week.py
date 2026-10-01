@@ -89,7 +89,8 @@ def build_narration_payload(
     QB/injury note (no standardized CFB injury report to cite)."""
     home = teams_by_abbr.get(row["home_abbr"])
     away = teams_by_abbr.get(row["away_abbr"])
-    spread = row.get("market_spread_home")
+    has_line = bool(row.get("has_market_line", 1.0))
+    spread = row.get("market_spread_home") if has_line else None
     payload = {
         "sport": sport,
         "home_name": home.name if home else row["home_abbr"],
@@ -181,7 +182,9 @@ def main() -> None:
             x = row[feature_columns].to_frame().T.astype(float)
             raw = model.predict_proba(x)[:, 1]
             prob = float(calibrator.transform(raw)[0])
-            factors = top_factors(explainer, x, prob, sport=sport)
+            factors = top_factors(
+                explainer, x, prob, sport=sport, market_available=bool(row["has_market_line"])
+            )
 
             narrative = narrate(
                 build_narration_payload(row, prob, factors, teams_by_abbr, sport, ranks)

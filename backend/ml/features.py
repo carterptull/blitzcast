@@ -11,6 +11,7 @@ and the market feature is always available, so Week 1 predictions are real
 rather than a flat 50/50.
 """
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -90,6 +91,17 @@ def moneyline_to_prob(ml: float) -> float:
     return 100.0 / (ml + 100.0)
 
 
+ELO_PER_SPREAD_POINT = 25.0
+
+
+def _spread_to_prob(spread_home: float) -> float:
+    return 1.0 / (1.0 + 10.0 ** (-spread_home * ELO_PER_SPREAD_POINT / 400.0))
+
+
+def _prob_to_spread(p: float) -> float:
+    return math.log10(p / (1.0 - p)) * 400.0 / ELO_PER_SPREAD_POINT
+
+
 def market_home_prob(home_ml, away_ml, spread_home) -> float | None:
     """De-vigged moneyline probability; spread-based fallback (25 Elo/point)."""
     if plausible_moneylines(home_ml, away_ml):
@@ -97,7 +109,7 @@ def market_home_prob(home_ml, away_ml, spread_home) -> float | None:
         p_away = moneyline_to_prob(away_ml)
         return p_home / (p_home + p_away)
     if spread_home is not None:
-        return 1.0 / (1.0 + 10.0 ** (-spread_home * 25.0 / 400.0))
+        return _spread_to_prob(spread_home)
     return None
 
 
@@ -426,13 +438,27 @@ def build_features(
     )
 
     df["market_spread_home"] = df["spread_line"]
-    df["market_home_prob"] = df.apply(
-        lambda r: market_home_prob(
-            None if pd.isna(r["home_moneyline"]) else float(r["home_moneyline"]),
-            None if pd.isna(r["away_moneyline"]) else float(r["away_moneyline"]),
-            None if pd.isna(r["spread_line"]) else float(r["spread_line"]),
+    df["market_home_prob"] = pd.to_numeric(
+        df.apply(
+            lambda r: market_home_prob(
+                None if pd.isna(r["home_moneyline"]) else float(r["home_moneyline"]),
+                None if pd.isna(r["away_moneyline"]) else float(r["away_moneyline"]),
+                None if pd.isna(r["spread_line"]) else float(r["spread_line"]),
+            ),
+            axis=1,
         ),
-        axis=1,
+        errors="coerce",
+    )
+    # No posted line: stand in an Elo-implied one so the model never routes a
+    # missing market down the branch it learned from FCS mismatches. The flag
+    # keeps the imputed line out of explanations, narration, and baselines.
+    df["has_market_line"] = df["market_home_prob"].notna().astype(float)
+    hfa = elo.config_for(sport).hfa
+    elo_spread = (df["elo_home"] - df["elo_away"] + hfa) / ELO_PER_SPREAD_POINT
+    ml_spread = df["market_home_prob"].map(_prob_to_spread, na_action="ignore")
+    df["market_spread_home"] = df["market_spread_home"].fillna(ml_spread).fillna(elo_spread)
+    df["market_home_prob"] = df["market_home_prob"].fillna(
+        df["market_spread_home"].map(_spread_to_prob)
     )
 
     # Tier class edge (FBS=1, FCS=0); 0.0 for NFL where tier is NULL.
@@ -470,7 +496,7 @@ def build_features(
 
     meta = [
         "game_id", "season", "week", "kickoff", "home_abbr", "away_abbr",
-        "home_tier", "away_tier", "home_win",
+        "home_tier", "away_tier", "home_win", "has_market_line",
     ]
     return df[meta + FEATURE_COLUMNS].reset_index(drop=True)
 

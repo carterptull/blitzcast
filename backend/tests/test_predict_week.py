@@ -180,3 +180,16 @@ def test_default_week_skips_a_stale_week_with_a_permanently_unscored_game(db):
 
     now = datetime(2026, 10, 1, tzinfo=UTC)   # weeks later
     assert default_week(db, 2026, SPORT_NFL, now=now) != 1
+
+
+def test_payload_hides_an_imputed_spread():
+    teams = {
+        "KC": _team(SPORT_NFL, "KC", "Kansas City Chiefs", "AFC", 1),
+        "BUF": _team(SPORT_NFL, "BUF", "Buffalo Bills", "AFC", 2),
+    }
+    row = pd.Series({
+        "home_abbr": "KC", "away_abbr": "BUF", "market_spread_home": 6.2,
+        "has_market_line": 0.0, "is_divisional": 0.0,
+    })
+    payload = build_narration_payload(row, 0.7, [], teams, SPORT_NFL)
+    assert payload["spread_home"] is None
