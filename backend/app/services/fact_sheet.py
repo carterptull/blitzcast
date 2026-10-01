@@ -79,6 +79,7 @@ class GameFacts:
     last_meeting: str | None
     weather: str | None
     factor_lines: tuple[str, ...]
+    poll_available: bool = False
 
 
 def _utc(value: datetime) -> datetime:
@@ -144,6 +145,8 @@ def _rest(db: Session, team_id: int, game: Game) -> str | None:
         .where(
             Game.sport == game.sport,
             Game.game_date < game.game_date,
+            Game.home_score.is_not(None),
+            Game.away_score.is_not(None),
             (Game.home_team_id == team_id) | (Game.away_team_id == team_id),
         )
         .order_by(Game.game_date.desc())
@@ -170,7 +173,8 @@ def _injuries(db: Session, game: Game, team_id: int) -> tuple[str, ...]:
         key=lambda r: -POSITION_WEIGHTS.get((r.position or "").upper(), DEFAULT_POSITION_WEIGHT)
     )
     return tuple(
-        f"{r.player_name} ({r.position}) is listed {r.status.title()}"
+        f"{r.player_name}{f' ({r.position})' if r.position else ''} is listed "
+        f"{r.status.title()}"
         for r in listed[:MAX_INJURIES_PER_TEAM]
     )
 
@@ -256,11 +260,15 @@ def _last_meeting(db: Session, game: Game) -> str | None:
     if prior is None:
         return None
     hs, as_ = prior.home_score, prior.away_score
+    last_regular_week = 18 if prior.sport == SPORT_NFL else 15
+    if prior.week > last_regular_week:
+        when = f"in the {prior.season} postseason"
+    else:
+        when = f"in Week {prior.week} of {prior.season}"
     if hs == as_:
-        return f"tied {hs}-{as_} in Week {prior.week} of {prior.season}"
+        return f"tied {hs}-{as_} {when}"
     winner = _short_name(prior.home_team if hs > as_ else prior.away_team)
-    score = f"{max(hs, as_)}-{min(hs, as_)}"
-    return f"{winner} won {score} in Week {prior.week} of {prior.season}"
+    return f"{winner} won {max(hs, as_)}-{min(hs, as_)} {when}"
 
 
 def _weather(db: Session, game: Game) -> str | None:
@@ -269,7 +277,11 @@ def _weather(db: Session, game: Game) -> str | None:
     w = db.get(Weather, game.game_id)
     if w is None or w.temp_f is None:
         return None
-    text = f"{w.temp_f:.0f} degrees, wind {w.wind_mph or 0:.0f} mph"
+    if game.kickoff_time is not None and _utc(w.captured_at) >= _utc(game.kickoff_time):
+        return None
+    text = f"{w.temp_f:.0f} degrees"
+    if w.wind_mph is not None:
+        text += f", wind {w.wind_mph:.0f} mph"
     return text + ", rain or snow likely" if w.precipitation else text
 
 
@@ -281,13 +293,14 @@ def _factor_lines(
     lines, market_done = [], False
     for f in factors:
         feature = f.get("feature")
-        team = home if f["direction"] == "home" else away
         if feature in MARKET_FEATURES:
-            if market_done or spread_home is None:
+            if market_done or not spread_home:
                 continue
             market_done = True
-            lines.append(f"{team.name}: betting market")
+            favorite = home if spread_home > 0 else away
+            lines.append(f"{favorite.name}: betting market")
             continue
+        team = home if f["direction"] == "home" else away
         phrase = phrases.get(feature)
         if phrase is None:
             continue
@@ -330,6 +343,7 @@ def build_game_facts(
         last_meeting=_last_meeting(db, game),
         weather=_weather(db, game),
         factor_lines=_factor_lines(factors, home, away, game.sport, spread_home),
+        poll_available=bool(ranks),
     )
 
 
@@ -356,12 +370,12 @@ def _market_line(facts: GameFacts) -> str:
     )
 
 
-def _team_block(t: TeamFacts, sport: str) -> list[str]:
+def _team_block(t: TeamFacts, sport: str, poll_available: bool) -> list[str]:
     head = f"{t.full_name} ({t.abbr})" + (f", also called the {t.mascot}" if t.mascot else "")
     rows = [head, f"- Record this season: {t.record}"]
     if t.rank:
         rows.append(f"- AP rank: #{t.rank}" + (f", {t.rank_note}" if t.rank_note else ""))
-    elif sport == SPORT_CFB:
+    elif sport == SPORT_CFB and poll_available:
         rows.append("- AP rank: unranked")
     for label, value in (
         ("Last game", t.last_game), ("Streak", t.streak),
@@ -400,9 +414,9 @@ def render_fact_sheet(facts: GameFacts) -> str:
     if facts.weather:
         lines.append(f"Weather: {facts.weather}")
     lines.append("")
-    lines += _team_block(facts.home, facts.sport)
+    lines += _team_block(facts.home, facts.sport, facts.poll_available)
     lines.append("")
-    lines += _team_block(facts.away, facts.sport)
+    lines += _team_block(facts.away, facts.sport, facts.poll_available)
     if facts.factor_lines:
         lines += ["", "Biggest factors behind the model's number (team they favor: factor):"]
         lines += [f"- {line}" for line in facts.factor_lines]
