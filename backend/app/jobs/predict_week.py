@@ -183,7 +183,12 @@ def main() -> None:
             raw = model.predict_proba(x)[:, 1]
             prob = float(calibrator.transform(raw)[0])
             factors = top_factors(
-                explainer, x, prob, sport=sport, market_available=bool(row["has_market_line"])
+                explainer,
+                x,
+                prob,
+                sport=sport,
+                market_available=bool(row["has_market_line"]),
+                spread_available=bool(row["has_market_spread"]),
             )
 
             narrative = narrate(
