@@ -126,10 +126,10 @@ _SPELLED_NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 _DASH_RE = re.compile(r"\s*[—–]\s*")
-# Never split after "vs.", "No.", "St.", titles, or initials like "T.J.".
+# Never split after "vs.", "No.", "St.", titles, initials like "T.J.", or "7:30 p.m.".
 _SENTENCE_RE = re.compile(
     r"(?<=[.!?])(?<!\bvs\.)(?<!\bVs\.)(?<!\bNo\.)(?<!\bSt\.)(?<!\bMt\.)(?<!\bJr\.)(?<!\bSr\.)"
-    r"(?<!\bDr\.)(?<!\b[A-Z]\.)\s+"
+    r"(?<!\bDr\.)(?<!\b[A-Z]\.)(?<!\b[ap]\.m\.)\s+"
 )
 _CLAUSE_BREAK_RE = re.compile(
     r";|,\s+(?:and|so)\s+|\s+(?:but|while|whereas|though|although|yet|despite|"
@@ -143,6 +143,13 @@ _LOWER_WORD_RE = re.compile(r"\b[a-z][a-z'’]*")
 _SCORE_RE = re.compile(r"(?<![\w.-])\d{1,3}-\d{1,3}(?:-\d{1,3})?(?![\w-]|\.\d)")
 _RANK_RE = re.compile(r"(?:\bNo\.\s?|#|\bnumber\s+)(\d{1,3})(?![\w-]|\.\d)", re.IGNORECASE)
 _STREAK_RE = re.compile(r"(?:\b(?:won|lost)\s+)?\b\d{1,2}\s+straight\b", re.IGNORECASE)
+_PREV_RANK_RE = re.compile(r"(?:up|down) from #(\d+)")
+_FROM_RE = re.compile(r"\bfrom\s+$", re.IGNORECASE)
+# Hyphenated pairs that are not scores or records.
+_NOT_A_SCORE_RE = re.compile(
+    r"(?:4-3|3-4)\s+(?:defense|defensive|front|look|scheme)\b|1-0\s+mindset\b|0-0\s+game\b",
+    re.IGNORECASE,
+)
 _MODEL_RE = re.compile(r"\bmodel(?:['’]s)?\b", re.IGNORECASE)
 _CONTRAST_RE = re.compile(
     r"\b(?:but|while|whereas|though|although|yet|despite)\b", re.IGNORECASE
@@ -193,6 +200,15 @@ _MARKET_ONLY_FAV_RE = re.compile(rf"{_FAVORED_BY}|{_N_POINT}", re.IGNORECASE)
 _PAIRED_PCT_RE = re.compile(r"\s*(?:to|vs\.?|versus|over|against|-)\s*", re.IGNORECASE)
 _AS_ROLE_RE = re.compile(r"\bas\s+(?:an?\s+|the\s+)?(?:[\w.'’-]+\s+){0,2}$", re.IGNORECASE)
 _FOR_RE = re.compile(r"\s+for\s+(?:the\s+)?", re.IGNORECASE)
+_PRONOUN_RE = re.compile(r"\b(?:they|them|their|it|its)\b", re.IGNORECASE)
+# What may sit between a claim and a team named after it: "a 3-point favorite,
+# Green Bay", "the favorite is Texas", "the edge goes to the Bears". "54%
+# against a Packers team" is not it.
+_AFTER_GAP_RE = re.compile(
+    r"\s*,?\s*(?:(?:is|are|remains|goes|going|belongs|go)\s+)?(?:(?:to|for|with|on)\s+)?"
+    r"(?:the\s+)?",
+    re.IGNORECASE,
+)
 _CFB_INJURY_RE = re.compile(
     r"\binjur|\bout\s+for\b|\bmissing\b|\bsidelined\b|\bquestionable\b|\bdoubtful\b"
     r"|\bruled\s+out\b",
@@ -207,14 +223,18 @@ _PLAYER_ROLE = (
     r"|edge\s+rusher|kicker)\s+"
 )
 _TEAM_TO_PLAYER = (
-    rf"(?:['’]s?\s+(?:{_PLAYER_ROLE})?|\s+{_PLAYER_ROLE}"
-    r"|\s+(?:is|are|was|were|will\s+be)\s+(?:still\s+|again\s+)?(?:playing\s+)?without\s+"
-    rf"(?:{_PLAYER_ROLE})?)"
+    rf"(?:['’]s?\s+|\s+(?={_PLAYER_ROLE})"
+    r"|\s+(?:is|are|was|were|will\s+be)\s+(?:still\s+|again\s+)?(?:playing\s+)?"
+    r"(?:without|missing)\s+"
+    r"|,\s+(?:still\s+)?(?:without|missing)\s+"
+    r"|\s+(?:lose|loses|lost|losing|(?:is|are|will\s+be)\s+losing|will\s+lose)\s+"
+    rf")(?:{_PLAYER_ROLE})?"
 )
 _PLAYER_TO_TEAM = (
-    r"(?:\s*\([A-Za-z]{1,4}\))?,?\s+(?:is\s+|was\s+|remains\s+|will\s+be\s+)?"
-    r"(?:listed\s+|ruled\s+)?(?:as\s+)?"
-    r"(?:out|doubtful|questionable|inactive|sidelined|unavailable|injured)\s+for\s+(?:the\s+)?"
+    r"(?:\s*\([A-Za-z]{1,4}\))?,?\s+(?:(?:is|was|remains|will\s+be)\s+)?"
+    r"(?:(?:listed|ruled)\s+)?(?:as\s+)?"
+    r"(?:(?:out|doubtful|questionable|inactive|sidelined|unavailable|injured)\s+)?"
+    r"for\s+(?:the\s+)?"
 )
 
 # Word-bounded so "epa" never matches inside "prepared" or "separates".
@@ -229,72 +249,119 @@ _GENERIC_NAME_WORDS = {
     "northern", "southern", "eastern", "western",
 }
 
-# Generic capitalized words (sentence openers, calendar words, football terms).
-# Only add plain English words here, never names or surname-like words
-# (Love, Brown, Allen, Hill, Young, Chase, Hurts, Swift, ...).
-COMMON_CAPITALIZED = {
-    # Articles, pronouns, determiners.
-    "a", "an", "the", "this", "that", "these", "those", "it", "it's", "its", "they",
-    "they're", "their", "them", "he", "she", "we", "we're", "our", "you", "you're", "your",
-    "i", "i'm", "i'll", "i'd", "there", "there's", "here", "here's", "what", "what's", "who",
-    "which", "why", "how", "where", "everyone", "everybody", "nobody", "somebody", "anyone",
-    "something", "nothing", "everything", "neither", "either", "each", "every", "another",
-    "other", "both", "all", "any", "some", "many", "most", "few", "several", "much", "more",
-    "less", "such", "one", "two", "three", "four", "five", "ten",
-    # Conjunctions and adverbs.
-    "and", "but", "or", "nor", "so", "yet", "if", "when", "while", "whereas", "though",
-    "although", "because", "since", "unless", "until", "as", "than", "then", "now", "still",
-    "even", "just", "only", "also", "too", "again", "once", "already", "almost", "never",
-    "always", "often", "maybe", "perhaps", "however", "meanwhile", "instead", "otherwise",
-    "plus", "not", "no", "yes", "sure", "indeed", "really", "simply", "tonight", "today",
-    "tomorrow", "first", "second", "third", "fourth", "last", "next", "finally",
+# Plain English words that may be capitalized (sentence openers, calendar
+# words, football terms). This is data: add plain words only, never a surname,
+# first name, place, or team word (Love, Brown, Allen, Hill, Young, Chase, Hurts,
+# Swift, Smart, Lane, Long, ...). A few common openers are also surnames (Good,
+# Key, Early, Will, Sharp, Speed, Bold): a lone surname that is also a common
+# word cannot be told apart, but a full "First Last" name is still rejected
+# because the first name fails.
+_PLAIN_WORD_GROUPS = (
+    # Articles, pronouns, determiners, quantifiers.
+    """a an the this that these those it it's its they they're their them he she we we're
+    our you you're your i i'm i'll i'd there there's here here's what what's who whoever
+    which why how where whatever everyone everybody nobody somebody someone anyone
+    anybody something nothing everything anything neither either each every another other
+    others both all any some many most few fewer least several much more less such enough
+    plenty lots none zero half double triple single twice whole entire multiple various
+    countless numerous one two three four five six seven eight nine ten""",
+    # Conjunctions, adverbs, connectives.
+    """and but or nor so yet if when while whereas though although because since unless
+    until as than then now still even just only also too again once already almost never
+    always often maybe perhaps however meanwhile instead otherwise plus not no yes yeah
+    nope okay sure indeed really simply tonight today tomorrow first second third fourth
+    last next finally actually ahead alone anyway apparently arguably basically besides
+    certainly clearly currently definitely especially essentially eventually fittingly
+    fortunately frankly further furthermore hence historically honestly hopefully ideally
+    importantly inevitably interestingly ironically lately likewise luckily mostly
+    naturally nearly nonetheless notably obviously oddly officially overall plainly
+    possibly predictably presumably probably quietly quite rarely realistically recently
+    regardless remarkably seemingly seriously similarly somehow sometimes soon
+    statistically suddenly surely surprisingly therefore thus together truly typically
+    ultimately unfortunately usually very well else elsewhere everywhere nowhere sadly
+    thankfully admittedly granted absolutely whether""",
     # Prepositions.
-    "for", "from", "in", "on", "at", "by", "to", "of", "up", "out", "down", "over", "under",
-    "behind", "between", "against", "despite", "after", "before", "back", "into", "off",
-    "around", "through", "across", "with", "without", "inside", "outside", "beyond", "past",
-    "toward", "about", "above", "below",
-    # Verbs that open a sentence.
-    "expect", "look", "forget", "make", "call", "coming", "going", "getting", "taking",
-    "bring", "give", "take", "keep", "watch", "picture", "imagine", "think", "believe",
-    "consider", "remember", "let's", "don't", "can't", "won't", "isn't", "aren't", "doesn't",
-    "didn't", "wasn't", "is", "are", "was", "were", "be", "has", "have", "had", "do", "does",
-    "did", "can", "could", "should", "would", "will", "must", "might", "get", "go", "buckle",
-    "strap", "hold", "enter", "welcome", "say", "know", "bet",
-    # Calendar.
-    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-    "january", "february", "march", "april", "may", "june", "july", "august", "september",
-    "october", "november", "december",
-    # Football words and acronyms.
-    "week", "weekend", "vegas", "ap", "fbs", "fcs", "nfl", "cfb", "afc", "nfc", "model",
-    "game", "games", "kickoff", "football", "college", "pro", "home", "road", "defense",
-    "offense", "quarterback", "coach", "rivalry", "showdown", "heavyweight", "primetime",
-    "prime", "time", "night", "morning", "afternoon", "evening", "season", "postseason",
-    "playoff", "conference", "division", "title", "fight", "matchup", "rematch", "upset",
-    "trap", "underdog", "underdogs", "favorite", "favorites", "edge", "line", "spread",
-    "total", "market", "stakes", "crowd", "stadium", "start", "streak", "record", "bye",
-    "rest", "big", "top", "ranked", "unranked", "number", "neutral", "site", "points", "point",
-    "yards", "pickup", "touchdown", "touchdowns", "turnover", "turnovers", "injury",
-    "injuries", "report", "availability", "scoring", "passing", "rushing", "running",
-    "attack", "secondary", "backfield", "trenches", "tempo", "possession", "drive", "drives",
-    "margin", "differential", "form", "pick", "picks", "odds", "win", "wins", "winning",
-    "loss", "losses", "losing", "lead", "winners", "visitors", "hosts", "guests", "rivals",
-    "battle", "clash", "test", "chance", "chances", "opportunity", "redemption", "pride",
+    """for from in on at by to of up out down over under behind between against despite
+    after before back into off around through across with without inside outside beyond
+    past toward towards about above below along amid among beneath beside during except
+    like near unlike upon versus via within throughout onto per""",
+    # Verbs and imperatives that open a sentence.
+    """expect look looks forget make makes call calls bring brings give gives take takes
+    keep keeps watch picture imagine think believe consider remember let let's don't
+    can't won't isn't aren't doesn't didn't wasn't is are was were be been has have had
+    do does did can could should would will must might get gets go goes buckle strap hold
+    enter welcome say says know bet add ask bank blame book check chalk circle count
+    credit cue enjoy factor fade find flip follow grab guess note pencil pick put respect
+    ride see sign stay stop talk tell throw toss trust tune turn wait mind pay plan play
+    prepare read settle spot set try fear doubt feel feels seems means matters counts
+    happens tells sounds comes remains belongs hinges depends lean leans hand run runs""",
+    # Participles and gerunds.
+    """being bouncing bringing building buzzing calling chasing climbing coming cruising
+    defending ending entering facing falling fighting finishing going heading hosting
+    knowing leading looking making needing opening playing protecting putting riding
+    rolling running seeing sitting starting staying taking trailing traveling travelling
+    trending turning visiting waiting walking watching winning losing getting giving
+    laying backing betting streaking surging struggling slumping reeling battered beaten
+    bruised fueled armed led powered boosted stung humbled loaded banged shorthanded
+    undermanned favored picked projected pegged listed slated scheduled reigning rested
+    ranked unranked measuring""",
+    # Calendar and time. Spring and summer months are left out: they double as names.
+    """monday tuesday wednesday thursday friday saturday sunday january september october
+    november december week weeks weekend month season seasons year years fall autumn
+    morning midday noon afternoon evening night kickoff halftime overtime clock""",
     # Weather.
-    "weather", "cold", "snow", "snowy", "rain", "rainy", "heat", "wind", "windy", "humid",
-    "humidity", "hot", "warm", "chilly", "freezing", "sunny", "degrees", "conditions",
-    "dome", "indoors", "outdoors", "lights",
-    # Stakes and storylines.
-    "revenge", "statement", "momentum", "pressure", "history", "spotlight", "survival",
-    "measuring",
-    # Plain adjectives that open a sentence.
-    "huge", "massive", "enormous", "bad", "good", "great", "short", "long", "unbeaten",
-    "undefeated", "winless", "perfect", "clean", "tough", "early", "late", "quick", "fast",
-    "slow", "real", "true", "wild", "loud", "ugly", "rough", "healthy", "rested", "fresh",
-    "tired", "desperate", "dangerous", "elite", "solid", "steady", "different", "same",
-    "new", "old", "high", "low", "full", "easy", "hard", "close", "tight", "slight", "small",
-    "major", "key", "critical", "crucial", "brutal", "nasty", "gritty", "physical",
-    "explosive", "balanced", "dominant", "impressive", "marquee", "signature",
-}
+    """weather cold rain rainy snowy heat wind windy humid humidity hot warm chilly
+    freezing frigid frozen icy breezy gusty gusts damp wet soggy muggy mild crisp cloudy
+    overcast drizzle showers sleet sunny sunshine degrees temperature temperatures
+    conditions elements forecast dome roof indoors outdoors lights lakefront""",
+    # Football words and acronyms.
+    """vegas ap fbs fcs nfl cfb afc nfc model game games football college pro home road
+    defense offense quarterback quarterbacks coach coaches coaching staff coordinator
+    rivalry showdown heavyweight fight primetime prime time playoff playoffs postseason
+    conference division title crown trophy championship matchup matchups rematch upset
+    trap spoiler underdog underdogs favorite favorites edge line spread total market
+    stakes crowd stadium start streak record bye big top number neutral site points point
+    yards pickup touchdown touchdowns turnover turnovers takeaways giveaways penalties
+    injury injuries report availability scoring passing rushing running attack secondary
+    backfield trench trenches front pass passes ground air aerial kick kicking punt
+    punting returns sack sacks blitz coverage tackling tempo possession drive drives
+    margin differential form picks odds win wins winning loss losses lead winners
+    visitors hosts guests rivals clash test exam audition fortress trip travel turf grass
+    sideline sidelines stands fans fan student students section band tailgate campus
+    homecoming seniors freshman sophomore rookie rookies veteran veterans starter starters
+    backup scheme schemes playbook film tape duel shootout slugfest grind grinder rout
+    romp blowout thriller classic opener finale series derby bowl poll polls ranking
+    rankings schedule stretch slate card bout tilt contest affair stats metrics
+    efficiency ratings rating projection projections simulation simulations probability
+    percent percentage computer numbers math seeding standings tiebreaker eligibility""",
+    # Stakes, storylines, and plain nouns.
+    """revenge statement momentum pressure history spotlight survival opportunity
+    redemption payback chances advantage atmosphere bragging rights bottom bounce
+    business buzz chaos character chemistry coin comeback confidence consistency control
+    danger depth desperation discipline drama effort emotion energy execution experience
+    expectations focus fun gut hype health identity intensity keys legacy location luck
+    mindset mismatch motivation nerves noise pedigree position potential proof punch
+    question questions reality reason respect rhythm risk rust stability storyline
+    storylines strategy style talent tension toughness tradition translation trouble
+    urgency value variance volatility work word worry answer answers fact facts news
+    headline headlines theme tale glory alert recipe formula verdict""",
+    # Plain adjectives.
+    """huge massive enormous bad good great short unbeaten undefeated winless perfect clean
+    tough early late quick fast slow real true wild loud ugly rough healthy fresh tired
+    desperate dangerous elite solid steady different same new old high full easy hard
+    close tight slight key critical crucial brutal nasty gritty physical explosive
+    balanced dominant impressive marquee signature simple bold sharp hungry familiar
+    familiarity rare quiet angry anxious aggressive alive awkward better best bigger
+    biggest bitter bizarre brave bright busy calm careful certain cheap clear comfortable
+    complete confident consistent costly crazy crowded curious dead deep dull eager
+    electric exact extra fair fine firm flat focused fragile frantic free frustrating
+    funny glaring grim heavy hostile intense jittery lopsided lucky messy modest narrow
+    nervous nice obvious odd ordinary patient pivotal plain popular positive precise
+    pretty proud ready relentless remarkable risky rowdy scary secure serious shaky
+    sloppy smooth soft sour special stable stubborn sudden sweet tense thin tricky unusual
+    vital weird worse worst wounded cool tame speed""",
+)
+COMMON_CAPITALIZED = {w for group in _PLAIN_WORD_GROUPS for w in group.split()}
 
 
 @dataclass
@@ -332,6 +399,8 @@ def _name_tokens(text: str) -> set[str]:
     tokens = set()
     for match in _CAP_RE.finditer(text):
         token = match.group(0).rstrip(".").lower()
+        if re.fullmatch(r"no\.\d+", token):
+            continue  # "No.9", a rank written without the space
         tokens.add(re.sub(r"['’]s$|['’]$", "", token))
     return tokens
 
@@ -351,8 +420,11 @@ def _name_words(team: TeamFacts) -> set[str]:
 
 # Role phrases name a side outright, except at a neutral site.
 _ROLE_ALIASES = {
-    "away": ("the visitors", "the visiting team", "the road team", "the away team", "the guests"),
-    "home": ("the home team", "the hosts", "the host"),
+    "away": (
+        "the visitors", "the visiting team", "the visiting side", "the visiting squad",
+        "the road team", "the away team", "the guests",
+    ),
+    "home": ("the home team", "the home side", "the home squad", "the hosts", "the host"),
 }
 
 
@@ -365,6 +437,9 @@ def _aliases(facts: GameFacts) -> list[tuple[str, str | None, bool]]:
     for side in ("home", "away"):
         team, other = _team(facts, side), _team(facts, _other(side))
         own = {team.full_name, team.name, team.mascot or "", f"{team.name} {team.mascot or ''}"}
+        if team.mascot and team.full_name.endswith(f" {team.mascot}"):
+            # The city: "Green Bay", "Tampa Bay". A city both teams share is dropped below.
+            own.add(team.full_name[: -len(team.mascot) - 1])
         unique = _name_words(team) - _name_words(other) - _GENERIC_NAME_WORDS
         own |= {w for w in unique if len(w) > 3}
         names[side] = {n.strip().lower() for n in own if n.strip()}
@@ -400,21 +475,34 @@ def _mentions(sentence: str, facts: GameFacts) -> list[tuple[int, int, str]]:
 class _Sentence:
     """One sentence with its team mentions and clause spans. Clauses split on
     "but", "while", ", and" and similar, so a market clause and a model clause
-    in one sentence are judged separately. Pronouns are not resolved: a claim
-    with no team in its clause falls back to the sentence's first team mention."""
+    in one sentence are judged separately. A claim belongs to the team named
+    before it in its clause. With none, a pronoun (they, them, it) in the clause
+    resolves to the subject: the first team named earlier in the sentence, else
+    the first team of the previous sentence; with no subject the claim is not
+    attributed. A team named after the claim counts only when it follows
+    directly ("a 3-point favorite, Green Bay", "the edge to the Bears")."""
 
     text: str
     mentions: list[tuple[int, int, str]]
     clauses: list[tuple[int, int]]
+    prev_subject: str | None = None
 
     @classmethod
-    def parse(cls, text: str, facts: GameFacts) -> "_Sentence":
+    def parse(cls, text: str, facts: GameFacts, prev_subject: str | None = None) -> "_Sentence":
         clauses, start = [], 0
         for m in _CLAUSE_BREAK_RE.finditer(text):
             clauses.append((start, m.start()))
             start = m.end()
         clauses.append((start, len(text)))
-        return cls(text, _mentions(text, facts), clauses)
+        return cls(text, _mentions(text, facts), clauses, prev_subject)
+
+    @property
+    def subject(self) -> str | None:
+        return self.mentions[0][2] if self.mentions else None
+
+    def antecedent(self, clause_start: int) -> str | None:
+        earlier = [m for m in self.mentions if m[1] <= clause_start]
+        return earlier[0][2] if earlier else self.prev_subject
 
     def clause(self, pos: int) -> tuple[int, int]:
         return next((c for c in self.clauses if pos < c[1]), self.clauses[-1])
@@ -435,10 +523,15 @@ class _Sentence:
             # "The Chargers host the Rams as 2.5-point favorites": the subject.
             return before[0][2]
         after = [m for m in self.mentions if m[0] >= end and m[1] <= ce]
-        for pick in ((after[:1], before[-1:]) if prefer_after else (before[-1:], after[:1])):
-            if pick:
-                return pick[0][2]
-        return self.mentions[0][2] if self.mentions else None
+        if prefer_after and after:
+            return after[0][2]
+        if before:
+            return before[-1][2]
+        if _PRONOUN_RE.search(self.text, cs, ce):
+            return self.antecedent(cs)
+        if after and _AFTER_GAP_RE.fullmatch(self.text, end, after[0][0]):
+            return after[0][2]
+        return None
 
     def side_starting_at(self, pos: int) -> str | None:
         return next((m[2] for m in self.mentions if m[0] == pos), None)
@@ -563,42 +656,129 @@ def _market_numbers_reason(s: _Sentence, facts: GameFacts) -> str | None:
 
 def _injury_team_reason(s: _Sentence, facts: GameFacts) -> str | None:
     """An injury-report name must not be pinned on the other team. Only explicit
-    attribution counts: "<team> is without <name>", "<team>'s <name>", "<team>
-    quarterback <name>", and "<name> is listed Out for <team>". Co-occurrence
-    ("Big edge for the Ravens with Joe Burrow out") is not checked. Only the
-    full name is matched, and the listed status (Out vs Doubtful) is not checked."""
-    for side in ("home", "away"):
+    attribution counts: "<team> is without / is missing / lost <name>",
+    "<team>, without <name>", "<team>'s <name>", "<team> quarterback <name>",
+    and "<name> [is listed Out] for <team>". Co-occurrence ("Big edge for the
+    Ravens with Joe Burrow out") is not checked. The full name is matched, and
+    the surname alone when no other listed player shares it. The listed status
+    (Out vs Doubtful) is not checked."""
+    listed = [
+        (side, injury.split(" (")[0].split(" is listed")[0])
+        for side in ("home", "away") for injury in _team(facts, side).injuries
+    ]
+    surnames = [_surname(name) for _, name in listed]
+    for (side, name), surname in zip(listed, surnames, strict=True):
         team, other = _team(facts, side), _other(side)
-        for injury in team.injuries:
-            name = injury.split(" (")[0].split(" is listed")[0]
-            if name not in s.text:
+        forms = [name] + ([surname] if surname and surnames.count(surname) == 1 else [])
+        reason = f"puts {name} on the wrong team (the {team.name} list {name})"
+        for form in forms:
+            if form not in s.text:
                 continue
-            reason = f"puts {name} on the wrong team (the {team.name} list {name})"
-            owned = re.compile(rf"{_TEAM_TO_PLAYER}{re.escape(name)}\b", re.IGNORECASE)
+            exact = rf"(?-i:{re.escape(form)})(?![\w'’-])"
+            owned = re.compile(rf"{_TEAM_TO_PLAYER}{exact}", re.IGNORECASE)
             if any(owned.match(s.text, m[1]) for m in s.mentions if m[2] == other):
                 return reason
-            for m in re.finditer(rf"{re.escape(name)}{_PLAYER_TO_TEAM}", s.text, re.IGNORECASE):
+            pattern = rf"(?<![\w'’-]){exact}{_PLAYER_TO_TEAM}"
+            for m in re.finditer(pattern, s.text, re.IGNORECASE):
                 if s.side_starting_at(m.end()) == other:
                     return reason
     return None
 
 
-def _numeric_facts_reason(text: str, sheet: str) -> str | None:
-    """Scores and records (24-17, 2-1-1), ranks (No. 3, #3) and streaks (won 4
-    straight) must appear verbatim in the fact sheet. Lines and totals are
-    checked by the market logic; years and Week N are never matched. Which team
-    a number belongs to, and invented history with no number ("haven't lost at
-    home all season"), are not checked."""
+def _surname(name: str) -> str | None:
+    suffixes = {"jr", "sr", "ii", "iii", "iv"}
+    words = [w for w in name.split() if w.rstrip(".").lower() not in suffixes]
+    return words[-1] if len(words) > 1 else None
+
+
+def _is_toss_up(facts: GameFacts) -> bool:
+    return 48 <= round(facts.home_win_prob * 100) <= 52 or facts.spread_home == 0
+
+
+def _current_ranks(facts: GameFacts) -> dict[str, int]:
+    return {side: _team(facts, side).rank for side in ("home", "away") if _team(facts, side).rank}
+
+
+def _previous_ranks(facts: GameFacts) -> dict[str, int]:
+    found = {}
+    for side in ("home", "away"):
+        m = _PREV_RANK_RE.search(_team(facts, side).rank_note or "")
+        if m:
+            found[side] = int(m.group(1))
+    return found
+
+
+def _numeric_facts_reason(text: str, sheet: str, facts: GameFacts | None = None) -> str | None:
+    """Scores and records (24-17, 2-1-1) and streaks (won 4 straight) must
+    appear verbatim in the fact sheet. A rank (No. 3, #3) must be a team's
+    current rank, or its previous one after "up from" / "down from". Lines and
+    totals are checked by the market logic; years and Week N are never matched.
+    "50-50" is fine in a toss-up, and "4-3 defense" / "1-0 mindset" are not
+    scores. Invented history with no number ("haven't lost at home all season")
+    is not checked."""
     sheet = " ".join(sheet.split())
     for m in _SCORE_RE.finditer(text):
+        if _NOT_A_SCORE_RE.match(text, m.start()):
+            continue
+        if m.group(0) == "50-50" and facts is not None and _is_toss_up(facts):
+            continue
         if not re.search(rf"(?<![\w.-]){re.escape(m.group(0))}(?![\w-]|\.\d)", sheet):
             return f"cites {m.group(0)} but the fact sheet has no such score or record"
     for m in _RANK_RE.finditer(text):
-        if not re.search(rf"#{m.group(1)}(?!\d)", sheet):
+        if facts is None:
+            ranks = {int(n) for n in re.findall(r"#(\d+)", sheet)}
+        elif _FROM_RE.search(text, 0, m.start()):
+            ranks = set(_previous_ranks(facts).values())
+        else:
+            ranks = set(_current_ranks(facts).values())
+        if int(m.group(1)) not in ranks:
             return f"cites {m.group(0)} but the fact sheet has no such rank"
     for m in _STREAK_RE.finditer(text):
-        if m.group(0).lower() not in sheet.lower():
+        if not re.search(rf"\b{re.escape(m.group(0).lower())}", sheet.lower()):
             return f"cites {m.group(0)} but the fact sheet has no such streak"
+    return None
+
+
+def _claimed_side(s: _Sentence, start: int, end: int) -> str | None:
+    """The team a number is said of: the team right after it ("No. 9 Florida",
+    "the 3-1 Bears"), else the nearest team before it in its clause."""
+    follow = next((m for m in s.mentions if m[0] >= end), None)
+    if follow and s.text[end:follow[0]].isspace():
+        return follow[2]
+    cs, _ = s.clause(start)
+    before = [m for m in s.mentions if m[0] >= cs and m[1] <= start]
+    return before[-1][2] if before else None
+
+
+def _ownership_reason(s: _Sentence, facts: GameFacts) -> str | None:
+    """A record, rank, or streak that belongs to exactly one team must not be
+    said of the other. With no team nearby, or a value both teams share, only
+    the sheet check applies."""
+    checks = []
+    records = {side: _team(facts, side).record for side in ("home", "away")}
+    for m in _SCORE_RE.finditer(s.text):
+        if _NOT_A_SCORE_RE.match(s.text, m.start()):
+            continue
+        checks.append((m, [k for k, v in records.items() if v == m.group(0)], "record"))
+    current, previous = _current_ranks(facts), _previous_ranks(facts)
+    for m in _RANK_RE.finditer(s.text):
+        ranks = previous if _FROM_RE.search(s.text, 0, m.start()) else current
+        checks.append((m, [k for k, v in ranks.items() if v == int(m.group(1))], "rank"))
+    for m in _STREAK_RE.finditer(s.text):
+        claim = m.group(0).lower()
+        owners = [
+            side for side in ("home", "away")
+            if re.search(rf"\b{re.escape(claim)}$", (_team(facts, side).streak or "").lower())
+        ]
+        checks.append((m, owners, "streak"))
+    for m, owners, kind in checks:
+        if len(owners) != 1:
+            continue
+        claimed = _claimed_side(s, m.start(), m.end())
+        if claimed and claimed != owners[0]:
+            owner = _team(facts, owners[0]).name
+            name = _team(facts, claimed).name
+            return f"cites {m.group(0)} for {name} but that {kind} belongs to {owner}"
     return None
 
 
@@ -632,10 +812,16 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
     )
     if unknown:
         return f"names not in the fact sheet: {', '.join(sorted(unknown))}"
-    reason = _numeric_facts_reason(text, sheet)
+    reason = _numeric_facts_reason(text, sheet, facts)
     if reason:
         return reason
-    parsed = [_Sentence.parse(s, facts) for s in sentences]
+    parsed: list[_Sentence] = []
+    for text_s in sentences:
+        parsed.append(_Sentence.parse(text_s, facts, parsed[-1].subject if parsed else None))
+    for s in parsed:
+        reason = _ownership_reason(s, facts)
+        if reason:
+            return reason
     market = [s.is_market() for s in parsed]
     if facts.spread_home is None and any(market):
         return "mentions a betting market but no line exists"

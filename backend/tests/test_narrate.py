@@ -697,3 +697,390 @@ def test_cfb_prompt_carries_injury_guardrail():
 
 def test_dashes_are_rewritten():
     assert "—" not in narrate_mod._plain_punctuation("Texas — at home — rolls.")
+
+
+# A second, independent corpus written after the guardrail was tuned on the
+# first one, in five new scenarios.
+# S1: Packers at Bears, Packers favored by 3, model Bears 54%, injuries both sides.
+S1_CHI = _team(
+    "Bears", "Chicago Bears", "CHI", "Bears", "2-2",
+    last_game="lost to the Lions 27-24 on the road",
+    scoring="averaging 22.3 points and allowing 25.0 over the last 3 games",
+    injuries=("Montez Sweat (DE) is listed Doubtful",),
+)
+S1_GB = _team(
+    "Packers", "Green Bay Packers", "GB", "Packers", "3-1",
+    last_game="beat the Vikings 31-17 at home", streak="won 3 straight", rest="on a short week",
+    injuries=("Jaire Alexander (CB) is listed Out",),
+)
+S1 = _facts(
+    S1_CHI, S1_GB, 0.54, -3.0, 41.5, sport="NFL", when="Sunday afternoon",
+    venue="Soldier Field in Chicago", matchup_note="NFC North division game",
+    last_meeting="Packers won 24-20 in Week 18 of 2025", weather="41 degrees, wind 14 mph",
+    factor_lines=(
+        "Bears: rest advantage", "Packers: betting market", "Bears: quarterback availability",
+        "Packers: season-long team strength rating",
+    ),
+)
+# S2: Florida at Florida State, a shared name word, both ranked, Florida favored by 2.5.
+S2_FSU = _team(
+    "Florida State", "Florida State Seminoles", "FSU", "Seminoles", "4-2", rank=14,
+    rank_note="holding steady", last_game="beat Clemson 27-20 at home",
+)
+S2_UF = _team(
+    "Florida", "Florida Gators", "UF", "Gators", "5-1", rank=9, rank_note="up from #12",
+    last_game="beat LSU 34-28 on the road", streak="won 4 straight",
+)
+S2 = _facts(
+    S2_FSU, S2_UF, 0.43, -2.5, 51.5, venue="Doak Campbell Stadium in Tallahassee",
+    matchup_note="nonconference game, SEC at ACC",
+    last_meeting="Florida won 31-11 in Week 14 of 2025", poll_available=True,
+    factor_lines=("Florida: AP poll standing", "Florida: betting market"),
+)
+# S3: FCS Austin Peay at No. 3 Georgia, a 42.5-point mismatch with no total.
+S3 = _facts(
+    _team(
+        "Georgia", "Georgia Bulldogs", "UGA", "Bulldogs", "5-0", rank=3,
+        rank_note="holding steady", streak="won 5 straight",
+        last_game="beat Kentucky 41-10 on the road",
+    ),
+    _team(
+        "Austin Peay", "Austin Peay Governors", "APSU", "Governors", "2-3",
+        last_game="lost to Eastern Kentucky 24-21 at home",
+    ),
+    0.99, 42.5, None, when="Saturday afternoon", venue="Sanford Stadium in Athens",
+    matchup_note="nonconference game, UAC at SEC", poll_available=True,
+    factor_lines=("Georgia: FBS versus FCS class gap", "Georgia: AP poll standing"),
+)
+# S4: Jaguars at Texans, a pick'em, model Texans 50.4%.
+S4 = _facts(
+    _team("Texans", "Houston Texans", "HOU", "Texans", "2-2",
+          last_game="beat the Colts 20-17 at home"),
+    _team("Jaguars", "Jacksonville Jaguars", "JAX", "Jaguars", "2-2",
+          last_game="lost to the Titans 23-16 on the road"),
+    0.504, 0.0, 44.5, sport="NFL", when="Sunday afternoon", venue="NRG Stadium in Houston",
+    matchup_note="AFC South division game", weather="indoors",
+)
+# S5: Ball State at Miami (OH), no line posted.
+S5 = _facts(
+    _team("Miami (OH)", "Miami (OH) RedHawks", "M-OH", "RedHawks", "3-2",
+          streak="won 2 straight", last_game="beat Kent State 35-13 at home"),
+    _team("Ball State", "Ball State Cardinals", "BALL", "Cardinals", "1-4",
+          last_game="lost to Toledo 28-14 on the road"),
+    0.61, None, None, when="Tuesday night", matchup_note="MAC conference game",
+    poll_available=True,
+)
+
+FRESH_TRUE = [
+    ("It's an NFC North division game at Soldier Field, and the Packers roll in having "
+     "won 3 straight. Green Bay is laying 3 on the road, but our model sides with Chicago "
+     "at 54%.", S1),
+    ("Division football on a Sunday afternoon in Chicago. The Packers are 3-point "
+     "favorites, yet the model likes the Bears at 54%. Green Bay is on a short week after "
+     "beating the Vikings 31-17.", S1),
+    ("Can the Bears bounce back after falling 27-24 to the Lions? Our model thinks so, "
+     "giving Chicago a 54% chance even with Green Bay favored by 3.", S1),
+    ("The Packers have won 3 straight, and Vegas has them laying 3 points at Soldier "
+     "Field. Our model disagrees, with the Bears at 54% at home. That 14 mph wind could "
+     "make it a grind.", S1),
+    ("It's 41 degrees with a 14 mph wind on the lakefront. Green Bay is without Jaire "
+     "Alexander, and Chicago's Montez Sweat is doubtful. The model gives the Bears 54%, "
+     "bucking a market that favors the Packers by 3.", S1),
+    ("The Packers won 24-20 the last time these two met. Now they are favored by 3 on a "
+     "short week, but our model leans Bears, 54% to 46%.", S1),
+    ("Rivalry week in the NFC North! The Bears are getting 3 points at home, and our "
+     "model actually has them winning 54% of the time.", S1),
+    ("Short week, cold air, and a 3-1 Packers team favored by 3. Our model still backs "
+     "the Bears at 54%, pointing to rest advantage and quarterback availability.", S1),
+    ("Chicago sits at 2-2 and Green Bay at 3-1 heading into this one. The market makes "
+     "the Packers a 3-point favorite. Our model flips it, Bears 54%.", S1),
+    ("The hosts are getting 3, but our model has Chicago at 54%. Montez Sweat is listed "
+     "Doubtful for the Bears, while the Packers will be without Jaire Alexander.", S1),
+    ("Green Bay comes in hot, winners of 3 straight. The visitors are favored by 3, yet "
+     "our model sees the Bears at 54% with the Packers on a short week.", S1),
+    ("The over/under sits at 41.5 with wind in the forecast. Our model leans Chicago at "
+     "54% despite the Packers laying 3.", S1),
+    ("The Bears are 2-2 and coming off a 27-24 loss. Our model still has them at 54% "
+     "against a Packers team favored by 3.", S1),
+    ("Jaire Alexander is out for Green Bay, and that matters for the Chicago passing "
+     "game. The model leans the Bears at 54%, even as the market lays 3 with the Packers.", S1),
+    ("Bears and Packers in the NFC North on a Sunday afternoon! Green Bay is favored by "
+     "3, but our model is on Chicago at 54%.", S1),
+    ("The road team is favored by 3, but the model likes the hosts at 54%. Chicago gets "
+     "the rest advantage with Green Bay on a short week.", S1),
+    ("Wind at 14 mph and 41 degrees at kickoff. The Packers' Jaire Alexander is out, and "
+     "our model makes Chicago a 54% pick as a 3-point home underdog.", S1),
+    ("No. 9 Florida heads to Tallahassee to face No. 14 Florida State in a ranked rivalry "
+     "showdown. The Gators are favored by 2.5, and our model agrees, giving them 57%.", S2),
+    ("The Seminoles host the Gators on Saturday night with both teams ranked. Our model "
+     "has Florida at 57% and Florida State at 43%. Vegas lists the Gators as 2.5-point "
+     "favorites.", S2),
+    ("Florida has climbed to #9, up from #12, and it brings a 5-1 record into Doak "
+     "Campbell Stadium. Our model makes the Gators 57% favorites, matching a market that "
+     "has them laying 2.5.", S2),
+    ("Florida State gets 2.5 points at home in this one. Our model leans Florida, 57% to "
+     "43%.", S2),
+    ("The Gators won 31-11 in the last meeting. The model backs Florida at 57%, and the "
+     "total sits at 51.5.", S2),
+    ("The Seminoles are 4-2 and need a statement win at home. The model gives Florida "
+     "State 43%, and the Gators lay 2.5.", S2),
+    ("Is this the week Florida State flips the script? Our model says no, Florida 57%, "
+     "and the books agree with the Gators favored by 2.5.", S2),
+    ("Florida State is 4-2 and ranked #14. The Seminoles are getting 2.5 at home, and our "
+     "model has them at 43%.", S2),
+    ("Florida has won 4 straight, including a 34-28 win at LSU. Our model likes the "
+     "Gators at 57% on the road.", S2),
+    ("Florida State beat Clemson 27-20 and holds steady at No. 14. Still, the Gators are "
+     "2.5-point favorites and our model has them at 57%.", S2),
+    ("No. 3 Georgia welcomes FCS Austin Peay to Sanford Stadium on Saturday afternoon. "
+     "The Bulldogs are 42.5-point favorites, and our model puts them at 99%.", S3),
+    ("Austin Peay is getting 42.5 points in Athens, and that tells you everything. Our "
+     "model gives Georgia a 99% chance.", S3),
+    ("Georgia is 5-0 and holding steady at #3. Our model makes the Bulldogs a 99% pick "
+     "against the Governors, who are getting 42.5.", S3),
+    ("The class gap is the whole story here, FBS versus FCS. Georgia sits at 99% in our "
+     "model, laying 42.5 points at home.", S3),
+    ("Georgia has won 5 straight and is holding steady at No. 3 in the AP poll. Expect "
+     "the Bulldogs to roll, our model says 99%.", S3),
+    ("The Governors lost 24-21 to Eastern Kentucky last time out. Our model gives Austin "
+     "Peay just 1%.", S3),
+    ("An AFC South division game indoors at NRG Stadium, and Vegas calls it a pick'em. "
+     "Our model barely leans Houston at 50%.", S4),
+    ("Both teams sit at 2-2, and the market can't separate them. Our model has it a coin "
+     "flip at 50%.", S4),
+    ("The Jaguars and Texans meet with nothing between them in the market. The total sits "
+     "at 44.5, and our model calls it 50-50.", S4),
+    ("Coin-flip game in Houston. Our model gives the Texans 50% and the Jaguars 50%, and "
+     "the books have it as a pick'em.", S4),
+    ("Houston beat the Colts 20-17 at home, while Jacksonville lost to the Titans 23-16 "
+     "on the road. Our model says 50% either way.", S4),
+    ("Houston and Jacksonville are dead even in the market, and the total is 44.5. Our "
+     "model has the Texans at 50%.", S4),
+    ("It's a MAC conference game on Tuesday night, and the RedHawks have won 2 straight. "
+     "Our model likes Miami (OH) at 61% against a 1-4 Ball State team.", S5),
+    ("The Cardinals are 1-4 and need a spark. Our model gives the RedHawks a 61% chance "
+     "at home.", S5),
+    ("Miami (OH) is 3-2 and rolling. The model makes the RedHawks the favorite at 61%, "
+     "leaving Ball State at 39%.", S5),
+    ("Ball State is coming off a 28-14 loss to Toledo, and Miami (OH) has won 2 straight. "
+     "Our model leans the RedHawks, 61% to 39%.", S5),
+    ("Can Ball State pull the upset on the road? Our model gives the Cardinals just 39%.", S5),
+    ("Miami (OH) beat Kent State 35-13 at home. The RedHawks are the pick at 61%.", S5),
+    ("Ohio State walks into Austin as the road underdog by 1.5. Our model still trusts "
+     "the Buckeyes at 55%.", FACTS),
+    ("It's 97 degrees in Austin with a 12 mph wind. Texas is laying 1.5 at home, but the "
+     "model leans Ohio State at 55%.", FACTS),
+]
+
+FRESH_FALSE = [
+    ("The Bears are favored by 3 at home, and our model agrees at 54%.", S1),
+    ("Green Bay is laying 3.5 on the road, but our model likes Chicago at 54%.", S1),
+    ("The total sits at 44.5 in the wind. Our model leans the Bears at 54%.", S1),
+    ("Our model gives the Packers 54% despite the short week.", S1),
+    ("Our model likes the Packers in this one, and Vegas has Green Bay laying 3.", S1),
+    ("Caleb Williams and the Bears need a win. Our model has Chicago at 54%.", S1),
+    ("The 3-1 Bears host a Packers team that has won 3 straight. Our model has Chicago at "
+     "54%.", S1),
+    ("The Packers beat the Vikings 31-14 at home. Our model has the Bears at 54%.", S1),
+    ("The Bears have lost 2 straight. Our model still has them at 54%.", S1),
+    ("The Bears will be without Jaire Alexander, and our model has Chicago at 54%.", S1),
+    ("The visitors are getting 3 points at Soldier Field. Our model likes Chicago at 54%.", S1),
+    ("Our model likes the visitors at 54% in the NFC North.", S1),
+    ("Green Bay is getting 3 on the road. Our model leans Chicago at 54%.", S1),
+    ("Green Bay is favored by three, but our model likes Chicago at 54%.", S1),
+    ("The Packers ride a three-game winning streak into Chicago. Our model has the Bears "
+     "at 54%.", S1),
+    ("The hosts are favored by 3, and our model agrees at 54%.", S1),
+    ("Our model sides with Green Bay at 54%, and the market agrees.", S1),
+    ("The over/under is 43.5 at Soldier Field. Our model has the Bears at 54%.", S1),
+    ("The Packers make the trip down from Wisconsin. Our model has the Bears at 54%.", S1),
+    ("The No. 1 Packers come to Chicago. Our model has the Bears at 54%.", S1),
+    ("The Packers are on a short week, and our model gives them 54%.", S1),
+    ("Packers pass rusher Montez Sweat is doubtful. Our model has the Bears at 54%.", S1),
+    ("Montez Sweat is listed Doubtful for the Packers. Our model has the Bears at 54%.", S1),
+    ("Green Bay's Montez Sweat is doubtful, and our model has the Bears at 54%.", S1),
+    ("The Packers are the underdog on the road, but our model has the Bears at 54%.", S1),
+    _known_limit(
+        "The Bears won 24-20 the last time these teams met. Our model has Chicago at 54%.", S1,
+        "who won the last meeting is not checked, only that the score is on the sheet",
+    ),
+    ("Matt LaFleur has the Packers rolling. Our model has the Bears at 54%.", S1),
+    ("The road team is the underdog by 3. Our model has the Bears at 54%.", S1),
+    ("Florida State is favored by 2.5 at home. Our model likes Florida at 57%.", S2),
+    ("No. 9 Florida State hosts No. 14 Florida. Our model likes the Gators at 57%.", S2),
+    ("Our model has Florida State at 57% at home.", S2),
+    ("The Seminoles are laying 2.5 at home. Our model has Florida at 57%.", S2),
+    ("Florida is getting 2.5 points on the road. Our model has the Gators at 57%.", S2),
+    ("The Gators are 4-2 and ranked #9. Our model has Florida at 57%.", S2),
+    ("Florida won 31-14 in the last meeting. Our model has the Gators at 57%.", S2),
+    ("Florida State is missing its starting quarterback. Our model has Florida at 57%.", S2),
+    ("The total is 52.5 in Tallahassee. Our model has Florida at 57%.", S2),
+    ("The hosts are favored by 2.5. Our model has Florida at 57%.", S2),
+    ("The Gators come in at No. 12. Our model has Florida at 57%.", S2),
+    ("Florida State has won 3 straight. Our model has Florida at 57%.", S2),
+    ("Our model favors the Seminoles at home, but Florida is favored by 2.5.", S2),
+    ("Florida is a 3-point favorite. Our model has the Gators at 57%.", S2),
+    ("Florida has won 5 straight. Our model has the Gators at 57%.", S2),
+    ("Our model gives the visitors 43%, and the Gators are favored by 2.5.", S2),
+    ("Georgia is favored by 41.5. Our model has the Bulldogs at 99%.", S3),
+    ("The Governors are laying 42.5. Our model has Georgia at 99%.", S3),
+    ("Gunner Stockton leads Georgia into this one. Our model has the Bulldogs at 99%.", S3),
+    ("No. 2 Georgia rolls on. Our model has the Bulldogs at 99%.", S3),
+    ("Our model gives Austin Peay 99% in this one.", S3),
+    ("Georgia has won 6 straight. Our model has the Bulldogs at 99%.", S3),
+    ("Georgia is 6-0. Our model has the Bulldogs at 99%.", S3),
+    ("The total sits at 55.5. Our model has Georgia at 99%.", S3),
+    ("Austin Peay is without its injured starting quarterback. Our model has Georgia at "
+     "99%.", S3),
+    ("The Texans are 1-point favorites at home. Our model has Houston at 50%.", S4),
+    ("Houston is favored by 2.5 at home. Our model has the Texans at 50%.", S4),
+    ("Our model gives the Jaguars 52% on the road.", S4),
+    ("Vegas has the Jaguars as underdogs. Our model has it at 50%.", S4),
+    ("The total is 47 indoors. Our model has the Texans at 50%.", S4),
+    ("Houston beat the Colts 20-13 at home. Our model has the Texans at 50%.", S4),
+    ("Miami (OH) is favored by 7 at home. Our model has the RedHawks at 61%.", S5),
+    ("Vegas likes the RedHawks. Our model has them at 61%.", S5),
+    ("The RedHawks are laying the points. Our model has them at 61%.", S5),
+    ("Ball State is a road underdog. Our model has Miami (OH) at 61%.", S5),
+    ("Our model gives Ball State 61% on the road.", S5),
+    ("Ball State quarterback Kadin Semonza is questionable. Our model has Miami (OH) at "
+     "61%.", S5),
+    ("Miami (OH) has won 3 straight. Our model has the RedHawks at 61%.", S5),
+    ("The Cardinals are 2-3. Our model has Miami (OH) at 61%.", S5),
+    ("Ball State is the model's favorite on Tuesday night at 61%.", S5),
+    ("Texas is getting 1.5 at home. Our model has Ohio State at 55%.", FACTS),
+    ("Ohio State is laying 1.5 in Austin. Our model has the Buckeyes at 55%.", FACTS),
+]
+
+
+@pytest.mark.parametrize("text, facts", FRESH_TRUE)
+def test_fresh_true_narration_is_accepted(text, facts):
+    assert check_narration(text, facts) is None
+
+
+@pytest.mark.parametrize("text, facts", FRESH_FALSE)
+def test_fresh_false_narration_is_rejected(text, facts):
+    assert check_narration(text, facts) is not None
+
+
+# Ordinary sentence openers a studio analyst uses. The allowlist is broad plain
+# English, not one word per past failure.
+OPENERS = [
+    "Coin", "Bragging", "Trouble", "Danger", "Advantage", "Mismatch", "Respect", "Desperation",
+    "Bottom", "Simple", "Bold", "Trust", "Defending", "Nobody", "Sharp", "Fade", "Circle", "Gut",
+    "Blowout", "Location", "Bounce", "Tune", "Translation", "Hungry", "Confidence", "Grind",
+    "Toss", "Flip", "Margin", "Familiar", "Familiarity", "Plenty", "Lots", "Count", "Steady",
+    "Payback", "Health", "Depth", "Lakefront", "Chilly", "Ranked", "Rested", "Speed", "Rivalry",
+    "Tradition",
+]
+
+
+@pytest.mark.parametrize("word", OPENERS)
+def test_plain_sentence_openers_pass(word):
+    text = f"{word} is the word in Chicago. Our model has the Bears at 54%."
+    assert check_narration(text, S1) is None
+
+
+@pytest.mark.parametrize("name", [
+    "Mahomes", "Rodgers", "Sweat", "Stockton", "LaFleur", "Kelce", "Burrow", "Purdy", "Herbert",
+    "Hurts", "Swift", "Kiffin",
+    "Caleb Williams", "Gunner Stockton", "Patrick Mahomes", "Josh Allen", "Kirby Smart",
+    "Matt LaFleur", "Jordan Love", "Will Levis",
+])
+def test_invented_names_still_fail_at_sentence_start(name):
+    text = f"{name} is the word in Tallahassee. Our model has Florida at 57%."
+    reason = check_narration(text, S2)
+    assert reason is not None and "not in the fact sheet" in reason
+
+
+@pytest.mark.parametrize("text, facts", [
+    # Pronouns resolve to the subject, not to a team named later in the clause.
+    ("The Packers won 24-20 the last time these two met. Now they are favored by 3 on a short "
+     "week, but our model leans Bears, 54% to 46%.", S1),
+    ("The Bears are 2-2 and coming off a 27-24 loss. Our model still has them at 54% against a "
+     "Packers team favored by 3.", S1),
+    ("Our model gives the edge to the Bears at 54%.", S1),
+    # 50-50 in a toss-up, and fronts and mindsets that are not scores.
+    ("It's a 50-50 game indoors. Our model has the Texans at 50%.", S4),
+    ("The Bears run a 4-3 defense. Our model has Chicago at 54%.", S1),
+    ("Expect a 3-4 look from Chicago. Our model has the Bears at 54%.", S1),
+    ("A 1-0 mindset is all the Seminoles need. Our model has Florida at 57%.", S2),
+    # Ranks, records, and streaks said of their owners.
+    ("No. 9 Florida visits No. 14 Florida State. Our model has the Gators at 57%.", S2),
+    ("It's No.9 against No.14 tonight. Our model has Florida at 57%.", S2),
+    ("Florida is up from #12 to #9. Our model has the Gators at 57%.", S2),
+    ("Chicago sits at 2-2 and Green Bay at 3-1. Our model has the Bears at 54%.", S1),
+    ("The Bears host a 3-1 Packers team. Our model has Chicago at 54%.", S1),
+    ("Our model has the Bears at 54%, and Green Bay is 3-1.", S1),
+    # Role phrases.
+    ("The home side is getting 3, and our model has Chicago at 54%.", S1),
+    # Times do not split sentences.
+    ("Kickoff is 7:30 p.m. on Tuesday night. Ball State is 1-4. Miami (OH) is 3-2. Our model "
+     "has the RedHawks at 61%.", S5),
+])
+def test_fix3_true_copy_is_accepted(text, facts):
+    assert check_narration(text, facts) is None
+
+
+def test_previous_rank_is_accepted_when_it_is_the_teams():
+    fsu = replace(S2_FSU, rank=11, rank_note="up from #14")
+    facts = replace(S2, home=fsu)
+    assert check_narration("Florida State is up from No. 14 after beating Clemson.", facts) is None
+
+
+@pytest.mark.parametrize("text, facts, fragment", [
+    ("It's a 50-50 game. Our model has the Bears at 54%.", S1, "50-50"),
+    ("The Bears are 50-50 at home. Our model has the Bears at 54%.", S1, "50-50"),
+    # Injury attribution through the city, "missing", and the surname alone.
+    ("Green Bay's Montez Sweat is doubtful. Our model has the Bears at 54%.", S1, "Montez Sweat"),
+    ("The Packers are missing Montez Sweat. Our model has the Bears at 54%.", S1, "Montez Sweat"),
+    ("Sweat is doubtful for the Packers. Our model has the Bears at 54%.", S1, "Montez Sweat"),
+    ("Green Bay, without Montez Sweat, comes in on a short week. Our model has the Bears at "
+     "54%.", S1, "Montez Sweat"),
+    ("The Bears lost Jaire Alexander. Our model has Chicago at 54%.", S1, "Jaire Alexander"),
+    ("The Packers are without Sweat. Our model has the Bears at 54%.", S1, "Montez Sweat"),
+    # Ranks: current ranks only, said of their owner.
+    ("No. 9 Florida State hosts No. 14 Florida. Our model likes the Gators at 57%.", S2,
+     "No. 9 for Florida State"),
+    ("The Gators come in at No. 12. Our model has Florida at 57%.", S2, "No. 12"),
+    ("The Seminoles are No. 9. Our model has Florida at 57%.", S2, "No. 9"),
+    ("Florida State is up from #12. Our model has Florida at 57%.", S2, "#12"),
+    # Records and streaks said of the wrong team.
+    ("The Gators are 4-2 and ranked #9. Our model has Florida at 57%.", S2, "4-2 for Florida"),
+    ("The 3-1 Bears host a Packers team that has won 3 straight. Our model has Chicago at 54%.",
+     S1, "3-1 for Bears"),
+    ("The Packers come in at 2-2. Our model has the Bears at 54%.", S1, "2-2 for Packers"),
+    ("Florida State has won 4 straight. Our model has Florida at 57%.", S2, "won 4 straight"),
+    # Role phrases.
+    ("The home side is laying 3. Our model has Chicago at 54%.", S1, "betting favorite"),
+    ("The home squad is favored by 3. Our model has Chicago at 54%.", S1, "betting favorite"),
+    ("The visiting squad is getting 3. Our model has Chicago at 54%.", S1, "getting points"),
+    # A pronoun still resolves to the sentence's subject.
+    ("The Packers are on a short week, and our model gives them 54%.", S1, "Packers"),
+])
+def test_fix3_false_copy_is_rejected(text, facts, fragment):
+    reason = check_narration(text, facts)
+    assert reason is not None and fragment in reason, reason
+
+
+def test_city_names_attribute_injuries():
+    kc = _team("Chiefs", "Kansas City Chiefs", "KC", "Chiefs",
+               injuries=("Chris Jones (DT) is listed Out",))
+    tb = _team("Buccaneers", "Tampa Bay Buccaneers", "TB", "Buccaneers")
+    facts = _facts(tb, kc, 0.45, -2.5, 47.5, sport="NFL")
+    reason = check_narration("Tampa Bay's Chris Jones is out. Our model has Kansas City at 55%.",
+                             facts)
+    assert reason is not None and "Chris Jones" in reason
+    assert check_narration(
+        "Kansas City's Chris Jones is out, and our model has Kansas City at 55%.", facts
+    ) is None
+
+
+def test_shared_city_is_not_a_team_mention():
+    giants = _team("Giants", "New York Giants", "NYG", "Giants")
+    jets = _team("Jets", "New York Jets", "NYJ", "Jets")
+    facts = _facts(giants, jets, 0.6, 2.5, sport="NFL")
+    # "New York" names neither team, so the claim stays with the team named before it.
+    assert check_narration("The Giants are favored by 2.5 in New York.", facts) is None
+    reason = check_narration("The Jets are favored by 2.5 in New York.", facts)
+    assert reason is not None and "betting favorite" in reason
