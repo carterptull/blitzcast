@@ -1,4 +1,4 @@
-"""Weekly CFB refresh orchestrator: schedule -> odds -> weather -> polls ->
+"""Weekly CFB refresh orchestrator: schedule -> stats -> odds -> weather -> polls ->
 prediction batch. Sibling of refresh_week.py with the same soft-fail
 contract. CFB games get real stadium coordinates from CFBD (unlike NFL's
 Team-derived stadium_id), so refresh_weather works here too -- checked
@@ -27,6 +27,7 @@ def main() -> None:
     ok = run_step(
         "cfb schedule sync", ["data_pipeline.refresh_schedule_cfb", "--season", season]
     )
+    run_step("cfb stats refresh", ["data_pipeline.refresh_stats_cfb", "--season", season])
     run_step("cfb odds refresh", ["data_pipeline.refresh_odds", "--sport", "cfb"])
     run_step(
         "cfb weather refresh",

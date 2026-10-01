@@ -36,6 +36,9 @@ sequenceDiagram
         O->>P: refresh_schedule_cfb
         P->>X: CollegeFootballData games
         P->>DB: upsert games, including final scores
+        O->>P: refresh_stats_cfb
+        P->>X: CollegeFootballData team-game PPA
+        P->>DB: upsert team_game_stats
         O->>P: refresh_odds --sport cfb
         P->>DB: upsert odds
         O->>P: refresh_weather --sport cfb --backfill-days 3
@@ -72,6 +75,10 @@ where every attempted call fails exits 1, and a missing `VISUAL_CROSSING_API_KEY
 `WARNING:`. Because the orchestrator ignores step exit codes, either one shows in the cron logs
 only and the next step still runs.
 
+**CFB form data comes from this cron.** `refresh_stats_cfb` re-ingests the season's team-game PPA
+(one CFBD call a day) into `team_game_stats`, which feeds the rolling EPA form features. It skips
+until the season has a final game. CFB turnovers and yards stay NULL, since CFBD PPA has neither.
+
 **Idempotent and resumable.** Every loader upserts on a natural key, and `predict_week` commits
 after each game, so a crash halfway through a ~100-game CFB slate keeps what finished and a
 re-run simply overwrites the same rows.
@@ -88,4 +95,4 @@ records a day even with CFB's 8-day window. See "Odds API: one batch call per da
 into January. Outside those months the jobs simply don't fire.
 
 ---
-_Last updated: 2026-10-01 · reflects v1.0.12_
+_Last updated: 2026-10-01 · reflects v1.0.13_
