@@ -67,6 +67,7 @@ refreshes print a message and exit; narration writes `null` and continues.
 | Seed teams/conferences (CFB) | `python -m data_pipeline.seed_cfb` |
 | Historical backfill (CFB, 2021-2026) | `python -m data_pipeline.backfill_cfb` |
 | Sync current-season schedule (CFB) | `python -m data_pipeline.refresh_schedule_cfb [--season 2026]` |
+| Refresh team game stats (CFB) | `python -m data_pipeline.refresh_stats_cfb [--season 2026]` |
 | Refresh AP/Coaches polls (CFB) | `python -m data_pipeline.refresh_polls_cfb` |
 | Full weekly refresh + predict (CFB) | `python -m data_pipeline.refresh_week_cfb` |
 | Persist Elo snapshots | `python -m ml.compute_ratings --sport nfl\|cfb` |
@@ -80,7 +81,7 @@ refreshes print a message and exit; narration writes `null` and continues.
 
 `--sport` defaults to `nfl` on every ML/prediction command, including
 `refresh_weather`. CFB has no injury refresh (no standardized CFB injury
-report exists): `refresh_schedule_cfb`, `refresh_odds --sport cfb`,
+report exists): `refresh_schedule_cfb`, `refresh_stats_cfb`, `refresh_odds --sport cfb`,
 `refresh_weather --sport cfb`, and `refresh_polls_cfb` are the in-season
 CFB syncs, bundled by `refresh_week_cfb`. CFB games get real stadium
 coordinates from CFBD (unlike NFL's Team-derived `stadium_id`), so
@@ -93,6 +94,8 @@ can't change any existing model's predictions until a future retrain.
 `refresh_stats` re-ingests play-by-play into `team_game_stats`, which feeds
 the rolling EPA and turnover form features. It runs inside `refresh_week`
 and skips cleanly until the season's first game is final.
+`refresh_stats_cfb` does the same for CFB from CFBD team-game PPA (one call a
+day, turnovers and yards stay NULL) and runs inside `refresh_week_cfb`.
 
 `backfill_predictions` reconstructs a season-record's worth of history for
 the "Called it"/"Missed" UI and the `/api/record` endpoint: it walk-forward

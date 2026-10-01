@@ -71,4 +71,4 @@ directly.
 [`SECURITY.md`](../SECURITY.md)).
 
 ---
-_Last updated: 2026-10-01 · reflects v1.0.12_
+_Last updated: 2026-10-01 · reflects v1.0.13_

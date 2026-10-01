@@ -6,6 +6,23 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.13] — 2026-10-01
+
+### Fixed
+- CFB predictions now use 2026 game stats. The daily CFB cron never loaded
+  current-season team-game PPA, so every CFB team's "EPA, last 5 games" was
+  last season's data: one 2025 game at week 5 and nothing from week 6 on.
+
+### Added
+- `data_pipeline/refresh_stats_cfb.py` (`python -m
+  data_pipeline.refresh_stats_cfb [--season 2026]`), run by
+  `refresh_week_cfb` right after the schedule sync and before odds. It
+  re-ingests the season's team-game PPA from CollegeFootballData through
+  the existing idempotent `backfill_team_game_stats`, at one CFBD call a
+  day. It skips with a message until the season has a final game, a
+  missing `CFBD_API_KEY` prints a `WARNING:` (exit 0), and a CFBD request
+  failure exits 1 without printing the exception text.
+
 ## [1.0.12] — 2026-10-01
 
 ### Fixed

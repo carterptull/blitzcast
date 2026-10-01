@@ -426,3 +426,16 @@ attempted call fails now exits 1 (and a missing key prints `WARNING:`), though t
 ignore step exit codes by design, so that shows in the cron logs only. **Alternative:** a separate
 historical weather job on its own cron: more to schedule and monitor for the same effect, and it
 would need its own copy of the game-selection and venue-geocoding logic.
+
+## CFB stats refresh reuses `backfill_team_game_stats` instead of a week-scoped PPA call
+
+`refresh_stats_cfb` calls `backfill_cfb.backfill_team_game_stats` for the current season on every
+daily run, between the schedule sync and odds in `refresh_week_cfb`. **Why:** the daily CFB cron
+never loaded 2026 team-game PPA, so every CFB team's "EPA, last 5 games" came from last season
+(one 2025 game at week 5, nothing from week 6 on). The backfill function is already an idempotent
+delete-then-insert scoped to the affected game ids, and it needs only one CFBD `/ppa/games` call
+per run, so reusing it adds no new write path and no meaningful budget. The step skips until the
+season has a final game, and a missing key warns and exits 0, matching every other job. CFB
+turnovers and yards stay NULL because CFBD PPA does not carry them, so the turnover form feature
+stays inert for CFB. **Alternative:** a week-scoped PPA call that fetches only the latest week:
+more code and a second set of selection and delete rules, all to save a single call a day.

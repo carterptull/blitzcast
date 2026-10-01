@@ -25,7 +25,7 @@ choices.
   (see DECISIONS.md).
 - **`backend/data_pipeline/`** — idempotent upsert loaders: seeds,
   historical backfill (nflverse via `nflreadpy`), weekly refreshes (odds,
-  weather, injuries), `refresh_week.py` orchestrator. All external team
+  weather, injuries, CFB team-game stats), `refresh_week.py` orchestrator. All external team
   names route through `team_names.py`.
 - **Postgres 16** via `docker/docker-compose.yml`; schema managed by
   Alembic (`backend/alembic/`).
