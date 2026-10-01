@@ -9,7 +9,7 @@ import type { MatchupDetail } from "./types";
 
 export interface OgTeamContent {
   abbr: string;
-  /** Score (final), win-prob percentage (ready), or "—" (pending). */
+  /** Score (final), win-prob percentage (ready), or "TBD" (pending). */
   value: string;
   /** Winning side (final) or favored side (ready), styled in gold. */
   highlight: boolean;
@@ -46,12 +46,12 @@ export function buildOgContent(m: MatchupDetail): OgContent {
     ? String(m.away_score)
     : hasProbs
       ? fmtPct(m.away.win_prob as number)
-      : "—";
+      : "TBD";
   const homeValue = final
     ? String(m.home_score)
     : hasProbs
       ? fmtPct(m.home.win_prob as number)
-      : "—";
+      : "TBD";
   const awayHighlight = final
     ? (m.away_score as number) > (m.home_score as number)
     : hasProbs && (m.away.win_prob as number) > 0.5;

@@ -60,7 +60,7 @@ export function fmtMoneyline(n: number): string {
  *  spread_home is positive when the home team is favored. */
 export function fmtSpread(m: MatchupDetail): string {
   const s = m.odds?.spread_home;
-  if (s == null) return "—";
+  if (s == null) return "N/A";
   if (s === 0) return "PK";
   const favored = s > 0 ? m.home : m.away;
   const abbr = m.sport === "CFB" ? favored.abbr : displayAbbr(favored.abbr);

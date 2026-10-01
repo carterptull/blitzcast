@@ -33,7 +33,7 @@ export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
     ? "Dome · controlled"
     : weatherParts.length > 0
       ? weatherParts.join(" · ")
-      : "—";
+      : "N/A";
 
   const ml = m.odds
     ? [
@@ -50,8 +50,8 @@ export default function StatTicker({ matchup }: { matchup: MatchupDetail }) {
 
   const cells: [string, string][] = [
     ["Spread", fmtSpread(m)],
-    ["Moneyline", ml.length > 0 ? ml.join(" / ") : "—"],
-    ["Total", m.odds?.total != null ? `O/U ${m.odds.total}` : "—"],
+    ["Moneyline", ml.length > 0 ? ml.join(" / ") : "N/A"],
+    ["Total", m.odds?.total != null ? `O/U ${m.odds.total}` : "N/A"],
     ["Weather", weatherValue],
     [
       "Venue",

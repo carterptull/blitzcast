@@ -61,7 +61,7 @@ export function TeamColumn({
           </div>
         ) : (
           <div className="font-display text-6xl leading-none text-chalk-soft sm:text-7xl lg:text-8xl">
-            —
+            TBD
           </div>
         )}
         <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-chalk-soft">
