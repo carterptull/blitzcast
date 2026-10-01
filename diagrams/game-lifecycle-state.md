@@ -55,4 +55,4 @@ live/in-progress data to leak in). A NULL kickoff is a still-TBD future game and
 regardless of `now`, matching how `default_week` already treats it.
 
 ---
-_Last updated: 2026-10-01 · reflects v1.0.13_
+_Last updated: 2026-10-01 · reflects v1.0.14_

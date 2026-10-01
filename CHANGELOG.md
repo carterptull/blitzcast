@@ -6,6 +6,17 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.14] — 2026-10-01
+
+### Security
+- Bumped `next` (16.3.5 to 16.3.6), which fixes GHSA-vcvr-r3jv-pc5j, a
+  remote code execution in `next/og` `ImageResponse`. This app uses
+  `next/og` for its Open Graph images.
+- Bumped the transitive `brace-expansion` (1.1.18 to 1.1.21 and 5.0.9 to
+  5.0.12), which carry upstream security fixes (lockfile only).
+- Applied directly rather than by merging the Dependabot PRs, to avoid
+  `dependabot[bot]` appearing in the contributor graph.
+
 ## [1.0.13] — 2026-10-01
 
 ### Fixed
