@@ -1,11 +1,11 @@
-"""predict_week selection predicates and narration payload shaping."""
+"""predict_week selection predicates and fact-sheet shaping."""
 
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import select
 
-from app.jobs.predict_week import build_narration_payload, default_week
+from app.jobs.predict_week import default_week
 from app.models import SPORT_CFB, SPORT_NFL, Game, Team
 
 
@@ -36,70 +36,90 @@ def test_null_kickoff_game_still_selected(db):
     assert default_week(db, 2027, SPORT_CFB, now=now) == 5
 
 
-def _team(sport: str, abbr: str, name: str, conference: str, team_id: int) -> Team:
-    team = Team(sport=sport, abbr=abbr, name=name, conference=conference)
-    team.team_id = team_id
-    return team
+def _row(game_id: str, **cols) -> pd.Series:
+    return pd.Series({"game_id": game_id, "market_spread_home": 2.0, **cols})
 
 
-def test_cfb_payload_has_color_keys_and_no_injury_keys():
-    teams = {
-        "ALA": _team(SPORT_CFB, "ALA", "Alabama", "SEC", 1),
-        "UGA": _team(SPORT_CFB, "UGA", "Georgia", "SEC", 2),
-    }
-    row = pd.Series(
-        {
-            "home_abbr": "ALA", "away_abbr": "UGA",
-            "market_spread_home": -1.5, "is_divisional": 1.0,
-        }
+def test_facts_for_row_hides_a_spread_with_no_posted_line(db):
+    from app.jobs.predict_week import facts_for_row
+
+    row = _row("2026_01_BUF_KC", market_spread_home=6.2, has_market_line=0.0,
+               has_market_spread=0.0)
+    facts = facts_for_row(db, row, 0.7, [], {}, {})
+    assert facts.spread_home is None
+    assert facts.total is None
+
+
+def test_facts_for_row_hides_a_moneyline_derived_spread(db):
+    from app.jobs.predict_week import facts_for_row
+
+    row = _row("2026_01_BUF_KC", has_market_line=1.0, has_market_spread=0.0)
+    assert facts_for_row(db, row, 0.6, [], {}, {}).spread_home is None
+
+
+def test_facts_for_row_keeps_a_posted_spread(db):
+    from app.jobs.predict_week import facts_for_row
+
+    row = _row("2026_01_BUF_KC", has_market_line=1.0, has_market_spread=1.0)
+    facts = facts_for_row(db, row, 0.6, [], {}, {})
+    assert facts.spread_home == 2.0
+    assert isinstance(facts.spread_home, float)
+
+
+def test_facts_for_row_defaults_to_a_posted_spread_when_the_flag_is_absent(db):
+    from app.jobs.predict_week import facts_for_row
+
+    row = _row("2026_01_BUF_KC")
+    assert facts_for_row(db, row, 0.6, [], {}, {}).spread_home == 2.0
+
+
+def test_facts_for_row_nfl_carries_injuries_and_no_poll(db):
+    from app.jobs.predict_week import facts_for_row
+
+    facts = facts_for_row(db, _row("2026_01_BUF_KC", has_market_spread=1.0), 0.6, [], {}, {})
+    assert facts.sport == SPORT_NFL
+    assert facts.home.name == "Chiefs"
+    assert facts.poll_available is False
+    assert any("Test Quarterback" in i for i in facts.away.injuries)
+
+
+def test_facts_for_row_cfb_is_poll_aware_with_no_injuries(db):
+    from app.jobs.predict_week import facts_for_row
+
+    ala = db.query(Team).filter_by(sport=SPORT_CFB, abbr="ALA").one()
+    uga = db.query(Team).filter_by(sport=SPORT_CFB, abbr="UGA").one()
+    row = _row("cfb_401800001", has_market_spread=1.0)
+    facts = facts_for_row(
+        db, row, 0.55, [],
+        {ala.team_id: 7, uga.team_id: 3}, {ala.team_id: 9, uga.team_id: 3},
     )
-    payload = build_narration_payload(
-        row, 0.55, [], teams, SPORT_CFB, ranks={1: 7, 2: 3}
-    )
-    assert payload["sport"] == "CFB"
-    assert "ranked #7" in payload["poll_note"]
-    assert "ranked #3" in payload["poll_note"]
-    assert payload["conference_note"] == "Same-conference clash in the SEC"
-    assert "qb_note" not in payload
-    assert not any("injury" in k for k in payload)
+    assert facts.sport == SPORT_CFB
+    assert facts.poll_available is True
+    assert (facts.home.rank, facts.away.rank) == (7, 3)
+    assert facts.home.rank_note == "up from #9"
+    assert facts.away.rank_note == "holding steady"
+    assert facts.home.injuries == () and facts.away.injuries == ()
 
 
-def test_cfb_payload_omits_poll_note_when_unranked():
-    teams = {
-        "UGA": _team(SPORT_CFB, "UGA", "Georgia", "SEC", 1),
-        "MER": _team(SPORT_CFB, "MER", "Mercer", "SoCon", 2),
-    }
-    row = pd.Series(
-        {
-            "home_abbr": "UGA", "away_abbr": "MER",
-            "market_spread_home": None, "is_divisional": 0.0,
-        }
-    )
-    payload = build_narration_payload(row, 0.97, [], teams, SPORT_CFB, ranks={})
-    assert "poll_note" not in payload
-    assert "conference_note" not in payload
-    assert payload["spread_home"] is None
+def test_facts_for_row_cfb_without_ranks_is_not_poll_aware(db):
+    from app.jobs.predict_week import facts_for_row
+
+    facts = facts_for_row(db, _row("cfb_401800002", has_market_spread=0.0), 0.97, [], {}, {})
+    assert facts.poll_available is False
+    assert facts.home.rank is None and facts.away.rank is None
+    assert facts.spread_home is None
 
 
-def test_nfl_payload_shape_unchanged():
-    teams = {
-        "KC": _team(SPORT_NFL, "KC", "Kansas City Chiefs", "AFC", 1),
-        "BUF": _team(SPORT_NFL, "BUF", "Buffalo Bills", "AFC", 2),
-    }
-    row = pd.Series(
-        {
-            "home_abbr": "KC", "away_abbr": "BUF",
-            "market_spread_home": -2.5, "is_divisional": 0.0,
-        }
-    )
-    factors = [{"label": "Team rating (Elo) edge", "value": 0.14, "direction": "home"}]
-    payload = build_narration_payload(row, 0.63, factors, teams, SPORT_NFL, ranks={1: 5})
-    assert set(payload) == {
-        "sport", "home_name", "home_abbr", "away_name", "away_abbr",
-        "home_win_prob", "factors", "spread_home",
-    }
-    assert payload["home_name"] == "Kansas City Chiefs"
-    assert payload["spread_home"] == -2.5
+def test_build_features_carries_the_columns_predict_week_reads(db):
+    from ml.features import build_features
+
+    features = build_features(db, seasons=[2026], sport=SPORT_NFL)
+    week = features[features["week"] == 1]
+    assert not week.empty
+    for col in ("game_id", "has_market_line", "has_market_spread", "market_spread_home"):
+        assert col in week.columns
+    row = week.iloc[0]
+    assert bool(row["has_market_spread"]) and bool(row["has_market_line"])
 
 
 def test_unplayed_game_ids_excludes_finished_games(db):
@@ -180,38 +200,3 @@ def test_default_week_skips_a_stale_week_with_a_permanently_unscored_game(db):
 
     now = datetime(2026, 10, 1, tzinfo=UTC)   # weeks later
     assert default_week(db, 2026, SPORT_NFL, now=now) != 1
-
-
-def test_payload_hides_an_imputed_spread():
-    teams = {
-        "KC": _team(SPORT_NFL, "KC", "Kansas City Chiefs", "AFC", 1),
-        "BUF": _team(SPORT_NFL, "BUF", "Buffalo Bills", "AFC", 2),
-    }
-    row = pd.Series({
-        "home_abbr": "KC", "away_abbr": "BUF", "market_spread_home": 6.2,
-        "has_market_line": 0.0, "has_market_spread": 0.0, "is_divisional": 0.0,
-    })
-    payload = build_narration_payload(row, 0.7, [], teams, SPORT_NFL)
-    assert payload["spread_home"] is None
-
-
-def _spread_payload(has_market_line, has_market_spread):
-    teams = {
-        "KC": _team(SPORT_NFL, "KC", "Kansas City Chiefs", "AFC", 1),
-        "BUF": _team(SPORT_NFL, "BUF", "Buffalo Bills", "AFC", 2),
-    }
-    row = pd.Series({
-        "home_abbr": "KC", "away_abbr": "BUF", "market_spread_home": 2.0,
-        "has_market_line": has_market_line, "has_market_spread": has_market_spread,
-        "is_divisional": 0.0,
-    })
-    return build_narration_payload(row, 0.6, [], teams, SPORT_NFL)
-
-
-def test_payload_hides_a_moneyline_derived_spread():
-    assert _spread_payload(1.0, 0.0)["spread_home"] is None
-
-
-def test_payload_keeps_a_posted_spread():
-    assert _spread_payload(1.0, 1.0)["spread_home"] == 2.0
-

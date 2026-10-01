@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import session_scope
-from app.models import SPORT_CFB, SPORT_NFL, Game, Prediction, Team
+from app.models import SPORT_NFL, Game, Prediction
+from app.services.fact_sheet import GameFacts, build_game_facts
 from app.services.narrate import narrate
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
@@ -73,47 +74,20 @@ def upsert_prediction(
     existing.predicted_at = datetime.now(UTC)
 
 
-def _rank_phrase(name: str, rank: int | None) -> str:
-    return f"{name} ranked #{rank}" if rank else f"{name} unranked"
-
-
-def build_narration_payload(
+def facts_for_row(
+    db: Session,
     row: pd.Series,
     prob: float,
     factors: list,
-    teams_by_abbr: dict[str, Team],
-    sport: str,
-    ranks: dict[int, int] | None = None,
-) -> dict:
-    """Narration input. CFB adds poll/conference color keys and carries no
-    QB/injury note (no standardized CFB injury report to cite)."""
-    home = teams_by_abbr.get(row["home_abbr"])
-    away = teams_by_abbr.get(row["away_abbr"])
+    ranks: dict[int, int],
+    prev_ranks: dict[int, int],
+) -> GameFacts:
+    """Narration input. Only a posted spread is narrated as the betting line; a
+    moneyline-derived or Elo-derived one never reaches it."""
+    game = db.get(Game, row["game_id"])
     has_spread = bool(row.get("has_market_spread", 1.0))
-    spread = row.get("market_spread_home") if has_spread else None
-    payload = {
-        "sport": sport,
-        "home_name": home.name if home else row["home_abbr"],
-        "home_abbr": row["home_abbr"],
-        "away_name": away.name if away else row["away_abbr"],
-        "away_abbr": row["away_abbr"],
-        "home_win_prob": prob,
-        "factors": factors,
-        "spread_home": None if spread is None or pd.isna(spread) else float(spread),
-    }
-    if sport == SPORT_CFB:
-        ranks = ranks or {}
-        home_rank = ranks.get(home.team_id) if home else None
-        away_rank = ranks.get(away.team_id) if away else None
-        if home_rank or away_rank:
-            payload["poll_note"] = (
-                f"{_rank_phrase(payload['home_name'], home_rank)}, "
-                f"{_rank_phrase(payload['away_name'], away_rank)} "
-                "(AP poll entering the week)"
-            )
-        if row.get("is_divisional") and home is not None and home.conference:
-            payload["conference_note"] = f"Same-conference clash in the {home.conference}"
-    return payload
+    spread = float(row["market_spread_home"]) if has_spread else None
+    return build_game_facts(db, game, prob, factors, spread, ranks, prev_ranks)
 
 
 def unplayed_game_ids(
@@ -174,8 +148,9 @@ def main() -> None:
             print(f"no unplayed {sport} games found for {args.season} week {week}")
             return
 
-        teams_by_abbr = {t.abbr: t for t in db.scalars(select(Team).where(Team.sport == sport))}
         ranks = poll_ranks_entering(db, sport, args.season, week)
+        # Both weeks resolve AP first, so the rank movement compares the same poll in practice.
+        prev_ranks = poll_ranks_entering(db, sport, args.season, week - 1) if week > 1 else {}
         print(f"predicting {len(target)} {sport} games for {args.season} week {week}")
 
         for _, row in target.iterrows():
@@ -191,9 +166,7 @@ def main() -> None:
                 spread_available=bool(row["has_market_spread"]),
             )
 
-            narrative = narrate(
-                build_narration_payload(row, prob, factors, teams_by_abbr, sport, ranks)
-            )
+            narrative = narrate(facts_for_row(db, row, prob, factors, ranks, prev_ranks))
 
             upsert_prediction(db, row["game_id"], version, prob, factors, narrative)
             # Commit per game: a full CFB slate is ~100 sequential Claude calls,
