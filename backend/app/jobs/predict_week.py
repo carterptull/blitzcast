@@ -89,8 +89,8 @@ def build_narration_payload(
     QB/injury note (no standardized CFB injury report to cite)."""
     home = teams_by_abbr.get(row["home_abbr"])
     away = teams_by_abbr.get(row["away_abbr"])
-    has_line = bool(row.get("has_market_line", 1.0))
-    spread = row.get("market_spread_home") if has_line else None
+    has_spread = bool(row.get("has_market_spread", 1.0))
+    spread = row.get("market_spread_home") if has_spread else None
     payload = {
         "sport": sport,
         "home_name": home.name if home else row["home_abbr"],

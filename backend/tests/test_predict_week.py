@@ -189,7 +189,29 @@ def test_payload_hides_an_imputed_spread():
     }
     row = pd.Series({
         "home_abbr": "KC", "away_abbr": "BUF", "market_spread_home": 6.2,
-        "has_market_line": 0.0, "is_divisional": 0.0,
+        "has_market_line": 0.0, "has_market_spread": 0.0, "is_divisional": 0.0,
     })
     payload = build_narration_payload(row, 0.7, [], teams, SPORT_NFL)
     assert payload["spread_home"] is None
+
+
+def _spread_payload(has_market_line, has_market_spread):
+    teams = {
+        "KC": _team(SPORT_NFL, "KC", "Kansas City Chiefs", "AFC", 1),
+        "BUF": _team(SPORT_NFL, "BUF", "Buffalo Bills", "AFC", 2),
+    }
+    row = pd.Series({
+        "home_abbr": "KC", "away_abbr": "BUF", "market_spread_home": 2.0,
+        "has_market_line": has_market_line, "has_market_spread": has_market_spread,
+        "is_divisional": 0.0,
+    })
+    return build_narration_payload(row, 0.6, [], teams, SPORT_NFL)
+
+
+def test_payload_hides_a_moneyline_derived_spread():
+    assert _spread_payload(1.0, 0.0)["spread_home"] is None
+
+
+def test_payload_keeps_a_posted_spread():
+    assert _spread_payload(1.0, 1.0)["spread_home"] == 2.0
+

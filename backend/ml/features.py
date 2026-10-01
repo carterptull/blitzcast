@@ -413,6 +413,8 @@ def build_features(
         df["home_moneyline"] = df["moneyline_home"].combine_first(df["home_moneyline"])
         df["away_moneyline"] = df["moneyline_away"].combine_first(df["away_moneyline"])
 
+    df["has_market_spread"] = df["spread_line"].notna().astype(float)
+
     # Diff features (home minus away).
     df["elo_diff"] = df["elo_home"] - df["elo_away"]
     df["epa_off_diff"] = df["home_form_epa_off"] - df["away_form_epa_off"]
@@ -455,7 +457,8 @@ def build_features(
     df["has_market_line"] = df["market_home_prob"].notna().astype(float)
     hfa = elo.config_for(sport).hfa
     elo_spread = (df["elo_home"] - df["elo_away"] + hfa) / ELO_PER_SPREAD_POINT
-    ml_spread = df["market_home_prob"].map(_prob_to_spread, na_action="ignore")
+    ml_p = df["market_home_prob"].where(df["spread_line"].isna()).clip(1e-9, 1 - 1e-9)
+    ml_spread = ml_p.map(_prob_to_spread, na_action="ignore")
     df["market_spread_home"] = df["market_spread_home"].fillna(ml_spread).fillna(elo_spread)
     df["market_home_prob"] = df["market_home_prob"].fillna(
         df["market_spread_home"].map(_spread_to_prob)
@@ -497,6 +500,7 @@ def build_features(
     meta = [
         "game_id", "season", "week", "kickoff", "home_abbr", "away_abbr",
         "home_tier", "away_tier", "home_win", "has_market_line",
+        "has_market_spread",
     ]
     return df[meta + FEATURE_COLUMNS].reset_index(drop=True)
 
