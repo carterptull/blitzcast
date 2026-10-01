@@ -10,6 +10,7 @@ Usage: python -m data_pipeline.refresh_weather [--days 8] [--backfill-days 0] [-
 import argparse
 import sys
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
 
 import requests
 from sqlalchemy import exists, select
@@ -22,12 +23,19 @@ from app.models import SPORT_CFB, SPORT_NFL, Game, Weather
 BASE_URL = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
 
 
+def _describe_error(exc: Exception) -> str:
+    """Request exception text embeds the URL, including the API key, so only
+    the exception type and HTTP status are ever logged."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return f"{type(exc).__name__}, status {status if status is not None else 'n/a'}"
+
+
 def fetch_day(location: str, day: str, api_key: str) -> dict:
     """`location` is a Visual Crossing Timeline API location: either a
     "lat,lon" pair or a free-text place name (used for neutral-site games,
     which have no Stadium row to pull coordinates from)."""
     resp = requests.get(
-        f"{BASE_URL}/{location}/{day}",
+        f"{BASE_URL}/{quote(location, safe=',')}/{day}",
         params={"key": api_key, "unitGroup": "us", "include": "hours"},
         timeout=30,
     )
@@ -112,7 +120,7 @@ def main() -> None:
             except requests.RequestException as exc:
                 # Commit per game: the quota spent on earlier calls is gone
                 # either way, so a late failure must not roll them back.
-                print(f"weather refresh: {game.game_id} failed ({exc})")
+                print(f"weather refresh: {game.game_id} failed ({_describe_error(exc)})")
                 failed += 1
                 continue
             hour = _kickoff_hour(payload, game.kickoff_time)

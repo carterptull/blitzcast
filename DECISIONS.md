@@ -394,6 +394,9 @@ missing line read as a blowout: all 8 no-line 2026 games came out 75 to 86 perce
 `explain.py` claimed "Vegas favors away" off an imputed value. Imputing from Elo gives the model a
 neutral, honest stand-in, and the flags keep it from being presented as a market fact. The flags
 are not model inputs yet, so the committed 1.0 models stay valid and nothing is retrained.
+Re-running `ml.backtest` or `backfill_predictions` before the 1.1 work now trains on imputed
+values instead of NaN, so the README backtest tables will not reproduce exactly until they are
+regenerated (the 1.1 plan re-runs the baseline first).
 **Alternative:** retrain now with a missing-line indicator only: fixes the skew at the source, but
 it means a retrain and a re-commit of the artifacts mid-season for a handful of games; deferred,
 and the planned model work (P4) adds the two flags as inputs alongside the imputation.

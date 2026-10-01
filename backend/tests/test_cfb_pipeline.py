@@ -247,6 +247,13 @@ def test_neutral_site_and_unmatched_venue_are_recorded(cfb_db):
     assert game.venue_name == "Aviva Stadium"
 
 
+def test_missing_completed_with_one_score_stays_scheduled(cfb_db):
+    df = _venue_game(401899997, "Aviva Stadium", True).drop(columns=["completed"])
+    df["homePoints"] = 7
+    upsert_games(cfb_db, df)
+    assert cfb_db.get(Game, "cfb_401899997").status == "scheduled"
+
+
 def test_matched_venue_keeps_venue_name_empty(cfb_db):
     cfb_db.add(Stadium(name="Test Field", city="Columbus", lat=40.0, lon=-83.0,
                        is_dome=False, surface="grass"))

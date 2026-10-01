@@ -1,6 +1,7 @@
 """Leakage and feature-engineering correctness tests."""
 
 import pandas as pd
+import pytest
 from sqlalchemy import select
 
 from app.models import Game
@@ -149,3 +150,22 @@ def test_moneyline_only_game_derives_spread_but_flags_no_spread(db):
     assert abs(row["market_spread_home"] - expected) < 1e-9
     elo_spread = (row["elo_diff"] + 55.0) / 25.0
     assert abs(row["market_spread_home"] - elo_spread) > 1e-6
+
+
+@pytest.mark.parametrize("spread", [9999.0, -9999.0])
+def test_spread_outlier_does_not_overflow_and_keeps_moneyline_prob(db, spread):
+    game = db.scalars(select(Game).where(Game.game_id == "2026_01_BUF_KC")).one()
+    game.spread_line = spread
+    game.home_moneyline = -150
+    game.away_moneyline = 130
+    db.flush()
+
+    row = _feature_row(build_features(db), "2026_01_BUF_KC")
+    assert abs(row["market_home_prob"] - market_home_prob(-150, 130, None)) < 1e-9
+
+
+def test_metadata_flag_columns_exist_and_are_not_model_inputs(db):
+    df = build_features(db)
+    for col in ("has_market_line", "has_market_spread"):
+        assert col in df.columns
+        assert col not in FEATURE_COLUMNS

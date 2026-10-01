@@ -92,7 +92,7 @@ Full setup + env vars: [README.md](./README.md) and
   feature to `_MARKET_GROUND_TRUTH` if it has a similar independent truth
   to check against.
 - **Neutral-site games:** `Game.venue_name`/`is_neutral_site` hold the raw
-  nflverse venue for games with no Team-derived stadium (`stadium_id`
+  nflverse or CFBD venue for games with no Team-derived stadium (`stadium_id`
   NULL). `refresh_weather.py` fetches these by venue-name geocoding
   instead of lat/lon; don't reintroduce a bare `stadium is None: skip`
   check without also checking `venue_name`.

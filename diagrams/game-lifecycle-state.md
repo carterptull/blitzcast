@@ -27,7 +27,7 @@ stateDiagram-v2
     end note
 ```
 
-**The both-scores rule holds at every call site:** the schedule loader's status, `refresh_stats`,
+**The both-scores rule holds at every call site:** both schedule loaders' status, `refresh_stats`,
 the feature builder's played-game checks (`_team_form`, `home_win`), the prediction status filter,
 verdict grading, and the season record.
 

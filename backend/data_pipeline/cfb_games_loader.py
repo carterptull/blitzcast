@@ -98,7 +98,7 @@ def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
         game.away_score = None if away_pts is None else int(away_pts)
         completed = field(row, "completed")
         if completed is None:
-            completed = home_pts is not None
+            completed = home_pts is not None and away_pts is not None
         game.status = "final" if completed else "scheduled"
         written += 1
     db.flush()

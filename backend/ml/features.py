@@ -460,8 +460,9 @@ def build_features(
     ml_p = df["market_home_prob"].where(df["spread_line"].isna()).clip(1e-9, 1 - 1e-9)
     ml_spread = ml_p.map(_prob_to_spread, na_action="ignore")
     df["market_spread_home"] = df["market_spread_home"].fillna(ml_spread).fillna(elo_spread)
+    missing_prob = df["market_home_prob"].isna()
     df["market_home_prob"] = df["market_home_prob"].fillna(
-        df["market_spread_home"].map(_spread_to_prob)
+        df["market_spread_home"].where(missing_prob).map(_spread_to_prob, na_action="ignore")
     )
 
     # Tier class edge (FBS=1, FCS=0); 0.0 for NFL where tier is NULL.

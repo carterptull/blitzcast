@@ -65,17 +65,26 @@ def main() -> None:
         print("ODDS_API_KEY is not set in backend/.env — skipping odds refresh.")
         sys.exit(0)
 
-    resp = requests.get(
-        ODDS_URL.format(sport_key=SPORT_KEYS[args.sport]),
-        params={
-            "regions": "us",
-            "markets": "h2h,spreads,totals",
-            "oddsFormat": "american",
-            "apiKey": settings.odds_api_key,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.get(
+            ODDS_URL.format(sport_key=SPORT_KEYS[args.sport]),
+            params={
+                "regions": "us",
+                "markets": "h2h,spreads,totals",
+                "oddsFormat": "american",
+                "apiKey": settings.odds_api_key,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        # The exception text embeds the URL, including the API key.
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        print(
+            f"odds refresh failed: {type(exc).__name__}, "
+            f"status {status if status is not None else 'n/a'}"
+        )
+        sys.exit(1)
     events = resp.json()
     remaining = resp.headers.get("x-requests-remaining")
 
