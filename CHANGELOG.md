@@ -21,7 +21,8 @@ follow [SemVer](https://semver.org/).
   the existing idempotent `backfill_team_game_stats`, at one CFBD call a
   day. It skips with a message until the season has a final game, a
   missing `CFBD_API_KEY` prints a `WARNING:` (exit 0), and a CFBD request
-  failure exits 1 without printing the exception text.
+  failure prints the error and exits 1 (the key travels only in a request
+  header, so the message cannot contain it).
 
 ## [1.0.12] — 2026-10-01
 
