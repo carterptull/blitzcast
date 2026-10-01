@@ -1,6 +1,7 @@
 """Odds ingestion. The stored spread follows nflverse convention (positive =
 home favored) while books quote the opposite, so the sign is pinned here."""
 
+from app.market import plausible_moneylines, real_moneyline
 from data_pipeline.refresh_odds import _consensus, book_spread_to_home
 
 
@@ -74,3 +75,35 @@ def test_consensus_reads_h2h_and_totals():
     markets = _consensus(_event(-7.5, -330, 260), "KC", "BUF")
     assert markets["h2h"] == (-330, 260)
     assert markets["totals"] == 48.5
+
+
+def test_real_moneyline_drops_sentinel():
+    assert real_moneyline(-100000) is None
+    assert real_moneyline(100000) is None
+    assert real_moneyline(-8000) == -8000
+    assert real_moneyline(None) is None
+
+
+def test_plausible_moneylines():
+    assert plausible_moneylines(-108, -112)        # pick'em vig
+    assert plausible_moneylines(-10000, 2400)      # real blowout
+    assert not plausible_moneylines(-100000, -100000)
+    assert not plausible_moneylines(-5000, -5000)  # implied sum ~1.96
+    assert not plausible_moneylines(None, 150)
+
+
+def test_consensus_skips_a_sentinel_book_for_the_next_one():
+    event = {
+        "home_team": "Rutgers Scarlet Knights", "away_team": "Howard Bison",
+        "bookmakers": [
+            {"markets": [{"key": "h2h", "outcomes": [
+                {"name": "Rutgers Scarlet Knights", "price": -100000},
+                {"name": "Howard Bison", "price": -100000},
+            ]}]},
+            {"markets": [{"key": "h2h", "outcomes": [
+                {"name": "Rutgers Scarlet Knights", "price": -20000},
+                {"name": "Howard Bison", "price": 3500},
+            ]}]},
+        ],
+    }
+    assert _consensus(event, "RUTG", "HOW")["h2h"] == (-20000, 3500)
