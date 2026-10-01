@@ -138,7 +138,15 @@ _CLAUSE_BREAK_RE = re.compile(
 )
 _NAME_WORD_RE = re.compile(r"[A-Za-z0-9&']+")
 _CAP_RE = re.compile(r"\b[A-Z][A-Za-z0-9'’&.]*")
+_LOWER_WORD_RE = re.compile(r"\b[a-z][a-z'’]*")
+# A trailing period or comma still ends the token ("went 5-0." is checked).
+_SCORE_RE = re.compile(r"(?<![\w.-])\d{1,3}-\d{1,3}(?:-\d{1,3})?(?![\w-]|\.\d)")
+_RANK_RE = re.compile(r"(?:\bNo\.\s?|#|\bnumber\s+)(\d{1,3})(?![\w-]|\.\d)", re.IGNORECASE)
+_STREAK_RE = re.compile(r"(?:\b(?:won|lost)\s+)?\b\d{1,2}\s+straight\b", re.IGNORECASE)
 _MODEL_RE = re.compile(r"\bmodel(?:['’]s)?\b", re.IGNORECASE)
+_CONTRAST_RE = re.compile(
+    r"\b(?:but|while|whereas|though|although|yet|despite)\b", re.IGNORECASE
+)
 
 # Market words. A sentence with any of these is a market sentence.
 _AMOUNT = (
@@ -189,6 +197,24 @@ _CFB_INJURY_RE = re.compile(
     r"\binjur|\bout\s+for\b|\bmissing\b|\bsidelined\b|\bquestionable\b|\bdoubtful\b"
     r"|\bruled\s+out\b",
     re.IGNORECASE,
+)
+# Explicit injury attribution: "Baltimore's Joe Burrow", "Ravens quarterback Joe
+# Burrow", "the Ravens are without Joe Burrow", "Joe Burrow is out for the Ravens".
+_PLAYER_ROLE = (
+    r"(?:(?:star|starting|veteran|rookie|backup|top)\s+)?"
+    r"(?:quarterback|qb|signal[\s-]caller|wide\s+receiver|receiver|wideout|wr|running\s+back"
+    r"|rb|tight\s+end|te|tackle|guard|center|linebacker|lb|cornerback|cb|safety|pass\s+rusher"
+    r"|edge\s+rusher|kicker)\s+"
+)
+_TEAM_TO_PLAYER = (
+    rf"(?:['’]s?\s+(?:{_PLAYER_ROLE})?|\s+{_PLAYER_ROLE}"
+    r"|\s+(?:is|are|was|were|will\s+be)\s+(?:still\s+|again\s+)?(?:playing\s+)?without\s+"
+    rf"(?:{_PLAYER_ROLE})?)"
+)
+_PLAYER_TO_TEAM = (
+    r"(?:\s*\([A-Za-z]{1,4}\))?,?\s+(?:is\s+|was\s+|remains\s+|will\s+be\s+)?"
+    r"(?:listed\s+|ruled\s+)?(?:as\s+)?"
+    r"(?:out|doubtful|questionable|inactive|sidelined|unavailable|injured)\s+for\s+(?:the\s+)?"
 )
 
 # Word-bounded so "epa" never matches inside "prepared" or "separates".
@@ -246,7 +272,28 @@ COMMON_CAPITALIZED = {
     "playoff", "conference", "division", "title", "fight", "matchup", "rematch", "upset",
     "trap", "underdog", "underdogs", "favorite", "favorites", "edge", "line", "spread",
     "total", "market", "stakes", "crowd", "stadium", "start", "streak", "record", "bye",
-    "rest", "big", "top", "ranked", "unranked", "number", "neutral", "site",
+    "rest", "big", "top", "ranked", "unranked", "number", "neutral", "site", "points", "point",
+    "yards", "pickup", "touchdown", "touchdowns", "turnover", "turnovers", "injury",
+    "injuries", "report", "availability", "scoring", "passing", "rushing", "running",
+    "attack", "secondary", "backfield", "trenches", "tempo", "possession", "drive", "drives",
+    "margin", "differential", "form", "pick", "picks", "odds", "win", "wins", "winning",
+    "loss", "losses", "losing", "lead", "winners", "visitors", "hosts", "guests", "rivals",
+    "battle", "clash", "test", "chance", "chances", "opportunity", "redemption", "pride",
+    # Weather.
+    "weather", "cold", "snow", "snowy", "rain", "rainy", "heat", "wind", "windy", "humid",
+    "humidity", "hot", "warm", "chilly", "freezing", "sunny", "degrees", "conditions",
+    "dome", "indoors", "outdoors", "lights",
+    # Stakes and storylines.
+    "revenge", "statement", "momentum", "pressure", "history", "spotlight", "survival",
+    "measuring",
+    # Plain adjectives that open a sentence.
+    "huge", "massive", "enormous", "bad", "good", "great", "short", "long", "unbeaten",
+    "undefeated", "winless", "perfect", "clean", "tough", "early", "late", "quick", "fast",
+    "slow", "real", "true", "wild", "loud", "ugly", "rough", "healthy", "rested", "fresh",
+    "tired", "desperate", "dangerous", "elite", "solid", "steady", "different", "same",
+    "new", "old", "high", "low", "full", "easy", "hard", "close", "tight", "slight", "small",
+    "major", "key", "critical", "crucial", "brutal", "nasty", "gritty", "physical",
+    "explosive", "balanced", "dominant", "impressive", "marquee", "signature",
 }
 
 
@@ -302,10 +349,18 @@ def _name_words(team: TeamFacts) -> set[str]:
     return {w.lower() for w in _NAME_WORD_RE.findall(text)}
 
 
+# Role phrases name a side outright, except at a neutral site.
+_ROLE_ALIASES = {
+    "away": ("the visitors", "the visiting team", "the road team", "the away team", "the guests"),
+    "home": ("the home team", "the hosts", "the host"),
+}
+
+
 def _aliases(facts: GameFacts) -> list[tuple[str, str | None, bool]]:
     """(alias, side, case_sensitive), longest first. Aliases are the full name,
-    short name, mascot, abbreviation, and name words unique to one team. A
-    side of None masks venue text so "DKR-Texas Memorial Stadium" is not Texas."""
+    short name, mascot, abbreviation, name words unique to one team, and role
+    phrases like "the visitors". A side of None masks venue text so
+    "DKR-Texas Memorial Stadium" is not Texas."""
     names = {}
     for side in ("home", "away"):
         team, other = _team(facts, side), _team(facts, _other(side))
@@ -320,6 +375,8 @@ def _aliases(facts: GameFacts) -> list[tuple[str, str | None, bool]]:
     if facts.venue:
         venue_names = {facts.venue, facts.venue.split(" in ")[0]}
         aliases += [(v.lower(), None, False) for v in venue_names]
+    if not facts.is_neutral_site:
+        aliases += [(r, side, False) for side, roles in _ROLE_ALIASES.items() for r in roles]
     return sorted(aliases, key=lambda a: -len(a[0]))
 
 
@@ -442,6 +499,17 @@ def _model_claim_reason(side: str, role: str, facts: GameFacts) -> str | None:
     return None
 
 
+def _contrasted_with_model(s: _Sentence, pos: int) -> bool:
+    """"The Longhorns are favored, but our model gives the Buckeyes 55%": a bare
+    favorite clause set against a model clause is the market's view. A clause
+    with a percentage is still read as the model's."""
+    start, end = s.clause(pos)
+    return (
+        bool(_CONTRAST_RE.search(s.text)) and bool(_MODEL_RE.search(s.text))
+        and not _PCT_RE.search(s.text[start:end])
+    )
+
+
 def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
     """Favorite / underdog wording is a market claim in a market sentence and a
     model claim otherwise, except in a clause that names the model. Laying,
@@ -457,7 +525,8 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
             continue
         window = s.text[max(0, m.start() - 25):m.end() + 15]
         market_only = market_only or bool(_MARKET_ONLY_FAV_RE.search(window))
-        if market_only or (market and not s.in_model_clause(m.start())):
+        as_market = market or _contrasted_with_model(s, m.start())
+        if market_only or (as_market and not s.in_model_clause(m.start())):
             reason = _market_claim_reason(side, role, facts)
         else:
             reason = _model_claim_reason(side, role, facts)
@@ -493,18 +562,43 @@ def _market_numbers_reason(s: _Sentence, facts: GameFacts) -> str | None:
 
 
 def _injury_team_reason(s: _Sentence, facts: GameFacts) -> str | None:
-    """An injury-report name must not be pinned on the other team. Only the full
-    name is matched; a lone surname is not checked."""
+    """An injury-report name must not be pinned on the other team. Only explicit
+    attribution counts: "<team> is without <name>", "<team>'s <name>", "<team>
+    quarterback <name>", and "<name> is listed Out for <team>". Co-occurrence
+    ("Big edge for the Ravens with Joe Burrow out") is not checked. Only the
+    full name is matched, and the listed status (Out vs Doubtful) is not checked."""
     for side in ("home", "away"):
-        team = _team(facts, side)
+        team, other = _team(facts, side), _other(side)
         for injury in team.injuries:
             name = injury.split(" (")[0].split(" is listed")[0]
-            pos = s.text.find(name)
-            if pos < 0 or any(m[2] == side for m in s.mentions):
+            if name not in s.text:
                 continue
-            before = [m for m in s.mentions if m[1] <= pos]
-            if before and before[-1][2] != side:
-                return f"puts {name} on the wrong team (the {team.name} list {name})"
+            reason = f"puts {name} on the wrong team (the {team.name} list {name})"
+            owned = re.compile(rf"{_TEAM_TO_PLAYER}{re.escape(name)}\b", re.IGNORECASE)
+            if any(owned.match(s.text, m[1]) for m in s.mentions if m[2] == other):
+                return reason
+            for m in re.finditer(rf"{re.escape(name)}{_PLAYER_TO_TEAM}", s.text, re.IGNORECASE):
+                if s.side_starting_at(m.end()) == other:
+                    return reason
+    return None
+
+
+def _numeric_facts_reason(text: str, sheet: str) -> str | None:
+    """Scores and records (24-17, 2-1-1), ranks (No. 3, #3) and streaks (won 4
+    straight) must appear verbatim in the fact sheet. Lines and totals are
+    checked by the market logic; years and Week N are never matched. Which team
+    a number belongs to, and invented history with no number ("haven't lost at
+    home all season"), are not checked."""
+    sheet = " ".join(sheet.split())
+    for m in _SCORE_RE.finditer(text):
+        if not re.search(rf"(?<![\w.-]){re.escape(m.group(0))}(?![\w-]|\.\d)", sheet):
+            return f"cites {m.group(0)} but the fact sheet has no such score or record"
+    for m in _RANK_RE.finditer(text):
+        if not re.search(rf"#{m.group(1)}(?!\d)", sheet):
+            return f"cites {m.group(0)} but the fact sheet has no such rank"
+    for m in _STREAK_RE.finditer(text):
+        if m.group(0).lower() not in sheet.lower():
+            return f"cites {m.group(0)} but the fact sheet has no such streak"
     return None
 
 
@@ -530,9 +624,17 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
     for match in _PCT_RE.finditer(text):
         if not any(abs(float(match.group(1)) - v) <= 1.0 for v in valid):
             return f"cites a percentage ({match.group(1)}%) the model did not produce"
-    unknown = _name_tokens(text) - _name_tokens(render_fact_sheet(facts)) - COMMON_CAPITALIZED
+    sheet = render_fact_sheet(facts)
+    # A plain word the sheet uses in lower case is capitalized only to open a sentence.
+    unknown = (
+        _name_tokens(text) - _name_tokens(sheet) - COMMON_CAPITALIZED
+        - set(_LOWER_WORD_RE.findall(sheet))
+    )
     if unknown:
         return f"names not in the fact sheet: {', '.join(sorted(unknown))}"
+    reason = _numeric_facts_reason(text, sheet)
+    if reason:
+        return reason
     parsed = [_Sentence.parse(s, facts) for s in sentences]
     market = [s.is_market() for s in parsed]
     if facts.spread_home is None and any(market):

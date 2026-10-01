@@ -16,7 +16,8 @@ from app.services.narrate import check_narration
 def _team(name, full, abbr, mascot, record="2-1", **kw):
     base = dict(
         name=name, full_name=full, abbr=abbr, mascot=mascot, record=record,
-        games_this_season=3, last_game=None, streak=None, scoring=None,
+        games_this_season=sum(int(n) for n in record.split("-")), last_game=None, streak=None,
+        scoring=None,
         rank=None, rank_note=None, rest=None, injuries=(),
     )
     return TeamFacts(**(base | kw))
@@ -229,6 +230,350 @@ def test_rejections(text, facts, reason_fragment):
 ])
 def test_invented_names_stay_rejected(name):
     reason = check_narration(f"Ohio State is at 55% with {name} in the building.", FACTS)
+    assert reason is not None and "not in the fact sheet" in reason
+
+
+# Realistic scenarios for the true / false narration corpus.
+# A: Ohio State at Texas, Texas favored by 1.5, model Ohio State 55%.
+A_TEX = _team(
+    "Texas", "Texas Longhorns", "TEX", "Longhorns", "4-0", rank=3, rank_note="holding steady",
+    last_game="beat Baylor 38-17 at home", streak="won 4 straight",
+)
+A_OSU = _team(
+    "Ohio State", "Ohio State Buckeyes", "OSU", "Buckeyes", "4-0", rank=2,
+    rank_note="up from #4", last_game="beat Penn State 27-24 on the road",
+    streak="won 4 straight",
+)
+A = _facts(
+    A_TEX, A_OSU, 0.45, 1.5, 49.5, venue="DKR-Texas Memorial Stadium in Austin",
+    matchup_note="nonconference game, Big Ten at SEC", weather="97 degrees, wind 12 mph",
+    factor_lines=("Texas: betting market", "Ohio State: AP poll standing"), poll_available=True,
+)
+# B: Bengals at Ravens, Ravens favored by 6.5, model Ravens 71%, Bengals injuries.
+B_BAL = _team(
+    "Ravens", "Baltimore Ravens", "BAL", "Ravens", "3-1",
+    last_game="beat the Browns 31-10 on the road", streak="won 3 straight",
+    scoring="averaging 29.3 points and allowing 15.7 over the last 3 games",
+)
+B_CIN = _team(
+    "Bengals", "Cincinnati Bengals", "CIN", "Bengals", "2-2",
+    last_game="lost to the Steelers 24-20 at home", streak="lost 2 straight",
+    rest="on a short week",
+    injuries=("Joe Burrow (QB) is listed Out", "Ja'Marr Chase (WR) is listed Doubtful"),
+)
+B = _facts(
+    B_BAL, B_CIN, 0.71, 6.5, 44.5, sport="NFL", when="Sunday afternoon",
+    venue="M&T Bank Stadium in Baltimore", matchup_note="AFC North division game",
+    last_meeting="Ravens won 27-24 in Week 10 of 2025", weather="58 degrees, wind 9 mph",
+    factor_lines=(
+        "Ravens: quarterback availability", "Ravens: betting market",
+        "Ravens: point differential over the last 5 games",
+    ),
+)
+# C: Kansas State at Kansas, no line, model Kansas State 61%.
+C_KU = _team(
+    "Kansas", "Kansas Jayhawks", "KU", "Jayhawks", "2-2",
+    last_game="lost to Baylor 31-28 on the road",
+)
+C_KSU = _team(
+    "Kansas State", "Kansas State Wildcats", "KSU", "Wildcats", "3-1", rank=18,
+    rank_note="up from #22", last_game="beat Arizona 35-14 at home", streak="won 3 straight",
+)
+C = _facts(
+    C_KU, C_KSU, 0.39, None, None, venue="David Booth Kansas Memorial Stadium in Lawrence",
+    matchup_note="Big 12 conference game", when="Saturday afternoon",
+    last_meeting="Kansas State won 29-27 in Week 9 of 2025", poll_available=True,
+)
+# D: Michigan State at Ohio State, Ohio State favored by 14.5, model Ohio State 88%.
+D = _facts(
+    _team("Ohio State", "Ohio State Buckeyes", "OSU", "Buckeyes", "4-0"),
+    _team("Michigan State", "Michigan State Spartans", "MSU", "Spartans", "2-2"),
+    0.88, 14.5, 52.5, venue="Ohio Stadium in Columbus", matchup_note="Big Ten conference game",
+)
+
+
+def _known_limit(text, facts, why):
+    return pytest.param(text, facts, marks=pytest.mark.xfail(strict=True, reason=why))
+
+
+# Narrations fully true to their fact sheets.
+CORPUS_TRUE = [
+    ("Number 2 at number 3 under the lights in Austin. Our model leans Ohio State at 55%, even "
+     "with Texas favored by 1.5 at home.", A),
+    ("The Buckeyes roll into Austin at 4-0 after a 27-24 win at Penn State. Texas is laying "
+     "1.5, but our model has Ohio State at 55%.", A),
+    ("Big Ten at SEC on Saturday night, and it does not get bigger than this. The Longhorns are "
+     "1.5-point favorites at home. Our model disagrees and gives the Buckeyes 55%.", A),
+    ("Texas hosts Ohio State, but the Buckeyes are the model's pick at 55%.", A),
+    ("Texas has won 4 straight, including a 38-17 win over Baylor. Still, the model likes Ohio "
+     "State at 55%, while Vegas has the Longhorns by 1.5.", A),
+    ("It is 97 degrees in Austin and the stakes are just as hot. Ohio State is getting 1.5 "
+     "points, yet our model makes the Buckeyes a 55% pick.", A),
+    ("Ohio State's 4-0 start meets Texas' 4-0 start at DKR-Texas Memorial Stadium. The model "
+     "gives the Buckeyes 55% to the Longhorns' 45%.", A),
+    ("The Longhorns' home crowd will be loud. Our model still sides with Ohio State at 55%, and "
+     "the market only has Texas favored by 1.5.", A),
+    ("A top-3 showdown in Austin. Texas is the slight favorite in the market at 1.5, but the "
+     "model has Ohio State winning 55% of the time.", A),
+    ("Ohio State climbed to No. 2 this week. The Buckeyes walk into Austin as the model's "
+     "favorite at 55%, with the total at 49.5.", A),
+    ("Saturday night in Austin, and the model is on the road team. Ohio State sits at 55%, "
+     "Texas at 45%.", A),
+    ("Texas comes in at 4-0 and ranked No. 3, and the Longhorns are laying 1.5 points. Our "
+     "model goes the other way with Ohio State at 55%.", A),
+    ("Heat, wind, and two unbeaten teams. The Buckeyes are 1.5-point underdogs, but our model "
+     "makes them 55% favorites.", A),
+    ("Wind at 12 mph and 97 degrees at kickoff. Texas is favored by 1.5 points, and the model "
+     "still backs Ohio State at 55%.", A),
+    ("The Buckeyes are 1.5-point underdogs, but our model makes them 55% favorites.", A),
+    ("Texas hosts Ohio State, but our model likes the visitors at 55%.", A),
+    ("Texas hosts Ohio State, and our model likes the road team at 55%.", A),
+    ("Ohio State visits Texas, and the model likes them at 55%.", A),
+    _known_limit(
+        "Texas hosts Ohio State tonight, but our model likes them at 55%.", A,
+        "pronouns fall back to the first team named in the sentence",
+    ),
+    ("Ohio State is the pick, 55% to win in Austin against a Texas team favored by 1.5.", A),
+    ("Despite the Longhorns laying 1.5, the model takes Ohio State at 55%.", A),
+    ("The model takes Ohio State at 55% despite Texas laying 1.5.", A),
+    ("Our model gives Texas just a 45% chance, with Ohio State at 55%.", A),
+    ("A 55% chance for Ohio State, per our model, even as Texas lays 1.5.", A),
+    ("Texas -1.5 at home. Our model says Ohio State at 55%.", A),
+    ("Ohio State +1.5 on the road, and the model has the Buckeyes winning 55% of the time.", A),
+    ("The books make Texas a 1.5-point favorite. The model leans the other way, Ohio State at "
+     "55%.", A),
+    ("Ohio State is a 1.5-point dog in Austin, but the model likes the Buckeyes at 55%.", A),
+    ("Two unbeaten teams, one at 4-0 in the Big Ten and one at 4-0 in the SEC. Our model leans "
+     "Ohio State at 55%.", A),
+    ("Unbeaten versus unbeaten in Austin. Our model has Ohio State at 55%.", A),
+    ("Revenge is not on the sheet, but stakes are. Our model has Ohio State at 55%.", A),
+    ("Rain is not a factor, heat is. Our model has Ohio State at 55%.", A),
+    ("Momentum belongs to the Buckeyes after a 27-24 win at Penn State. Our model has them at "
+     "55%.", A),
+    ("Huge game in Austin. Our model has Ohio State at 55%.", A),
+    ("Massive stakes, top-3 teams. Our model has Ohio State at 55%.", A),
+    ("Hot and windy in Austin. Our model has Ohio State at 55%.", A),
+    ("Undefeated Texas hosts undefeated Ohio State. Our model has the Buckeyes at 55%.", A),
+    ("Ranked No. 2 against No. 3. The model gives Ohio State 55%.", A),
+    ("Statement game for the Buckeyes. The model gives Ohio State 55%.", A),
+    ("The Longhorns are favored, but our model gives the Buckeyes 55%.", A),
+    ("Both teams are 4-0. Vegas makes Texas a slight favorite, and our model leans Ohio State "
+     "at 55%.", A),
+    ("AFC North football in Baltimore on Sunday afternoon. The Ravens have won 3 straight and "
+     "our model likes them at 71%.", B),
+    ("Cincinnati is without Joe Burrow, who is listed Out. The Ravens are 6.5-point favorites, "
+     "and our model has Baltimore at 71%.", B),
+    ("The Bengals have lost 2 straight and come in on a short week. Baltimore is laying 6.5 at "
+     "home, and the model makes the Ravens a 71% pick.", B),
+    ("Joe Burrow is out and Ja'Marr Chase is doubtful for the Bengals. Our model gives the "
+     "Ravens 71%, with the total at 44.5.", B),
+    ("The Ravens beat the Browns 31-10 last week, while the Bengals fell to the Steelers 24-20. "
+     "Our model leans Baltimore at 71%.", B),
+    ("Baltimore won 27-24 in Week 10 of 2025, the last time these two met. This time the model "
+     "has the Ravens at 71%, and Vegas has them favored by 6.5.", B),
+    ("The Bengals' offense looks very different without Joe Burrow. Cincinnati is getting 6.5 "
+     "points, and our model gives them just 29%.", B),
+    ("Division game at M&T Bank Stadium. The Ravens are averaging 29.3 points over their last 3 "
+     "games, and the model likes them at 71%.", B),
+    ("Short week for the Bengals, and it shows on the injury report with Joe Burrow listed Out. "
+     "Our model puts Baltimore at 71%.", B),
+    ("Ravens minus 6.5 at home. Our model is even more sure, giving Baltimore 71%.", B),
+    ("Baltimore gets a break with Joe Burrow listed Out. Our model has the Ravens at 71%.", B),
+    ("The Ravens will not see Joe Burrow on Sunday afternoon. Our model has Baltimore at 71%.",
+     B),
+    ("Big edge for the Ravens with Joe Burrow out. Baltimore is laying 6.5.", B),
+    ("Division rivals meet in Baltimore. The Ravens are 6.5-point favorites and our model has "
+     "them at 71%.", B),
+    ("Bad timing for Cincinnati, on a short week with Joe Burrow out. Our model has the Ravens "
+     "at 71%.", B),
+    ("Short week, no Joe Burrow, and a road trip to Baltimore. The model gives Cincinnati 29%.",
+     B),
+    ("Sunday afternoon in Baltimore, 58 degrees with a 9 mph wind. The Ravens are 71% in our "
+     "model.", B),
+    ("Revenge game for the Bengals after a 27-24 loss in Week 10 of 2025. Our model still has "
+     "Baltimore at 71%.", B),
+    ("Points have come easy for Baltimore, 29.3 a game over the last 3. Our model has the "
+     "Ravens at 71%.", B),
+    ("The Ravens are favored by 6.5 and the total sits at 44.5. Our model makes Baltimore a 71% "
+     "pick.", B),
+    ("Cincinnati comes in at 2-2. Baltimore at 3-1 is the 71% side.", B),
+    ("It is a Big 12 conference game in Lawrence. Our model likes Kansas State at 61%.", C),
+    ("Kansas State brings a 3-game win streak into Lawrence. The Wildcats beat Arizona 35-14 "
+     "last week, and our model has them at 61%.", C),
+    ("Kansas lost to Baylor 31-28 on the road last time out. The Jayhawks sit at 39% in our "
+     "model against the No. 18 Wildcats.", C),
+    ("Kansas State won 29-27 in Week 9 of 2025. The model leans the Wildcats again at 61%.", C),
+    ("Kansas hosts Kansas State on Saturday afternoon, but the model likes the visitors at 61%.",
+     C),
+    ("The Wildcats are up from No. 22 to No. 18 in the AP poll. Our model makes Kansas State a "
+     "61% favorite on the road.", C),
+    ("Kansas is the underdog in our model at 39%, and the Wildcats have won 3 straight.", C),
+    ("Kansas State is the No. 18 team in the country. The Wildcats are 61% in our model, Kansas "
+     "39%.", C),
+    ("Kansas is at home, but our model likes the Wildcats at 61%.", C),
+    ("Rivalry game in Lawrence. No line is posted, but our model has Kansas State at 61%.", C),
+    ("Michigan State visits Ohio Stadium, and the Buckeyes are 14.5-point favorites. Our model "
+     "has Ohio State at 88%.", D),
+    ("The Spartans are getting 14.5 points in Columbus. Our model gives Michigan State only "
+     "12%.", D),
+    ("Michigan State visits Ohio State, and the Spartans are getting 14.5. Our model has the "
+     "Buckeyes at 88%.", D),
+    ("Ohio State is laying 14.5 against Michigan State. Our model has the Buckeyes at 88%.", D),
+]
+
+
+@pytest.mark.parametrize("text, facts", CORPUS_TRUE)
+def test_corpus_true_narration_is_accepted(text, facts):
+    assert check_narration(text, facts) is None
+
+
+# Narrations with one false or forbidden claim each.
+CORPUS_FALSE = [
+    ("Ohio State is favored by 1.5 on the road, and our model likes the Buckeyes at 55%.", A),
+    ("Vegas has Texas favored by 3.5, but our model likes Ohio State at 55%.", A),
+    ("The Longhorns are the model's pick at 55% in Austin.", A),
+    ("Texas hosts Ohio State, and the model likes the Longhorns to protect home turf at 55%.", A),
+    ("Arch Manning and Texas host Ohio State, and our model leans the Buckeyes at 55%.", A),
+    ("Steve Sarkisian has Texas at 4-0. Our model leans Ohio State at 55%.", A),
+    ("Ohio State comes in at 5-0. Our model leans the Buckeyes at 55%.", A),
+    ("Texas has won 6 straight. Our model leans the Buckeyes at 55%.", A),
+    ("Texas is missing its starting quarterback. Our model likes Ohio State at 55%.", A),
+    ("Texas is favored by one and a half points. Our model likes Ohio State at 55%.", A),
+    ("Texas is getting 1.5 at home, but our model likes Ohio State at 55%.", A),
+    ("The Buckeyes are laying 1.5 in Austin, and our model likes them at 55%.", A),
+    ("Texas hosts Ohio State, but the Longhorns are the model's pick at 55%.", A),
+    ("The total is 52.5 in Austin, and our model likes Ohio State at 55%.", A),
+    ("Ohio State is a 1.5-point favorite in Austin. Our model agrees at 55%.", A),
+    ("The Longhorns are underdogs at home, and the model likes Ohio State at 55%.", A),
+    ("Vegas likes Ohio State by 1.5, and so does our model at 55%.", A),
+    ("In Columbus on Saturday night, the model likes Ohio State at 55%.", A),
+    ("Ohio State won the last meeting 24-21. Our model leans the Buckeyes at 55%.", A),
+    ("Texas is the betting underdog, but our model likes Ohio State at 55%.", A),
+    ("Texas has the edge in Vegas, but the Buckeyes are 55% to win and favored by 1.5.", A),
+    ("Our model likes Ohio State at 55%. The Longhorns are getting the points at home.", A),
+    ("Our model likes Ohio State at 55%. Texas is +1.5 at home.", A),
+    ("Ohio State is the underdog in Austin. Our model likes Texas at 55%.", A),
+    ("Ohio State is giving 1.5 on the road. Our model likes the Buckeyes at 55%.", A),
+    ("Texas sits at plus 1.5 at home. Our model likes Ohio State at 55%.", A),
+    ("Vegas has Ohio State at minus 1.5. Our model likes the Buckeyes at 55%.", A),
+    ("The over/under is 52 in Austin. Our model likes Ohio State at 55%.", A),
+    ("Texas is favored by a field goal. Our model likes Ohio State at 55%.", A),
+    ("Ohio State is laying a point and our model likes the Buckeyes at 55%.", A),
+    ("Texas has a 55% chance in our model.", A),
+    ("The Longhorns, whom our model gives 55%, host Ohio State.", A),
+    ("Our model picks Texas to win in Austin, 55% to 45%.", A),
+    ("Our model sides with the Longhorns, even with Ohio State at 55%.", A),
+    ("Texas is our model's pick in Austin. The Buckeyes are at 45%.", A),
+    _known_limit(
+        "Our model thinks the Longhorns win this one. Texas is laying 1.5.", A,
+        "a model pick with no percentage and no favorite wording is not parsed",
+    ),
+    ("The model's favorite is Texas at home. Vegas agrees, laying 1.5.", A),
+    ("The Buckeyes are the betting favorite in Austin, and our model likes them at 55%.", A),
+    ("The market likes the Buckeyes on the road. Our model likes them at 55%.", A),
+    ("OSU -1.5 in Austin. Our model likes the Buckeyes at 55%.", A),
+    ("Texas is the No. 1 team in the country. Our model likes Ohio State at 55%.", A),
+    ("The Buckeyes have the edge with the books. Our model likes them at 55%.", A),
+    ("Our model gives the Longhorns the nod at 55%.", A),
+    ("Texas hosts Ohio State, but our model likes the hosts at 55%.", A),
+    ("Baltimore is without Joe Burrow, and our model likes the Ravens at 71%.", B),
+    ("The Bengals are 6.5-point favorites on the road. Our model likes Baltimore at 71%.", B),
+    ("The Ravens are favored by 7 at home, and our model likes them at 71%.", B),
+    ("Lamar Jackson and the Ravens have won 3 straight. Our model likes Baltimore at 71%.", B),
+    ("The Bengals have lost 3 straight. Our model likes Baltimore at 71%.", B),
+    ("Cincinnati is a 71% pick in our model, but Joe Burrow is listed Out.", B),
+    ("The Ravens are getting 6.5 at home, and our model likes them at 71%.", B),
+    ("Baltimore is 4-0 and our model likes the Ravens at 71%.", B),
+    ("The Ravens beat the Browns 34-10 last week. Our model has Baltimore at 71%.", B),
+    ("Baltimore is favored by six and a half. Our model has the Ravens at 71%.", B),
+    ("Joe Burrow is listed Out for the Ravens. Our model has Baltimore at 71%.", B),
+    ("The Ravens are without Joe Burrow. Our model has Baltimore at 71%.", B),
+    ("Baltimore's Joe Burrow is listed Out. Our model has the Ravens at 71%.", B),
+    ("Ravens quarterback Joe Burrow is listed Out. Our model has Baltimore at 71%.", B),
+    _known_limit(
+        "The Ravens, with Joe Burrow out, are 71% in our model.", B,
+        "\"with <name> out\" is not read as attribution, true copy uses it for either team",
+    ),
+    _known_limit(
+        "Ja'Marr Chase is out for the Bengals. Our model has the Ravens at 71%.", B,
+        "the listed status (Out vs Doubtful) is not checked",
+    ),
+    _known_limit(
+        "Joe Burrow is listed Doubtful. Our model has the Ravens at 71%.", B,
+        "the listed status (Out vs Doubtful) is not checked",
+    ),
+    ("The Ravens are 6.5-point underdogs at home. Our model has Baltimore at 71%.", B),
+    ("Cincinnati is the 71% side in our model.", B),
+    ("Our model has Baltimore at 81%.", B),
+    ("The Ravens are favored by 6 at home. Our model has Baltimore at 71%.", B),
+    _known_limit(
+        "The Ravens haven't lost at home all season. Our model has Baltimore at 71%.", B,
+        "invented history without a number is not checkable",
+    ),
+    ("The Wildcats are favored by 3 in Lawrence, and our model likes them at 61%.", C),
+    ("Vegas and our model agree on Kansas State at 61%.", C),
+    ("Kansas hosts Kansas State, and the model likes the Jayhawks at 61%.", C),
+    ("Kansas State is the underdog in our model at 39%.", C),
+    ("Kansas State is the model's favorite in Manhattan at 61%.", C),
+    ("Kansas has won 2 straight. Our model likes Kansas State at 61%.", C),
+    _known_limit(
+        "The Jayhawks are without their starting quarterback. Our model likes Kansas State at "
+        "61%.", C, "\"without\" alone is too common to read as an injury claim",
+    ),
+    _known_limit(
+        "Kansas State is favored on the road. Our model has the Wildcats at 61%.", C,
+        "a bare \"favored\" with no line reads as the model's pick, which it is",
+    ),
+    ("The Wildcats are the No. 12 team. Our model has Kansas State at 61%.", C),
+    ("Our model makes Kansas the 61% pick against Kansas State.", C),
+    ("Michigan State is favored by 14.5 on the road. Our model has Ohio State at 88%.", D),
+    ("Michigan State is 88% in our model at Ohio Stadium.", D),
+    _known_limit(
+        "State is favored by 14.5 in Columbus. Our model has Ohio State at 88%.", D,
+        "a generic name word alone identifies neither team",
+    ),
+    ("Ohio State is getting 14.5 at home. Our model has the Buckeyes at 88%.", D),
+    _known_limit(
+        "Michigan State hosts Ohio State. Our model has the Buckeyes at 88%.", D,
+        "who hosts is not checked",
+    ),
+    ("The Spartans are laying 14.5 in Columbus. Our model has Ohio State at 88%.", D),
+    ("Ohio State hosts Michigan State and the Spartans are 14.5-point favorites. Our model has "
+     "the Buckeyes at 88%.", D),
+]
+
+
+@pytest.mark.parametrize("text, facts", CORPUS_FALSE)
+def test_corpus_false_narration_is_rejected(text, facts):
+    assert check_narration(text, facts) is not None
+
+
+@pytest.mark.parametrize("text, fragment", [
+    ("Joe Burrow is listed Out for the Ravens.", "wrong team"),
+    ("The Ravens are without Joe Burrow.", "wrong team"),
+    ("Baltimore's Joe Burrow is listed Out.", "wrong team"),
+    ("Texas hosts Ohio State, but our model likes the hosts at 55%.", "the model has Texas"),
+    ("Ohio State comes in at 5-0.", "5-0"),
+    ("Texas has won 6 straight.", "6 straight"),
+    ("The Ravens beat the Browns 34-10 last week.", "34-10"),
+    ("Ohio State won the last meeting 24-21.", "24-21"),
+    ("Texas is the No. 1 team in the country.", "No. 1"),
+    ("The Wildcats are ranked #12.", "#12"),
+    ("The Bengals have lost 3 straight.", "lost 3 straight"),
+])
+def test_new_rejections_name_the_claim(text, fragment):
+    facts = A if "Texas" in text or "Ohio State" in text else B
+    if "Wildcats" in text:
+        facts = C
+    reason = check_narration(text, facts)
+    assert reason is not None and fragment in reason, reason
+
+
+@pytest.mark.parametrize("name", [
+    "Jackson", "Stroud", "Herbert", "Purdy", "Kiffin", "Tuscaloosa", "Pittsburgh", "Norman",
+])
+def test_more_invented_names_stay_rejected(name):
+    reason = check_narration(f"Huge night in Austin with {name} in the building.", A)
     assert reason is not None and "not in the fact sheet" in reason
 
 
