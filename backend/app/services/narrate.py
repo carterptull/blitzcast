@@ -52,49 +52,144 @@ CFB_INJURY_GUARDRAIL = (
     "or injuries."
 )
 
-EXAMPLES = """Example fact sheet:
-Sport: NFL
-Matchup: Steelers at Browns
-When: Thursday night
-Game type: AFC North division game
-Model: Steelers 62% to win, Browns 38%
-Betting market: Steelers favored by 2.5 points (PIT -2.5, CLE +2.5). Total 38.5.
-Last meeting: Browns won 13-6 in Week 17 of 2025
-Pittsburgh Steelers (PIT): record 2-1, last game beat the Bengals 30-27 at home, \
-rest on a short week
-Cleveland Browns (CLE): record 2-1, last game beat the Panthers 21-18 on the road, \
-streak won 2 straight
 
-Example narration:
-Thursday night in Cleveland, and the AFC North gets its first rematch on a short week. Pittsburgh \
-bounced back by edging Cincinnati 30-27, while the Browns have won 2 straight. Our model likes \
-the Steelers at 62%, a touch more confident than a market laying 2.5 points on the road.
+def _example_team(name: str, full_name: str, abbr: str, record: str, **kw) -> TeamFacts:
+    base = dict(
+        name=name, full_name=full_name, abbr=abbr, mascot=kw.pop("mascot", name), record=record,
+        games_this_season=sum(int(n) for n in record.split("-")),
+        last_game=None, streak=None, scoring=None, rank=None, rank_note=None, rest=None,
+        injuries=(),
+    )
+    return TeamFacts(**(base | kw))
 
-Example narration for a mismatch:
-Ohio State opens Big Ten play riding a 4-0 start, and nobody needs a film session for this one. \
-The Buckeyes are 40.5-point favorites, and our model puts them at 98%."""
 
-_PCT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:%|percent)", re.IGNORECASE)
+# The examples are rendered from real GameFacts so they always match the sheet
+# format, and tests run the example narrations through check_narration.
+EXAMPLE_FACTS = GameFacts(
+    sport="NFL",
+    home=_example_team(
+        "Browns", "Cleveland Browns", "CLE", "2-1",
+        last_game="beat the Panthers 21-18 on the road", streak="won 2 straight",
+    ),
+    away=_example_team(
+        "Steelers", "Pittsburgh Steelers", "PIT", "2-1",
+        last_game="beat the Bengals 30-27 at home", rest="on a short week",
+    ),
+    home_win_prob=0.38, spread_home=-2.5, total=38.5, when="Thursday night", venue=None,
+    is_neutral_site=False, matchup_note="AFC North division game",
+    last_meeting="Browns won 13-6 in Week 17 of 2025", weather=None, factor_lines=(),
+)
+EXAMPLE_NARRATION = (
+    "Thursday night in the AFC North, and the Steelers come in on a short week. Pittsburgh "
+    "edged the Bengals 30-27 at home, while the Browns have won 2 straight. Our model likes "
+    "the Steelers at 62%, a touch more confident than a market laying 2.5 points on the road."
+)
+MISMATCH_EXAMPLE_FACTS = GameFacts(
+    sport="CFB",
+    home=_example_team(
+        "Ohio State", "Ohio State Buckeyes", "OSU", "4-0",
+        mascot="Buckeyes", streak="won 4 straight",
+    ),
+    away=_example_team("Purdue", "Purdue Boilermakers", "PUR", "1-3", mascot="Boilermakers"),
+    home_win_prob=0.98, spread_home=40.5, total=None, when="Saturday afternoon", venue=None,
+    is_neutral_site=False, matchup_note="Big Ten conference game", last_meeting=None,
+    weather=None, factor_lines=(),
+)
+MISMATCH_EXAMPLE_NARRATION = (
+    "Ohio State brings a 4-0 start into a Big Ten conference game, and nobody needs a film "
+    "session for this one. The Buckeyes are 40.5-point favorites, and our model puts them at 98%."
+)
+EXAMPLES = (
+    f"Example fact sheet:\n{render_fact_sheet(EXAMPLE_FACTS)}\n\n"
+    f"Example narration:\n{EXAMPLE_NARRATION}\n\n"
+    f"Example fact sheet for a mismatch:\n{render_fact_sheet(MISMATCH_EXAMPLE_FACTS)}\n\n"
+    f"Example narration for a mismatch:\n{MISMATCH_EXAMPLE_NARRATION}"
+)
+
+_NUM = r"\d+(?:\.\d+)?"
+_NOT_PCT = r"(?!\d+(?:\.\d+)?\s*(?:%|percent|per\s+cent))"
+_PCT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)", re.IGNORECASE)
 _NUMBER_WORDS = (
     "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
     "fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|"
     "eighty|ninety|hundred"
 )
+_NUMBER_WORDS_NO_ONE = _NUMBER_WORDS.replace("one|", "")
+# "One of the" is a pronoun, so "one" is only rejected next to a unit.
 _SPELLED_NUMBER_RE = re.compile(
-    rf"\b(?:{_NUMBER_WORDS})\b[\w\s-]{{0,20}}?\b(?:percent|points?)\b", re.IGNORECASE
+    rf"\b(?:{_NUMBER_WORDS})(?:[\s-]+(?:{_NUMBER_WORDS}))*[\s-]+"
+    r"(?:points?|percent|per\s+cent|yards?)\b"
+    rf"|\b(?:{_NUMBER_WORDS_NO_ONE})(?:[\s-]+(?:{_NUMBER_WORDS}))*[\s-]+(?:games?|straight|times)\b"
+    rf"|\b(?:by|plus|minus)\s+(?:{_NUMBER_WORDS})\b(?!\s+of\b)"
+    rf"|\b(?:laying|giving|getting)\s+(?:{_NUMBER_WORDS_NO_ONE})\b"
+    r"|\ba\s+(?:point|field\s+goal)\s+and\s+a\s+half\b|\bhalf\s+a\s+point\b",
+    re.IGNORECASE,
 )
 _DASH_RE = re.compile(r"\s*[—–]\s*")
-_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
-_NAME_WORD_RE = re.compile(r"[A-Za-z']+")
-_CAP_RE = re.compile(r"\b[A-Z][A-Za-z0-9'’&.]*")
-_FAVORITE_RE = re.compile(r"favorite|favored|the edge|an edge|the nod")
-_LAYING_RE = re.compile(r"\blaying\b|\bgiving\b")
-_GETTING_RE = re.compile(r"\bgetting\s+(?:\d|a\b)|\+\s?\d")
-_MARKET_RE = re.compile(
-    r"vegas|the line\b|spread|the market|betting|oddsmaker|sportsbook|\bbooks?\b|"
-    r"\blaying\b|favored by|getting \d|\+\s?\d"
+# Never split after "vs.", "No.", "St.", titles, or initials like "T.J.".
+_SENTENCE_RE = re.compile(
+    r"(?<=[.!?])(?<!\bvs\.)(?<!\bVs\.)(?<!\bNo\.)(?<!\bSt\.)(?<!\bMt\.)(?<!\bJr\.)(?<!\bSr\.)"
+    r"(?<!\bDr\.)(?<!\b[A-Z]\.)\s+"
 )
-_POINTS_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)[\s-]*points?\b")
+_CLAUSE_BREAK_RE = re.compile(
+    r";|,\s+(?:and|so)\s+|\s+(?:but|while|whereas|though|although|yet|despite|"
+    r"even\s+(?:with|as|if|though))\s+",
+    re.IGNORECASE,
+)
+_NAME_WORD_RE = re.compile(r"[A-Za-z0-9&']+")
+_CAP_RE = re.compile(r"\b[A-Z][A-Za-z0-9'’&.]*")
+_MODEL_RE = re.compile(r"\bmodel(?:['’]s)?\b", re.IGNORECASE)
+
+# Market words. A sentence with any of these is a market sentence.
+_AMOUNT = (
+    rf"(?:just\s+|only\s+)?(?:{_NOT_PCT}\d|the\s+points|points|a\s+point|a\s+field\s+goal|"
+    r"a\s+touchdown)"
+)
+_LAYING = rf"\b(?:laying|lays|giving|gives)\s+{_AMOUNT}|\bminus\s+{_NOT_PCT}\d|(?<![\w.%])-\s?\d"
+_GETTING = rf"\b(?:getting|gets)\s+{_AMOUNT}|\bplus\s+{_NOT_PCT}\d|(?<![\w.%])\+\s?\d"
+_N_POINT = rf"{_NUM}[\s-]+points?\s+(?:\w+\s+)?(?:favou?rites?|underdogs?|dogs?)\b"
+_FAVORED_BY = r"\bfavou?red\s+by\s+(?:just\s+|only\s+)?\d"
+_LAYING_RE = re.compile(_LAYING, re.IGNORECASE)
+_GETTING_RE = re.compile(_GETTING, re.IGNORECASE)
+_MARKET_RE = re.compile(
+    r"\bvegas\b|\bthe\s+line\b(?!\s+of\s+scrimmage)|\bspreads?\b|\bthe\s+market\b|\bbetting\b"
+    r"|\boddsmakers?\b|\bsportsbooks?\b|(?<!record\s)\bbooks\b|\bpick\s?['’]?\s?em\b"
+    r"|\bmoneyline\b|\bover/under\b|\btotal\s+(?:of|at|is|sits|set)\b"
+    rf"|{_FAVORED_BY}|{_LAYING}|{_GETTING}|{_N_POINT}",
+    re.IGNORECASE,
+)
+_FAV_RE = re.compile(r"\bfavou?r(?:ed|ites?)\b|\b(?:the|an)\s+edge\b|\bthe\s+nod\b", re.IGNORECASE)
+_DOG_RE = re.compile(
+    r"\bunderdogs?\b|\b(?:the|a|an)\s+(?:road\s+|home\s+)?dogs?\b", re.IGNORECASE
+)
+# "Vegas likes X" / "our model leans X": the team is the object after the verb.
+_AGENT_RE = re.compile(
+    r"\b(model|vegas|market|books|oddsmakers|sportsbooks?|line)(?:['’]s)?\s+(?:\w+\s+)?"
+    r"(?:likes|leans|backs|favors|favours|prefers|loves|trusts|sides\s+with|is\s+on)\b",
+    re.IGNORECASE,
+)
+_LINE_NUM_RE = re.compile(
+    rf"\bfavou?red\s+by\s+(?:just\s+|only\s+)?({_NUM})"
+    rf"|\b(?:laying|lays|giving|gives|getting|gets|plus|minus)\s+(?:just\s+|only\s+)?"
+    rf"{_NOT_PCT}({_NUM})"
+    rf"|(?<![\w.%])[+-]\s?({_NUM})"
+    rf"|({_NUM})[\s-]+points?\s+(?:\w+\s+)?(?:favou?rites?|underdogs?|dogs?)\b"
+    rf"|\b(?:spread|line)\s+(?:of|at|is)\s+(?:just\s+|only\s+)?({_NUM})",
+    re.IGNORECASE,
+)
+_TOTAL_NUM_RE = re.compile(
+    rf"\b(?:total|over/under)\s+(?:of\s+|at\s+|is\s+|sits\s+at\s+|set\s+at\s+)?({_NUM})",
+    re.IGNORECASE,
+)
+_MARKET_ONLY_FAV_RE = re.compile(rf"{_FAVORED_BY}|{_N_POINT}", re.IGNORECASE)
+_PAIRED_PCT_RE = re.compile(r"\s*(?:to|vs\.?|versus|over|against|-)\s*", re.IGNORECASE)
+_AS_ROLE_RE = re.compile(r"\bas\s+(?:an?\s+|the\s+)?(?:[\w.'’-]+\s+){0,2}$", re.IGNORECASE)
+_FOR_RE = re.compile(r"\s+for\s+(?:the\s+)?", re.IGNORECASE)
+_CFB_INJURY_RE = re.compile(
+    r"\binjur|\bout\s+for\b|\bmissing\b|\bsidelined\b|\bquestionable\b|\bdoubtful\b"
+    r"|\bruled\s+out\b",
+    re.IGNORECASE,
+)
 
 # Word-bounded so "epa" never matches inside "prepared" or "separates".
 _BANNED_RE = re.compile(
@@ -102,21 +197,56 @@ _BANNED_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Generic capitalized words (sentence starts, calendar words, football terms).
-# Only add plain English words here, never names.
+# Name words that never identify one team on their own.
+_GENERIC_NAME_WORDS = {
+    "state", "university", "college", "north", "south", "east", "west", "central",
+    "northern", "southern", "eastern", "western",
+}
+
+# Generic capitalized words (sentence openers, calendar words, football terms).
+# Only add plain English words here, never names or surname-like words
+# (Love, Brown, Allen, Hill, Young, Chase, Hurts, Swift, ...).
 COMMON_CAPITALIZED = {
-    "a", "an", "the", "and", "but", "or", "so", "if", "when", "while", "with", "this", "that",
-    "these", "those", "they", "their", "it", "it's", "its", "he", "she", "we", "our", "you",
-    "your", "i", "i'll", "i'd", "there", "here", "now", "still", "even", "just", "only", "both",
-    "after", "before", "back", "meanwhile", "expect", "look", "don't", "can't", "won't",
-    "nobody", "everyone", "one", "two", "three", "four", "five", "first", "last", "next",
-    "no", "yes", "not", "all", "every", "for", "from", "in", "on", "at", "by", "to", "of",
-    "as", "up", "out", "down", "over", "under", "behind", "between", "against", "despite",
+    # Articles, pronouns, determiners.
+    "a", "an", "the", "this", "that", "these", "those", "it", "it's", "its", "they",
+    "they're", "their", "them", "he", "she", "we", "we're", "our", "you", "you're", "your",
+    "i", "i'm", "i'll", "i'd", "there", "there's", "here", "here's", "what", "what's", "who",
+    "which", "why", "how", "where", "everyone", "everybody", "nobody", "somebody", "anyone",
+    "something", "nothing", "everything", "neither", "either", "each", "every", "another",
+    "other", "both", "all", "any", "some", "many", "most", "few", "several", "much", "more",
+    "less", "such", "one", "two", "three", "four", "five", "ten",
+    # Conjunctions and adverbs.
+    "and", "but", "or", "nor", "so", "yet", "if", "when", "while", "whereas", "though",
+    "although", "because", "since", "unless", "until", "as", "than", "then", "now", "still",
+    "even", "just", "only", "also", "too", "again", "once", "already", "almost", "never",
+    "always", "often", "maybe", "perhaps", "however", "meanwhile", "instead", "otherwise",
+    "plus", "not", "no", "yes", "sure", "indeed", "really", "simply", "tonight", "today",
+    "tomorrow", "first", "second", "third", "fourth", "last", "next", "finally",
+    # Prepositions.
+    "for", "from", "in", "on", "at", "by", "to", "of", "up", "out", "down", "over", "under",
+    "behind", "between", "against", "despite", "after", "before", "back", "into", "off",
+    "around", "through", "across", "with", "without", "inside", "outside", "beyond", "past",
+    "toward", "about", "above", "below",
+    # Verbs that open a sentence.
+    "expect", "look", "forget", "make", "call", "coming", "going", "getting", "taking",
+    "bring", "give", "take", "keep", "watch", "picture", "imagine", "think", "believe",
+    "consider", "remember", "let's", "don't", "can't", "won't", "isn't", "aren't", "doesn't",
+    "didn't", "wasn't", "is", "are", "was", "were", "be", "has", "have", "had", "do", "does",
+    "did", "can", "could", "should", "would", "will", "must", "might", "get", "go", "buckle",
+    "strap", "hold", "enter", "welcome", "say", "know", "bet",
+    # Calendar.
     "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-    "september", "october", "november", "december", "january", "february",
-    "week", "vegas", "ap", "fbs", "fcs", "nfl", "cfb", "afc", "nfc", "model",
-    "game", "kickoff", "football", "college", "pro", "home", "road", "defense", "offense",
-    "big", "top", "ranked", "unranked", "number", "no.", "neutral", "sunday's", "saturday's",
+    "january", "february", "march", "april", "may", "june", "july", "august", "september",
+    "october", "november", "december",
+    # Football words and acronyms.
+    "week", "weekend", "vegas", "ap", "fbs", "fcs", "nfl", "cfb", "afc", "nfc", "model",
+    "game", "games", "kickoff", "football", "college", "pro", "home", "road", "defense",
+    "offense", "quarterback", "coach", "rivalry", "showdown", "heavyweight", "primetime",
+    "prime", "time", "night", "morning", "afternoon", "evening", "season", "postseason",
+    "playoff", "conference", "division", "title", "fight", "matchup", "rematch", "upset",
+    "trap", "underdog", "underdogs", "favorite", "favorites", "edge", "line", "spread",
+    "total", "market", "stakes", "crowd", "stadium", "start", "streak", "record", "bye",
+    "rest", "big", "top", "ranked", "unranked", "number", "neutral", "site",
 }
 
 
@@ -147,54 +277,234 @@ def _plain_punctuation(text: str) -> str:
     return re.sub(r"\s+([,.!?])", r"\1", text)
 
 
+def _sentences(text: str) -> list[str]:
+    return [s for s in _SENTENCE_RE.split(text) if s.strip()]
+
+
 def _name_tokens(text: str) -> set[str]:
     tokens = set()
     for match in _CAP_RE.finditer(text):
         token = match.group(0).rstrip(".").lower()
-        tokens.add(re.sub(r"['’]s$", "", token))
+        tokens.add(re.sub(r"['’]s$|['’]$", "", token))
     return tokens
 
 
-def _team_positions(sentence_low: str, team: TeamFacts) -> list[int]:
-    abbr = rf"\b{re.escape(team.abbr.lower())}\b"
-    positions = [m.start() for m in re.finditer(abbr, sentence_low)]
-    words = _NAME_WORD_RE.findall(f"{team.full_name} {team.mascot or ''}")
-    for word in {w for w in words if len(w) > 3}:
-        positions += [m.start() for m in re.finditer(re.escape(word.lower()), sentence_low)]
-    return positions
+def _team(facts: GameFacts, side: str) -> TeamFacts:
+    return facts.home if side == "home" else facts.away
 
 
-def _attribution_ok(
-    sentence_low: str, pattern: re.Pattern, expected: TeamFacts, other: TeamFacts
-) -> bool:
-    """Each keyword's nearest preceding team mention must be `expected`."""
-    exp, oth = _team_positions(sentence_low, expected), _team_positions(sentence_low, other)
-    for m in pattern.finditer(sentence_low):
-        nearest_exp = max((p for p in exp if p < m.start()), default=-1)
-        nearest_oth = max((p for p in oth if p < m.start()), default=-1)
-        if nearest_oth > nearest_exp:
-            return False
-    return True
+def _other(side: str) -> str:
+    return "away" if side == "home" else "home"
 
 
-def _market_reason(market_sentences: list[str], facts: GameFacts) -> str | None:
+def _name_words(team: TeamFacts) -> set[str]:
+    text = f"{team.full_name} {team.name} {team.mascot or ''}"
+    return {w.lower() for w in _NAME_WORD_RE.findall(text)}
+
+
+def _aliases(facts: GameFacts) -> list[tuple[str, str | None, bool]]:
+    """(alias, side, case_sensitive), longest first. Aliases are the full name,
+    short name, mascot, abbreviation, and name words unique to one team. A
+    side of None masks venue text so "DKR-Texas Memorial Stadium" is not Texas."""
+    names = {}
+    for side in ("home", "away"):
+        team, other = _team(facts, side), _team(facts, _other(side))
+        own = {team.full_name, team.name, team.mascot or "", f"{team.name} {team.mascot or ''}"}
+        unique = _name_words(team) - _name_words(other) - _GENERIC_NAME_WORDS
+        own |= {w for w in unique if len(w) > 3}
+        names[side] = {n.strip().lower() for n in own if n.strip()}
+    shared = names["home"] & names["away"]
+    aliases = [(a, side, False) for side in names for a in names[side] - shared]
+    if facts.home.abbr != facts.away.abbr:
+        aliases += [(_team(facts, s).abbr, s, True) for s in ("home", "away")]
+    if facts.venue:
+        venue_names = {facts.venue, facts.venue.split(" in ")[0]}
+        aliases += [(v.lower(), None, False) for v in venue_names]
+    return sorted(aliases, key=lambda a: -len(a[0]))
+
+
+def _mentions(sentence: str, facts: GameFacts) -> list[tuple[int, int, str]]:
+    """Team mentions as (start, end, side). Longest alias wins and masks its
+    span, so "Kansas State" is never also read as "Kansas". Abbreviations are
+    matched case-sensitively so "NO" (Saints) never matches the word "no"."""
+    taken, found = [], []
+    for alias, side, case_sensitive in _aliases(facts):
+        flags = 0 if case_sensitive else re.IGNORECASE
+        for m in re.finditer(rf"(?<![\w&]){re.escape(alias)}(?![\w&])", sentence, flags):
+            if any(m.start() < end and start < m.end() for start, end in taken):
+                continue
+            taken.append(m.span())
+            if side:
+                found.append((m.start(), m.end(), side))
+    return sorted(found)
+
+
+@dataclass
+class _Sentence:
+    """One sentence with its team mentions and clause spans. Clauses split on
+    "but", "while", ", and" and similar, so a market clause and a model clause
+    in one sentence are judged separately. Pronouns are not resolved: a claim
+    with no team in its clause falls back to the sentence's first team mention."""
+
+    text: str
+    mentions: list[tuple[int, int, str]]
+    clauses: list[tuple[int, int]]
+
+    @classmethod
+    def parse(cls, text: str, facts: GameFacts) -> "_Sentence":
+        clauses, start = [], 0
+        for m in _CLAUSE_BREAK_RE.finditer(text):
+            clauses.append((start, m.start()))
+            start = m.end()
+        clauses.append((start, len(text)))
+        return cls(text, _mentions(text, facts), clauses)
+
+    def clause(self, pos: int) -> tuple[int, int]:
+        return next((c for c in self.clauses if pos < c[1]), self.clauses[-1])
+
+    def in_model_clause(self, pos: int) -> bool:
+        start, end = self.clause(pos)
+        return bool(_MODEL_RE.search(self.text[start:end]))
+
+    def is_market(self) -> bool:
+        if _MARKET_RE.search(self.text):
+            return True
+        return any(not self.in_model_clause(m.start()) for m in _DOG_RE.finditer(self.text))
+
+    def side_at(self, start: int, end: int, prefer_after: bool = False) -> str | None:
+        cs, ce = self.clause(start)
+        before = [m for m in self.mentions if m[0] >= cs and m[1] <= start]
+        if before and _AS_ROLE_RE.search(self.text[cs:start]):
+            # "The Chargers host the Rams as 2.5-point favorites": the subject.
+            return before[0][2]
+        after = [m for m in self.mentions if m[0] >= end and m[1] <= ce]
+        for pick in ((after[:1], before[-1:]) if prefer_after else (before[-1:], after[:1])):
+            if pick:
+                return pick[0][2]
+        return self.mentions[0][2] if self.mentions else None
+
+    def side_starting_at(self, pos: int) -> str | None:
+        return next((m[2] for m in self.mentions if m[0] == pos), None)
+
+
+def _percentage_reason(s: _Sentence, facts: GameFacts) -> str | None:
+    """Each percentage belongs to the team named nearest before it in its
+    clause (else after it). "55% to 45%" gives the second number to the other
+    team, and "55% for Ohio State" to the team after "for"."""
+    prev: tuple[int, str] | None = None
+    for m in _PCT_RE.finditer(s.text):
+        side = None
+        if prev and _PAIRED_PCT_RE.fullmatch(s.text[prev[0]:m.start()]):
+            side = _other(prev[1])
+        else:
+            follow = _FOR_RE.match(s.text, m.end())
+            side = (follow and s.side_starting_at(follow.end())) or s.side_at(m.start(), m.end())
+        prev = (m.end(), side) if side else None
+        if side is None:
+            continue
+        team = _team(facts, side)
+        p = facts.home_win_prob if side == "home" else 1 - facts.home_win_prob
+        expected = round(p * 100)
+        if abs(float(m.group(1)) - expected) > 1.0:
+            return (
+                f"gives {team.name} {m.group(1)}% but the model has {team.name} at {expected}%"
+            )
+    return None
+
+
+def _market_claim_reason(side: str, role: str, facts: GameFacts) -> str | None:
     if facts.spread_home is None:
-        return "mentions a betting market but no line exists" if market_sentences else None
+        return "mentions a betting market but no line exists"
     pair = market_favorite(facts)
     if pair is None:
-        return None
+        return "calls a team the betting favorite or underdog but the line is a pick'em"
     fav, dog = pair
-    line = abs(facts.spread_home)
-    allowed = {line} | ({facts.total} if facts.total is not None else set())
-    for s in market_sentences:
-        favorite_ok = _attribution_ok(s, _FAVORITE_RE, fav, dog)
-        if not (favorite_ok and _attribution_ok(s, _LAYING_RE, fav, dog)):
-            return f"says the wrong team is the betting favorite (the market favors {fav.name})"
-        if not _attribution_ok(s, _GETTING_RE, dog, fav):
-            return f"says the favorite is getting points (only {dog.name} is getting points)"
-        for m in _POINTS_NUM_RE.finditer(s):
-            if float(m.group(1)) not in allowed:
-                return f"cites {m.group(1)} points but the line is {line:g}"
+    team = _team(facts, side)
+    if role == "favorite" and team is not fav:
+        return f"says the wrong team is the betting favorite (the market favors {fav.name})"
+    if role == "getting" and team is not dog:
+        return f"says the favorite is getting points (only {dog.name} is getting points)"
+    if role == "underdog" and team is not dog:
+        return f"calls the betting favorite the underdog (the market favors {fav.name})"
+    return None
+
+
+def _model_claim_reason(side: str, role: str, facts: GameFacts) -> str | None:
+    p = facts.home_win_prob
+    if p == 0.5:
+        return None
+    fav_side = "home" if p > 0.5 else "away"
+    fav = _team(facts, fav_side)
+    if role == "favorite" and side != fav_side:
+        return f"calls the wrong team the model's favorite (the model favors {fav.name})"
+    if role != "favorite" and side == fav_side:
+        return f"calls the model's favorite the underdog (the model favors {fav.name})"
+    return None
+
+
+def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
+    """Favorite / underdog wording is a market claim in a market sentence and a
+    model claim otherwise, except in a clause that names the model. Laying,
+    getting, signed numbers, "favored by N" and "N-point favorite" are always
+    market claims."""
+    claims = [(m, "favorite", False) for m in _FAV_RE.finditer(s.text)]
+    claims += [(m, "underdog", False) for m in _DOG_RE.finditer(s.text)]
+    claims += [(m, "favorite", True) for m in _LAYING_RE.finditer(s.text)]
+    claims += [(m, "getting", True) for m in _GETTING_RE.finditer(s.text)]
+    for m, role, market_only in sorted(claims, key=lambda c: c[0].start()):
+        side = s.side_at(m.start(), m.end())
+        if side is None:
+            continue
+        window = s.text[max(0, m.start() - 25):m.end() + 15]
+        market_only = market_only or bool(_MARKET_ONLY_FAV_RE.search(window))
+        if market_only or (market and not s.in_model_clause(m.start())):
+            reason = _market_claim_reason(side, role, facts)
+        else:
+            reason = _model_claim_reason(side, role, facts)
+        if reason:
+            return reason
+    for m in _AGENT_RE.finditer(s.text):
+        side = s.side_at(m.start(), m.end(), prefer_after=True)
+        if side is None:
+            continue
+        if m.group(1).lower() == "model":
+            reason = _model_claim_reason(side, "favorite", facts)
+        else:
+            reason = _market_claim_reason(side, "favorite", facts)
+        if reason:
+            return reason
+    return None
+
+
+def _market_numbers_reason(s: _Sentence, facts: GameFacts) -> str | None:
+    """Only numbers attached to market words count, so a score margin like
+    "won by 21 points" in a market sentence is not read as the line."""
+    line = abs(facts.spread_home or 0.0)
+    for m in _LINE_NUM_RE.finditer(s.text):
+        number = next(g for g in m.groups() if g)
+        if float(number) != line:
+            return f"cites {number} points but the line is {line:g}"
+    for m in _TOTAL_NUM_RE.finditer(s.text):
+        if facts.total is None:
+            return "cites a total but none is posted"
+        if float(m.group(1)) != facts.total:
+            return f"cites a total of {m.group(1)} but the total is {facts.total:g}"
+    return None
+
+
+def _injury_team_reason(s: _Sentence, facts: GameFacts) -> str | None:
+    """An injury-report name must not be pinned on the other team. Only the full
+    name is matched; a lone surname is not checked."""
+    for side in ("home", "away"):
+        team = _team(facts, side)
+        for injury in team.injuries:
+            name = injury.split(" (")[0].split(" is listed")[0]
+            pos = s.text.find(name)
+            if pos < 0 or any(m[2] == side for m in s.mentions):
+                continue
+            before = [m for m in s.mentions if m[1] <= pos]
+            if before and before[-1][2] != side:
+                return f"puts {name} on the wrong team (the {team.name} list {name})"
     return None
 
 
@@ -205,7 +515,7 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
     words = len(text.split())
     if words > MAX_WORDS:
         return f"too long ({words} words, limit {MAX_WORDS})"
-    sentences = [s for s in _SENTENCE_RE.split(text) if s.strip()]
+    sentences = _sentences(text)
     if len(sentences) > 4:
         return "more than 4 sentences"
     banned = _BANNED_RE.search(text)
@@ -213,6 +523,8 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
         return f"uses banned phrase '{banned.group(1).lower()}'"
     if _SPELLED_NUMBER_RE.search(text):
         return "spells out a number, write digits"
+    if facts.sport == "CFB" and _CFB_INJURY_RE.search(text):
+        return "mentions injuries, but college football has no reliable injury report"
     p = facts.home_win_prob
     valid = {round(p * 100), round((1 - p) * 100)}
     for match in _PCT_RE.finditer(text):
@@ -221,17 +533,31 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
     unknown = _name_tokens(text) - _name_tokens(render_fact_sheet(facts)) - COMMON_CAPITALIZED
     if unknown:
         return f"names not in the fact sheet: {', '.join(sorted(unknown))}"
-    lowered = [s.lower() for s in sentences]
-    market = [s for s in lowered if _MARKET_RE.search(s)]
-    reason = _market_reason(market, facts)
-    if reason:
-        return reason
-    if p != 0.5:
-        fav, dog = (facts.home, facts.away) if p > 0.5 else (facts.away, facts.home)
-        for s in lowered:
-            if s not in market and not _attribution_ok(s, _FAVORITE_RE, fav, dog):
-                return f"calls the wrong team the model's favorite (the model favors {fav.name})"
+    parsed = [_Sentence.parse(s, facts) for s in sentences]
+    market = [s.is_market() for s in parsed]
+    if facts.spread_home is None and any(market):
+        return "mentions a betting market but no line exists"
+    for s in parsed:
+        reason = _percentage_reason(s, facts)
+        if reason:
+            return reason
+    for s, is_market in zip(parsed, market, strict=True):
+        reason = _claims_reason(s, facts, is_market)
+        if not reason and is_market:
+            reason = _market_numbers_reason(s, facts)
+        reason = reason or _injury_team_reason(s, facts)
+        if reason:
+            return reason
     return None
+
+
+# Client errors that a retry cannot fix.
+_NON_RETRYABLE = (
+    anthropic.AuthenticationError,
+    anthropic.PermissionDeniedError,
+    anthropic.BadRequestError,
+    anthropic.NotFoundError,
+)
 
 
 def _call_api(client, model: str, system: str, messages: list[dict]) -> str:
@@ -257,9 +583,14 @@ def generate(facts: GameFacts) -> NarrationResult:
         try:
             text = _call_api(client, settings.anthropic_model, system, messages)
         except Exception as exc:
-            logger.warning("narration attempt %d failed: %s", attempt, exc)
-            rejections.append(f"api error: {exc}")
-            time.sleep(2)
+            # Only the error type: messages can carry URLs or request details.
+            kind = type(exc).__name__
+            logger.warning("narration attempt %d failed: %s", attempt, kind)
+            rejections.append(f"api error: {kind}")
+            if isinstance(exc, _NON_RETRYABLE):
+                return NarrationResult(text=None, attempts=attempt, rejections=rejections)
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(2)
             continue
         reason = check_narration(text, facts)
         if reason is None:
