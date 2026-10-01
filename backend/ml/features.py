@@ -11,6 +11,7 @@ and the market feature is always available, so Week 1 predictions are real
 rather than a flat 50/50.
 """
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.market import plausible_moneylines
 from app.models import SPORT_NFL, Game, Injury, Odds, PollRank, Team, TeamGameStat, Weather
 from ml import elo
 
@@ -89,25 +91,25 @@ def moneyline_to_prob(ml: float) -> float:
     return 100.0 / (ml + 100.0)
 
 
-# CFBD returns this as a "no real price quoted" marker on the extreme side
-# of lopsided blowouts, not a genuine moneyline -- treating it as real
-# corrupts the de-vigged probability toward 0.5 for a real blowout.
-_NO_QUOTE_SENTINEL = 100_000
+ELO_PER_SPREAD_POINT = 25.0
+
+
+def _spread_to_prob(spread_home: float) -> float:
+    return 1.0 / (1.0 + 10.0 ** (-spread_home * ELO_PER_SPREAD_POINT / 400.0))
+
+
+def _prob_to_spread(p: float) -> float:
+    return math.log10(p / (1.0 - p)) * 400.0 / ELO_PER_SPREAD_POINT
 
 
 def market_home_prob(home_ml, away_ml, spread_home) -> float | None:
     """De-vigged moneyline probability; spread-based fallback (25 Elo/point)."""
-    if (
-        home_ml is not None
-        and away_ml is not None
-        and abs(home_ml) < _NO_QUOTE_SENTINEL
-        and abs(away_ml) < _NO_QUOTE_SENTINEL
-    ):
+    if plausible_moneylines(home_ml, away_ml):
         p_home = moneyline_to_prob(home_ml)
         p_away = moneyline_to_prob(away_ml)
         return p_home / (p_home + p_away)
     if spread_home is not None:
-        return 1.0 / (1.0 + 10.0 ** (-spread_home * 25.0 / 400.0))
+        return _spread_to_prob(spread_home)
     return None
 
 
@@ -245,7 +247,7 @@ def _elo_pregame(
 def _team_form(games: pd.DataFrame, stats: pd.DataFrame) -> pd.DataFrame:
     """Post-game rolling form per (team, played game): last-5 EPA/margin/win%,
     last-3 turnover differential. Consumed via as-of merge."""
-    played = games[games["home_score"].notna()]
+    played = games[games["home_score"].notna() & games["away_score"].notna()]
     home = played[["game_id", "kickoff", "home_team_id", "home_score", "away_score"]].copy()
     home.columns = ["game_id", "kickoff", "team_id", "pts_for", "pts_against"]
     away = played[["game_id", "kickoff", "away_team_id", "away_score", "home_score"]].copy()
@@ -411,6 +413,8 @@ def build_features(
         df["home_moneyline"] = df["moneyline_home"].combine_first(df["home_moneyline"])
         df["away_moneyline"] = df["moneyline_away"].combine_first(df["away_moneyline"])
 
+    df["has_market_spread"] = df["spread_line"].notna().astype(float)
+
     # Diff features (home minus away).
     df["elo_diff"] = df["elo_home"] - df["elo_away"]
     df["epa_off_diff"] = df["home_form_epa_off"] - df["away_form_epa_off"]
@@ -436,13 +440,29 @@ def build_features(
     )
 
     df["market_spread_home"] = df["spread_line"]
-    df["market_home_prob"] = df.apply(
-        lambda r: market_home_prob(
-            None if pd.isna(r["home_moneyline"]) else float(r["home_moneyline"]),
-            None if pd.isna(r["away_moneyline"]) else float(r["away_moneyline"]),
-            None if pd.isna(r["spread_line"]) else float(r["spread_line"]),
+    df["market_home_prob"] = pd.to_numeric(
+        df.apply(
+            lambda r: market_home_prob(
+                None if pd.isna(r["home_moneyline"]) else float(r["home_moneyline"]),
+                None if pd.isna(r["away_moneyline"]) else float(r["away_moneyline"]),
+                None if pd.isna(r["spread_line"]) else float(r["spread_line"]),
+            ),
+            axis=1,
         ),
-        axis=1,
+        errors="coerce",
+    )
+    # No posted line: stand in an Elo-implied one so the model never routes a
+    # missing market down the branch it learned from FCS mismatches. The flag
+    # keeps the imputed line out of explanations, narration, and baselines.
+    df["has_market_line"] = df["market_home_prob"].notna().astype(float)
+    hfa = elo.config_for(sport).hfa
+    elo_spread = (df["elo_home"] - df["elo_away"] + hfa) / ELO_PER_SPREAD_POINT
+    ml_p = df["market_home_prob"].where(df["spread_line"].isna()).clip(1e-9, 1 - 1e-9)
+    ml_spread = ml_p.map(_prob_to_spread, na_action="ignore")
+    df["market_spread_home"] = df["market_spread_home"].fillna(ml_spread).fillna(elo_spread)
+    missing_prob = df["market_home_prob"].isna()
+    df["market_home_prob"] = df["market_home_prob"].fillna(
+        df["market_spread_home"].where(missing_prob).map(_spread_to_prob, na_action="ignore")
     )
 
     # Tier class edge (FBS=1, FCS=0); 0.0 for NFL where tier is NULL.
@@ -468,7 +488,7 @@ def build_features(
         df["poll_strength_diff"] = df["home_poll_strength"] - df["away_poll_strength"]
 
     df["home_win"] = np.where(
-        df["home_score"].isna(),
+        df["home_score"].isna() | df["away_score"].isna(),
         np.nan,
         (df["home_score"] > df["away_score"]).astype(float),
     )
@@ -480,7 +500,8 @@ def build_features(
 
     meta = [
         "game_id", "season", "week", "kickoff", "home_abbr", "away_abbr",
-        "home_tier", "away_tier", "home_win",
+        "home_tier", "away_tier", "home_win", "has_market_line",
+        "has_market_spread",
     ]
     return df[meta + FEATURE_COLUMNS].reset_index(drop=True)
 

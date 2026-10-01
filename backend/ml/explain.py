@@ -67,13 +67,23 @@ def top_factors(
     home_win_prob: float,
     n: int = 4,
     sport: str = SPORT_NFL,
+    market_available: bool = True,
+    spread_available: bool = True,
 ) -> list[dict]:
     """Top-n features by |SHAP|. `value` is the approximate probability-space
-    contribution; positive always means "toward the home team"."""
+    contribution; positive always means "toward the home team". Imputed market
+    features are never listed: no line drops both, no posted spread drops the
+    spread only (the moneyline probability is still a real market signal)."""
     labels = feature_labels(sport)
     shap_values = np.asarray(explainer.shap_values(row))[0]
     scale = home_win_prob * (1.0 - home_win_prob)
-    order = np.argsort(-np.abs(shap_values))[:n]
+    excluded = set()
+    if not market_available:
+        excluded |= set(_MARKET_GROUND_TRUTH)
+    if not spread_available:
+        excluded.add("market_spread_home")
+    ranked = [i for i in np.argsort(-np.abs(shap_values)) if row.columns[i] not in excluded]
+    order = ranked[:n]
     factors = []
     for idx in order:
         feature = row.columns[idx]

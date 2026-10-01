@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.models import SPORT_CFB, Base, Game, PollRank, Team
+from app.models import SPORT_CFB, Base, Game, PollRank, Stadium, Team
 from data_pipeline.backfill_cfb import pick_lines
 from data_pipeline.cfb_games_loader import should_skip_game, upsert_games
 from data_pipeline.cfb_team_names import build_alias_map, cfb_to_abbr, derive_abbrs
@@ -227,6 +227,42 @@ def test_upsert_games_idempotent_and_updates(cfb_db):
     upsert_games(cfb_db, updated)
     assert len(cfb_db.scalars(select(Game)).all()) == 2
     assert cfb_db.get(Game, "cfb_104").kickoff_time is not None
+
+
+def _venue_game(game_id: int, venue: str, neutral: bool) -> pd.DataFrame:
+    return pd.DataFrame([{
+        "id": game_id, "season": 2026, "week": 1,
+        "startDate": "2026-08-29T16:00:00.000Z", "startTimeTBD": False,
+        "homeTeam": "Ohio State", "awayTeam": "Michigan",
+        "venue": venue, "neutralSite": neutral, "conferenceGame": True,
+        "homePoints": None, "awayPoints": None, "completed": False,
+    }])
+
+
+def test_neutral_site_and_unmatched_venue_are_recorded(cfb_db):
+    upsert_games(cfb_db, _venue_game(401899999, "Aviva Stadium", True))
+    game = cfb_db.get(Game, "cfb_401899999")
+    assert game.is_neutral_site is True
+    assert game.stadium_id is None
+    assert game.venue_name == "Aviva Stadium"
+
+
+def test_missing_completed_with_one_score_stays_scheduled(cfb_db):
+    df = _venue_game(401899997, "Aviva Stadium", True).drop(columns=["completed"])
+    df["homePoints"] = 7
+    upsert_games(cfb_db, df)
+    assert cfb_db.get(Game, "cfb_401899997").status == "scheduled"
+
+
+def test_matched_venue_keeps_venue_name_empty(cfb_db):
+    cfb_db.add(Stadium(name="Test Field", city="Columbus", lat=40.0, lon=-83.0,
+                       is_dome=False, surface="grass"))
+    cfb_db.flush()
+    upsert_games(cfb_db, _venue_game(401899998, "Test Field", False))
+    game = cfb_db.get(Game, "cfb_401899998")
+    assert game.is_neutral_site is False
+    assert game.stadium_id is not None
+    assert game.venue_name is None
 
 
 # --- poll upsert ---

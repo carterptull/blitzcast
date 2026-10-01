@@ -47,8 +47,8 @@ describe("buildOgContent", () => {
     expect(c.final).toBe(false);
     expect(c.hasProbs).toBe(false);
     expect(c.pending).toBe(true);
-    expect(c.away.value).toBe("—");
-    expect(c.home.value).toBe("—");
+    expect(c.away.value).toBe("TBD");
+    expect(c.home.value).toBe("TBD");
     expect(c.away.highlight).toBe(false);
     expect(c.home.highlight).toBe(false);
     expect(c.verdictText).toBeNull();

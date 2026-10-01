@@ -1,10 +1,11 @@
 """Leakage and feature-engineering correctness tests."""
 
 import pandas as pd
+import pytest
 from sqlalchemy import select
 
 from app.models import Game
-from ml.features import FEATURE_COLUMNS, build_features, market_home_prob
+from ml.features import FEATURE_COLUMNS, _prob_to_spread, build_features, market_home_prob
 
 
 def _feature_row(df: pd.DataFrame, game_id: str) -> pd.Series:
@@ -86,3 +87,85 @@ def test_market_home_prob_ignores_no_quote_sentinel():
     # Two genuine, merely large, favorites are untouched.
     assert market_home_prob(-1725, 900, None) is not None
     assert 0.5 < market_home_prob(-1725, 900, None) < 1.0
+
+
+def test_half_scored_game_is_not_treated_as_played(db):
+    """Completion invariant: a row with only one score has not finished."""
+    week1 = db.scalars(select(Game).where(Game.game_id == "2025_01_BUF_KC")).one()
+    week1.away_score = None
+    db.flush()
+
+    df = build_features(db)
+    assert pd.isna(_feature_row(df, "2025_01_BUF_KC")["home_win"])
+    # KC's week-2 form must not include the half-scored week-1 game.
+    before = _feature_row(df, "2025_02_BUF_KC")["point_margin_diff"]
+    assert pd.isna(before) or before == 0
+
+
+def test_no_line_game_gets_elo_imputed_market_and_a_flag(db):
+    game = db.scalars(select(Game).where(Game.game_id == "2026_01_BUF_KC")).one()
+    game.spread_line = None
+    game.home_moneyline = None
+    game.away_moneyline = None
+    db.flush()
+
+    row = _feature_row(build_features(db), "2026_01_BUF_KC")
+    assert row["has_market_line"] == 0.0
+    assert row["has_market_spread"] == 0.0
+    expected = (row["elo_diff"] + 55.0) / 25.0  # NFL HFA 55, 25 Elo per point
+    assert abs(row["market_spread_home"] - expected) < 1e-9
+    assert 0.0 < row["market_home_prob"] < 1.0
+
+
+def test_lined_game_keeps_its_market_and_flag(db):
+    row = _feature_row(build_features(db), "2026_01_PHI_DAL")
+    assert row["has_market_line"] == 1.0
+    assert row["market_spread_home"] == -3.5
+
+
+def test_spread_only_game_has_line_and_spread_flags(db):
+    game = db.scalars(select(Game).where(Game.game_id == "2026_01_BUF_KC")).one()
+    game.spread_line = 2.5
+    game.home_moneyline = None
+    game.away_moneyline = None
+    db.flush()
+
+    row = _feature_row(build_features(db), "2026_01_BUF_KC")
+    assert row["has_market_line"] == 1.0
+    assert row["has_market_spread"] == 1.0
+    assert row["market_spread_home"] == 2.5
+
+
+def test_moneyline_only_game_derives_spread_but_flags_no_spread(db):
+    game = db.scalars(select(Game).where(Game.game_id == "2026_01_BUF_KC")).one()
+    game.spread_line = None
+    game.home_moneyline = -150
+    game.away_moneyline = 130
+    db.flush()
+
+    row = _feature_row(build_features(db), "2026_01_BUF_KC")
+    assert row["has_market_line"] == 1.0
+    assert row["has_market_spread"] == 0.0
+    expected = _prob_to_spread(market_home_prob(-150, 130, None))
+    assert abs(row["market_spread_home"] - expected) < 1e-9
+    elo_spread = (row["elo_diff"] + 55.0) / 25.0
+    assert abs(row["market_spread_home"] - elo_spread) > 1e-6
+
+
+@pytest.mark.parametrize("spread", [9999.0, -9999.0])
+def test_spread_outlier_does_not_overflow_and_keeps_moneyline_prob(db, spread):
+    game = db.scalars(select(Game).where(Game.game_id == "2026_01_BUF_KC")).one()
+    game.spread_line = spread
+    game.home_moneyline = -150
+    game.away_moneyline = 130
+    db.flush()
+
+    row = _feature_row(build_features(db), "2026_01_BUF_KC")
+    assert abs(row["market_home_prob"] - market_home_prob(-150, 130, None)) < 1e-9
+
+
+def test_metadata_flag_columns_exist_and_are_not_model_inputs(db):
+    df = build_features(db)
+    for col in ("has_market_line", "has_market_spread"):
+        assert col in df.columns
+        assert col not in FEATURE_COLUMNS

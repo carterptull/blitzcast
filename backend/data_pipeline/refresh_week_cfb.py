@@ -28,7 +28,10 @@ def main() -> None:
         "cfb schedule sync", ["data_pipeline.refresh_schedule_cfb", "--season", season]
     )
     run_step("cfb odds refresh", ["data_pipeline.refresh_odds", "--sport", "cfb"])
-    run_step("cfb weather refresh", ["data_pipeline.refresh_weather", "--sport", "cfb"])
+    run_step(
+        "cfb weather refresh",
+        ["data_pipeline.refresh_weather", "--sport", "cfb", "--backfill-days", "3"],
+    )
     run_step("cfb polls refresh", ["data_pipeline.refresh_polls_cfb", "--season", season])
 
     if not args.skip_predict:

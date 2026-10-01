@@ -4,15 +4,16 @@ Neutral-site games (no Team-derived stadium) are looked up by their raw
 venue name instead of lat/lon, since most international venues have no
 Stadium row; a game with neither a stadium nor a venue name is skipped.
 
-Usage: python -m data_pipeline.refresh_weather [--days 8] [--sport nfl|cfb]
+Usage: python -m data_pipeline.refresh_weather [--days 8] [--backfill-days 0] [--sport nfl|cfb]
 """
 
 import argparse
 import sys
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
 
 import requests
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import joinedload
 
 from app.config import get_settings
@@ -22,12 +23,19 @@ from app.models import SPORT_CFB, SPORT_NFL, Game, Weather
 BASE_URL = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
 
 
+def _describe_error(exc: Exception) -> str:
+    """Request exception text embeds the URL, including the API key, so only
+    the exception type and HTTP status are ever logged."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return f"{type(exc).__name__}, status {status if status is not None else 'n/a'}"
+
+
 def fetch_day(location: str, day: str, api_key: str) -> dict:
     """`location` is a Visual Crossing Timeline API location: either a
     "lat,lon" pair or a free-text place name (used for neutral-site games,
     which have no Stadium row to pull coordinates from)."""
     resp = requests.get(
-        f"{BASE_URL}/{location}/{day}",
+        f"{BASE_URL}/{quote(location, safe=',')}/{day}",
         params={"key": api_key, "unitGroup": "us", "include": "hours"},
         timeout=30,
     )
@@ -48,9 +56,35 @@ def _kickoff_hour(payload: dict, kickoff_utc: datetime) -> dict | None:
     return min(hours, key=lambda h: abs(h.get("datetimeEpoch", 0) - target))
 
 
+def select_games(
+    db, sport: str, now: datetime, days: int, backfill_days: int
+) -> list[Game]:
+    """Upcoming games in the look-ahead window, plus (with backfill_days) recent
+    past games that never got a weather row: a missed run otherwise loses
+    that game's weather for good."""
+    window = (Game.kickoff_time >= now) & (Game.kickoff_time <= now + timedelta(days=days))
+    if backfill_days:
+        missed = (
+            (Game.kickoff_time < now)
+            & (Game.kickoff_time >= now - timedelta(days=backfill_days))
+            & ~exists().where(Weather.game_id == Game.game_id)
+        )
+        window = window | missed
+    return db.scalars(
+        select(Game).options(joinedload(Game.stadium)).where(Game.sport == sport, window)
+    ).all()
+
+
+def exit_code(updated: int, failed: int) -> int:
+    return 1 if failed and not updated else 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=8, help="look-ahead window")
+    parser.add_argument(
+        "--backfill-days", type=int, default=0, help="also fetch past games missing weather"
+    )
     # Defaults to NFL: a full FBS slate is ~70 games per run against a free tier.
     parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl")
     args = parser.parse_args()
@@ -58,21 +92,13 @@ def main() -> None:
 
     settings = get_settings()
     if not settings.visual_crossing_api_key:
-        print("VISUAL_CROSSING_API_KEY is not set in backend/.env — skipping weather refresh.")
+        print("WARNING: VISUAL_CROSSING_API_KEY is not set; no weather fetched.")
         sys.exit(0)
 
     now = datetime.now(UTC)
     updated = skipped = failed = 0
     with session_scope() as db:
-        games = db.scalars(
-            select(Game)
-            .options(joinedload(Game.stadium))
-            .where(
-                Game.sport == sport,
-                Game.kickoff_time >= now,
-                Game.kickoff_time <= now + timedelta(days=args.days),
-            )
-        ).all()
+        games = select_games(db, sport, now, args.days, args.backfill_days)
         for game in games:
             stadium = game.stadium
             if stadium is not None and stadium.is_dome:
@@ -94,7 +120,7 @@ def main() -> None:
             except requests.RequestException as exc:
                 # Commit per game: the quota spent on earlier calls is gone
                 # either way, so a late failure must not roll them back.
-                print(f"weather refresh: {game.game_id} failed ({exc})")
+                print(f"weather refresh: {game.game_id} failed ({_describe_error(exc)})")
                 failed += 1
                 continue
             hour = _kickoff_hour(payload, game.kickoff_time)
@@ -116,6 +142,7 @@ def main() -> None:
         f"weather refresh ({args.sport}): updated {updated}, skipped {skipped} "
         f"(dome, or no venue known), failed {failed}"
     )
+    sys.exit(exit_code(updated, failed))
 
 
 if __name__ == "__main__":

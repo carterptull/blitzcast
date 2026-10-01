@@ -6,6 +6,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.market import plausible_moneylines
 from app.models import SPORT_CFB, SPORT_NFL, Game, Odds, PollRank, Prediction, Team, Weather
 from app.schemas import (
     FactorOut,
@@ -302,17 +303,19 @@ def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
     )
 
     if odds is not None:
+        ml_home, ml_away = _shown_moneylines(odds.moneyline_home, odds.moneyline_away)
         odds_out = OddsOut(
             spread_home=odds.spread_home,
-            moneyline_home=odds.moneyline_home,
-            moneyline_away=odds.moneyline_away,
+            moneyline_home=ml_home,
+            moneyline_away=ml_away,
             total=odds.total,
         )
     elif game.spread_line is not None or game.home_moneyline is not None:
+        ml_home, ml_away = _shown_moneylines(game.home_moneyline, game.away_moneyline)
         odds_out = OddsOut(
             spread_home=game.spread_line,
-            moneyline_home=game.home_moneyline,
-            moneyline_away=game.away_moneyline,
+            moneyline_home=ml_home,
+            moneyline_away=ml_away,
             total=game.total_line,
         )
     else:
@@ -415,6 +418,10 @@ def _latest_odds_by_game(db: Session, games: dict[str, Game]) -> dict[str, Odds]
         if _as_utc(odds.captured_at) < kickoff:
             latest[odds.game_id] = odds
     return latest
+
+
+def _shown_moneylines(home, away) -> tuple[int | None, int | None]:
+    return (home, away) if plausible_moneylines(home, away) else (None, None)
 
 
 def _market_prob(game: Game, odds: Odds | None) -> float | None:

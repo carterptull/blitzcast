@@ -30,7 +30,7 @@ def main() -> None:
     # Keeps the rolling EPA/turnover form features fed once games are final.
     run_step("stats refresh", ["data_pipeline.refresh_stats", "--season", season])
     run_step("odds refresh", ["data_pipeline.refresh_odds"])
-    run_step("weather refresh", ["data_pipeline.refresh_weather"])
+    run_step("weather refresh", ["data_pipeline.refresh_weather", "--backfill-days", "3"])
     run_step("injury refresh", ["data_pipeline.refresh_injuries", "--season", season])
 
     if not args.skip_predict:

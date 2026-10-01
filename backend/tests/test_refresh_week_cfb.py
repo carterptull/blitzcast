@@ -19,7 +19,9 @@ def test_orchestrator_calls_weather_refresh_for_cfb():
     weather_call = next(
         call for call in mock_run.call_args_list if call.args[0] == "cfb weather refresh"
     )
-    assert weather_call.args[1] == ["data_pipeline.refresh_weather", "--sport", "cfb"]
+    assert weather_call.args[1] == [
+        "data_pipeline.refresh_weather", "--sport", "cfb", "--backfill-days", "3",
+    ]
 
     # Weather runs after odds, before polls -- matches NFL's step ordering.
     assert steps.index("cfb odds refresh") < steps.index("cfb weather refresh")

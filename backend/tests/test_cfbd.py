@@ -3,18 +3,19 @@ stored as a genuine moneyline (see cfb_401856665, a 57-0 game where both
 sides came back -100000, which corrupted market_home_prob toward 0.5)."""
 from unittest.mock import patch
 
-from data_pipeline.cfbd import _real_moneyline, load_lines
+from app.market import real_moneyline
+from data_pipeline.cfbd import load_lines
 
 
 def test_real_moneyline_passes_through_genuine_prices():
-    assert _real_moneyline(-1725) == -1725
-    assert _real_moneyline(900) == 900
-    assert _real_moneyline(None) is None
+    assert real_moneyline(-1725) == -1725
+    assert real_moneyline(900) == 900
+    assert real_moneyline(None) is None
 
 
 def test_real_moneyline_filters_no_quote_sentinel():
-    assert _real_moneyline(-100000) is None
-    assert _real_moneyline(100000) is None
+    assert real_moneyline(-100000) is None
+    assert real_moneyline(100000) is None
 
 
 def test_load_lines_filters_sentinel_from_api_response():

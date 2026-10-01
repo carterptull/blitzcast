@@ -84,7 +84,11 @@ def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
         game.kickoff_time = None if tbd else start
         game.home_team_id = home.team_id
         game.away_team_id = away.team_id
-        game.stadium_id = stadium_by_name.get(field(row, "venue"))
+        venue = field(row, "venue")
+        game.stadium_id = stadium_by_name.get(venue)
+        # Unmatched venues keep their raw name so weather can geocode them.
+        game.venue_name = None if game.stadium_id else venue
+        game.is_neutral_site = bool(field(row, "neutralSite", "neutral_site"))
         game.is_primetime = _is_primetime(game.kickoff_time)
         # For CFB, "divisional" means same-conference.
         game.is_divisional = bool(field(row, "conferenceGame", "conference_game"))
@@ -94,7 +98,7 @@ def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
         game.away_score = None if away_pts is None else int(away_pts)
         completed = field(row, "completed")
         if completed is None:
-            completed = home_pts is not None
+            completed = home_pts is not None and away_pts is not None
         game.status = "final" if completed else "scheduled"
         written += 1
     db.flush()

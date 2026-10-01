@@ -106,12 +106,12 @@ describe("Format Utilities", () => {
       expect(fmtSpread(matchup({ spread_home: 0 }))).toBe("PK");
     });
 
-    test("no odds renders a dash", () => {
-      expect(fmtSpread(matchup(null))).toBe("—");
+    test("no odds renders N/A", () => {
+      expect(fmtSpread(matchup(null))).toBe("N/A");
     });
 
-    test("odds present but spread missing renders a dash", () => {
-      expect(fmtSpread(matchup({ total: 48.5 }))).toBe("—");
+    test("odds present but spread missing renders N/A", () => {
+      expect(fmtSpread(matchup({ total: 48.5 }))).toBe("N/A");
     });
 
     test("agrees with the moneyline favorite", () => {

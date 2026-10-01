@@ -15,6 +15,7 @@ from sqlalchemy import and_, or_, select
 
 from app.config import get_settings
 from app.db import session_scope
+from app.market import plausible_moneylines
 from app.models import SPORT_CFB, SPORT_NFL, Game, Odds
 from data_pipeline.cfb_team_names import cfb_to_abbr
 from data_pipeline.games_loader import team_id_map
@@ -42,7 +43,9 @@ def _consensus(event: dict, home_abbr: str, away_abbr: str) -> dict:
                 continue
             outcomes = {o["name"]: o for o in market.get("outcomes", [])}
             if key == "h2h" and home_name in outcomes and away_name in outcomes:
-                out["h2h"] = (outcomes[home_name]["price"], outcomes[away_name]["price"])
+                pair = (outcomes[home_name]["price"], outcomes[away_name]["price"])
+                if plausible_moneylines(*pair):
+                    out["h2h"] = pair
             elif key == "spreads" and home_name in outcomes:
                 out["spreads"] = outcomes[home_name].get("point")
             elif key == "totals" and market.get("outcomes"):
@@ -62,17 +65,26 @@ def main() -> None:
         print("ODDS_API_KEY is not set in backend/.env — skipping odds refresh.")
         sys.exit(0)
 
-    resp = requests.get(
-        ODDS_URL.format(sport_key=SPORT_KEYS[args.sport]),
-        params={
-            "regions": "us",
-            "markets": "h2h,spreads,totals",
-            "oddsFormat": "american",
-            "apiKey": settings.odds_api_key,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.get(
+            ODDS_URL.format(sport_key=SPORT_KEYS[args.sport]),
+            params={
+                "regions": "us",
+                "markets": "h2h,spreads,totals",
+                "oddsFormat": "american",
+                "apiKey": settings.odds_api_key,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        # The exception text embeds the URL, including the API key.
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        print(
+            f"odds refresh failed: {type(exc).__name__}, "
+            f"status {status if status is not None else 'n/a'}"
+        )
+        sys.exit(1)
     events = resp.json()
     remaining = resp.headers.get("x-requests-remaining")
 

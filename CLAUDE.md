@@ -74,7 +74,9 @@ Full setup + env vars: [README.md](./README.md) and
   `Game.status` column. It's derived, unindexed, and has been wrong before
   (set final on the home score alone). Always check
   `home_score is not None and away_score is not None` directly, at every
-  call site (status filter, verdict grading, the season record).
+  call site (status filter, verdict grading, the season record, the
+  feature builder's played-game checks, the stats refresh, and the NFL
+  loader's status).
 - **LLM boundary:** Claude narrates model output only; it never predicts,
   never alters probabilities. Guardrails live in `narrate.py` — they check
   both percentage magnitude (`_percentages_consistent`) and team
@@ -90,7 +92,7 @@ Full setup + env vars: [README.md](./README.md) and
   feature to `_MARKET_GROUND_TRUTH` if it has a similar independent truth
   to check against.
 - **Neutral-site games:** `Game.venue_name`/`is_neutral_site` hold the raw
-  nflverse venue for games with no Team-derived stadium (`stadium_id`
+  nflverse or CFBD venue for games with no Team-derived stadium (`stadium_id`
   NULL). `refresh_weather.py` fetches these by venue-name geocoding
   instead of lat/lon; don't reintroduce a bare `stadium is None: skip`
   check without also checking `venue_name`.
@@ -98,6 +100,9 @@ Full setup + env vars: [README.md](./README.md) and
   jobs degrade gracefully when keys are missing — preserve that property.
 - **Odds API budget:** free tier, 500 req/month — odds are fetched by the
   daily/weekly batch only, never per user request.
+- **Moneyline sanity:** `app/market.py` (`real_moneyline`,
+  `plausible_moneylines`) is the single rule for ingest, features, and the
+  API; don't add a second one.
 - **Comments:** minimal, clean, simple.
 - Python: SQLAlchemy 2.x typed `Mapped` style, ruff-clean. Schema changes
   go through Alembic migrations, never manual edits.

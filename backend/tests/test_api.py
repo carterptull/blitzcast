@@ -320,3 +320,20 @@ def test_mock_mode_cfb(client, monkeypatch):
         assert len(client.get("/api/teams").json()) == 32
     finally:
         monkeypatch.setattr(get_settings(), "blitzcast_mock", False)
+
+
+def test_sentinel_moneylines_are_hidden_from_the_api(client, db):
+    from datetime import UTC, datetime
+
+    from app.models import Odds
+
+    db.add(Odds(
+        game_id="2026_01_BUF_KC", source="the-odds-api", spread_home=2.5,
+        moneyline_home=-100000, moneyline_away=-100000, total=47.0,
+        captured_at=datetime(2026, 9, 10, tzinfo=UTC),
+    ))
+    db.commit()
+    odds = client.get("/api/predictions/2026_01_BUF_KC").json()["odds"]
+    assert odds["moneyline_home"] is None
+    assert odds["moneyline_away"] is None
+    assert odds["spread_home"] == 2.5

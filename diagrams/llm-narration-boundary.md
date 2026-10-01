@@ -73,4 +73,4 @@ abbreviation. NFL names include the nickname ("Buffalo Bills"), but CFB names ar
 so a CFB sentence that names a team only by mascot ("the Bruins") isn't checked.
 
 ---
-_Last updated: 2026-09-14 · reflects v1.0.11_
+_Last updated: 2026-10-01 · reflects v1.0.12_
