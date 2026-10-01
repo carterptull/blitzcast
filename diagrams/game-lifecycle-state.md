@@ -27,6 +27,10 @@ stateDiagram-v2
     end note
 ```
 
+**The both-scores rule holds at every call site:** the schedule loader's status, `refresh_stats`,
+the feature builder's played-game checks (`_team_form`, `home_win`), the prediction status filter,
+verdict grading, and the season record.
+
 **Grading is one function, `prediction_verdict()`** in `backend/app/services/predictions.py`. It
 returns nothing to grade when there's no prediction, either score is missing, the game tied, or
 the probability is exactly 0.5; otherwise it compares the side the model favored with the side
@@ -51,4 +55,4 @@ live/in-progress data to leak in). A NULL kickoff is a still-TBD future game and
 regardless of `now`, matching how `default_week` already treats it.
 
 ---
-_Last updated: 2026-09-14 · reflects v1.0.11_
+_Last updated: 2026-10-01 · reflects v1.0.12_

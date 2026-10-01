@@ -6,6 +6,44 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.12] — 2026-10-01
+
+### Fixed
+- Weather: `refresh_weather` gains `--backfill-days N`, which also fetches
+  past games that have no weather row, so one missed daily run no longer
+  leaves a game without weather for good. It now exits 1 when every
+  attempted call failed (it stays 0 for partial failures), and a missing
+  `VISUAL_CROSSING_API_KEY` prints a `WARNING:` instead of skipping
+  quietly (still exit 0). The orchestrators ignore step exit codes by
+  design, so a total failure shows in the cron logs only.
+- The CFB loader now records `is_neutral_site` and, for venues with no
+  Stadium match, `venue_name`, so weather can geocode neutral-site games.
+- Moneyline sentinels such as `HOW -100000 / RUTG -100000` are no longer
+  stored or shown. One rule, `real_moneyline` and `plausible_moneylines`
+  in `backend/app/market.py` (a 100000 sentinel, and an implied-probability
+  sum outside 0.95 to 1.25), is shared by the CFBD loader, the feature
+  builder, the Odds API consensus (an implausible book no longer claims
+  the h2h slot), and the API, which hides the moneylines as a pair. Checked
+  against 408 real production pairs: it rejects exactly the 25 placeholder
+  pairs.
+- Games with no market line no longer claim a Vegas lean or skew to the
+  home team. All 8 such 2026 games were getting 75 to 86 percent home, and
+  the explanation said "Vegas favors away". Their market features are now
+  imputed from Elo, flagged by `has_market_line` and `has_market_spread`,
+  and a derived spread is never shown or narrated as a posted Vegas
+  spread. `top_factors` gains `market_available` and `spread_available`,
+  and the backtest's "Vegas" baseline excludes imputed rows. The flags are
+  not model inputs yet, so the committed 1.0 models are unchanged.
+- The completion invariant now holds in `features._team_form`, `home_win`,
+  `refresh_stats`, and the NFL `games_loader` status: a game counts as
+  played only when both scores exist.
+- Visible empty-value placeholders are now `N/A` (stat ticker, spread) and
+  `TBD` (pending win probability, OG card) instead of em dashes.
+
+### Changed
+- `refresh_week` and `refresh_week_cfb` now pass `--backfill-days 3` to the
+  weather step.
+
 ## [1.0.11] — 2026-09-14
 
 ### Fixed

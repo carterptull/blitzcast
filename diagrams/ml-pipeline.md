@@ -8,7 +8,7 @@ sport (NFL, CFB) runs the same shape with its own Elo configuration, model, and 
 flowchart LR
     hist[("Postgres history<br/><small>games · team_game_stats · odds<br/>weather · injuries · poll_ranks</small>")]
 
-    features["build_features()<br/><small>ml/features.py<br/>Elo replayed game by game<br/>rolling EPA and form as of each kickoff<br/>rest, injuries, weather, market<br/>mostly home-minus-away differences</small>"]
+    features["build_features()<br/><small>ml/features.py<br/>Elo replayed game by game<br/>rolling EPA and form as of each kickoff<br/>rest, injuries, weather, market<br/>market imputed from Elo when no line exists<br/>mostly home-minus-away differences</small>"]
 
     subgraph train["Train: python -m ml.train"]
         split["Train seasons 2022, 2023, 2024<br/>Calibration season 2025"]
@@ -54,6 +54,14 @@ is ever widened, an overlap with the calibration season fails loudly instead of 
 "Anti-leakage as an explicit, tested property" and "No mid-season retrain" in
 [`DECISIONS.md`](../DECISIONS.md).
 
+**Games with no market line get Elo-imputed market features.** When a game has no real spread or
+plausible moneyline, `build_features()` fills the market features from Elo
+(`(elo_home - elo_away + hfa) / 25` points) and sets two flags, `has_market_line` and
+`has_market_spread` (a posted spread only). The flags are metadata, not model inputs yet, so the
+committed models are unchanged. An imputed spread is never shown or narrated as Vegas, and the
+backtest's Vegas baseline excludes imputed rows. See "No-line games get Elo-imputed market
+features and flags, not a retrain" in [`DECISIONS.md`](../DECISIONS.md).
+
 **Validation compares against the market, not just a hit rate.** A bare accuracy number says
 little; the backtest reports Brier score and accuracy next to the de-vigged closing line over the
 same games, and the model lands close to the line without beating it. The README's backtest
@@ -69,4 +77,4 @@ ignores. See "Backfilled predictions from walk-forward retraining, not the shipp
 calibrated on a held-out, most-recent season before a "70%" is ever shown to anyone.
 
 ---
-_Last updated: 2026-09-14 · reflects v1.0.11_
+_Last updated: 2026-10-01 · reflects v1.0.12_

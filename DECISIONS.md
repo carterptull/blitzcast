@@ -380,3 +380,46 @@ matching how `default_week` already treats it. **Alternative:** add a live/in-pr
 state so the app can show something meaningful mid-game: solves a different, larger problem this
 fix has no need for; not re-touching a row once its kickoff is behind `now` is enough to keep
 `predicted_at` honest.
+
+## No-line games get Elo-imputed market features and flags, not a retrain
+
+When a game has no market line, `ml/features.py` fills the market features from Elo
+(`(elo_home - elo_away + hfa) / 25` points for the spread, and the matching probability) and
+records two metadata columns: `has_market_line` (any real spread or plausible moneyline) and
+`has_market_spread` (a posted spread only). A derived spread is never shown or narrated as Vegas,
+`top_factors` carries `market_available` and `spread_available`, and the backtest's Vegas
+baseline skips imputed rows. **Why:** the committed models learned the market features from rows
+that nearly always had a line, and the no-line rows they had seen were FCS mismatches, so a
+missing line read as a blowout: all 8 no-line 2026 games came out 75 to 86 percent home, and
+`explain.py` claimed "Vegas favors away" off an imputed value. Imputing from Elo gives the model a
+neutral, honest stand-in, and the flags keep it from being presented as a market fact. The flags
+are not model inputs yet, so the committed 1.0 models stay valid and nothing is retrained.
+**Alternative:** retrain now with a missing-line indicator only: fixes the skew at the source, but
+it means a retrain and a re-commit of the artifacts mid-season for a handful of games; deferred,
+and the planned model work (P4) adds the two flags as inputs alongside the imputation.
+
+## One shared `plausible_moneylines` rule for ingest, features, and the API
+
+`backend/app/market.py` defines `real_moneyline` (rejects the 100000 sentinel) and
+`plausible_moneylines` (a pair must also have an implied-probability sum in [0.95, 1.25]). The
+CFBD loader, `ml/features.py`, the Odds API `_consensus`, and the API all call it, and the API
+hides moneylines as a pair rather than one side at a time. **Why:** placeholder pairs such as
+`HOW -100000 / RUTG -100000` were stored by one path, trusted by another, and displayed by a third,
+so each fix in one place left the others wrong. Run against 408 real production pairs, the rule
+rejects exactly the 25 placeholders and nothing legitimate, so it can be strict. One definition
+means the model, the stored odds, and the page cannot disagree about what counts as a real line.
+**Alternative:** clamp the display in the UI only: hides the symptom on the page, but the bad
+values would still feed the features and the de-vigged market probability behind the season
+record.
+
+## Weather `--backfill-days` instead of a separate historical job
+
+`refresh_weather --backfill-days N` also selects past games that have no weather row, and both
+daily orchestrators pass `--backfill-days 3`. **Why:** selection was forward-only, so one missed
+or failed daily run made that game's weather permanently missing. Visual Crossing's free tier
+serves historical days from the same endpoint and the same daily record budget, so the existing
+loader can fill the gap with one extra selection rule and no new moving part. A run where every
+attempted call fails now exits 1 (and a missing key prints `WARNING:`), though the orchestrators
+ignore step exit codes by design, so that shows in the cron logs only. **Alternative:** a separate
+historical weather job on its own cron: more to schedule and monitor for the same effect, and it
+would need its own copy of the game-selection and venue-geocoding logic.

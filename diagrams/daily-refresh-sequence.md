@@ -25,9 +25,9 @@ sequenceDiagram
         O->>P: refresh_odds
         P->>X: The Odds API, one call for every game
         P->>DB: upsert odds for games kicking off in the next 14 days
-        O->>P: refresh_weather
+        O->>P: refresh_weather --backfill-days 3
         P->>X: Visual Crossing by lat/lon, or by venue name for neutral sites
-        P->>DB: upsert weather, domes skipped
+        P->>DB: upsert weather for upcoming games plus past 3 days missing weather, domes skipped
         O->>P: refresh_injuries
         P->>X: ESPN injuries, nflverse as fallback
         P->>DB: upsert injuries onto each team's next game
@@ -38,8 +38,9 @@ sequenceDiagram
         P->>DB: upsert games, including final scores
         O->>P: refresh_odds --sport cfb
         P->>DB: upsert odds
-        O->>P: refresh_weather --sport cfb
-        P->>DB: upsert weather
+        O->>P: refresh_weather --sport cfb --backfill-days 3
+        P->>X: Visual Crossing by lat/lon, or by venue name for neutral sites
+        P->>DB: upsert weather for upcoming games plus past 3 days missing weather
         O->>P: refresh_polls_cfb
         P->>X: CollegeFootballData AP and Coaches polls
         P->>DB: upsert poll_ranks
@@ -65,6 +66,12 @@ and keeps going when one fails: stale weather is better than no predictions. The
 dependency is the schedule sync, because predicting against an out-of-date schedule could target
 the wrong week or re-predict a game that has already finished.
 
+**Weather back-fills and fails loudly.** Both crons pass `--backfill-days 3`, so a game whose
+weather was missed on an earlier day is picked up again instead of staying empty. A weather run
+where every attempted call fails exits 1, and a missing `VISUAL_CROSSING_API_KEY` prints a
+`WARNING:`. Because the orchestrator ignores step exit codes, either one shows in the cron logs
+only and the next step still runs.
+
 **Idempotent and resumable.** Every loader upserts on a natural key, and `predict_week` commits
 after each game, so a crash halfway through a ~100-game CFB slate keeps what finished and a
 re-run simply overwrites the same rows.
@@ -81,4 +88,4 @@ records a day even with CFB's 8-day window. See "Odds API: one batch call per da
 into January. Outside those months the jobs simply don't fire.
 
 ---
-_Last updated: 2026-09-14 · reflects v1.0.11_
+_Last updated: 2026-10-01 · reflects v1.0.12_

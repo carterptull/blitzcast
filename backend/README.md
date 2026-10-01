@@ -61,7 +61,7 @@ refreshes print a message and exit; narration writes `null` and continues.
 | Sync 2026 schedule (NFL) | `python -m data_pipeline.refresh_schedule` |
 | Refresh team game stats (NFL) | `python -m data_pipeline.refresh_stats [--season 2026]` |
 | Refresh odds (NFL) | `python -m data_pipeline.refresh_odds` |
-| Refresh weather (NFL) | `python -m data_pipeline.refresh_weather [--sport nfl\|cfb]` |
+| Refresh weather (NFL) | `python -m data_pipeline.refresh_weather [--sport nfl\|cfb] [--backfill-days N]` |
 | Refresh injuries (NFL) | `python -m data_pipeline.refresh_injuries` |
 | Full weekly refresh + predict (NFL) | `python -m data_pipeline.refresh_week` |
 | Seed teams/conferences (CFB) | `python -m data_pipeline.seed_cfb` |
