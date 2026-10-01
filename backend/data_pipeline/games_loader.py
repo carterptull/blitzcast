@@ -89,7 +89,7 @@ def upsert_games(db: Session, schedules: pd.DataFrame) -> int:
         away_score = _opt(row.away_score)
         game.home_score = None if home_score is None else int(home_score)
         game.away_score = None if away_score is None else int(away_score)
-        game.status = "final" if home_score is not None else "scheduled"
+        game.status = "final" if None not in (home_score, away_score) else "scheduled"
         game.spread_line = _opt(row.spread_line)
         game.total_line = _opt(row.total_line)
         hml, aml = _opt(row.home_moneyline), _opt(row.away_moneyline)

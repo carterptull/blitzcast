@@ -106,3 +106,15 @@ def test_kickoff_utc_returns_none_for_missing_gametime():
 def test_kickoff_utc_computes_real_time_when_known():
     kickoff = _kickoff_utc("2026-09-17", "16:25")
     assert kickoff is not None
+
+
+def test_status_final_only_when_both_scores_exist(db):
+    """Completion invariant: one score alone does not make a game final."""
+    half = _row("2026_04_A", 2026, 4, "2026-10-01", "13:00", "KC", "BUF")
+    half["home_score"] = 21
+    both = _row("2026_04_B", 2026, 4, "2026-10-01", "16:25", "PHI", "DAL")
+    both["home_score"], both["away_score"] = 21, 17
+    upsert_games(db, pd.DataFrame([half, both]))
+    rows = db.query(Game).filter(Game.season == 2026, Game.week == 4)
+    status = {g.game_id: g.status for g in rows}
+    assert status == {"2026_04_A": "scheduled", "2026_04_B": "final"}
