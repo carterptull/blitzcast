@@ -285,3 +285,17 @@ def test_upsert_polls_prefers_ap_and_skips_unknown(cfb_db):
     # Re-running is idempotent (delete-then-insert per season).
     assert upsert_polls(cfb_db, rankings) == 2
     assert len(cfb_db.scalars(select(PollRank)).all()) == 2
+
+
+def test_upsert_teams_records_mascot(cfb_db):
+    from data_pipeline.seed_cfb import upsert_teams
+
+    teams = pd.DataFrame([{
+        "school": "Georgia", "mascot": "Bulldogs", "conference": "SEC",
+        "abbreviation": "UGA", "logos": None, "color": None, "alternateColor": None,
+    }])
+    upsert_teams(cfb_db, teams, {"Georgia": "FBS"}, {}, {})
+    team = cfb_db.scalars(
+        select(Team).where(Team.sport == SPORT_CFB, Team.name == "Georgia")
+    ).one()
+    assert team.mascot == "Bulldogs"

@@ -93,6 +93,7 @@ def upsert_teams(
             db.add(team)
             existing[abbr] = team
         team.name = school
+        team.mascot = field(row, "mascot")
         team.conference = field(row, "conference") or "FCS-Ind"
         team.division = None
         team.tier = tiers[school]
