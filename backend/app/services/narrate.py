@@ -391,6 +391,11 @@ def _plain_punctuation(text: str) -> str:
     return re.sub(r"\s+([,.!?])", r"\1", text)
 
 
+def mentions_market(text: str) -> bool:
+    """True when `text` reads as betting-market talk to the guardrail."""
+    return bool(_MARKET_RE.search(text))
+
+
 def _sentences(text: str) -> list[str]:
     return [s for s in _SENTENCE_RE.split(text) if s.strip()]
 

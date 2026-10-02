@@ -27,20 +27,21 @@ flowchart TB
     wait["Try again<br/><small>after a rejection, the draft plus the rule it broke is sent back<br/>after a transient API error, wait 2s</small>"]
     accept(["✅ Store the AI draft"])
 
-    prev{"Stored narration still passes<br/>today's check_narration()?"}
+    prev{"Stored narration still exactly true today?<br/><small>still_true(): passes check_narration(), percentages exactly today's,<br/>every other number on today's sheet, coin flip only at 50%,<br/>weather talk backed by today's weather</small>"}
     kept(["♻️ Keep the stored narration"])
     fallback["fallback_narration()<br/><small>deterministic template from the same fact sheet<br/>richest draft that fits the word budget and passes the check</small>"]
-    fbcheck{"Passes check_narration()?"}
+    fbcheck{"Passes check_narration()<br/>with no semicolon or colon?"}
     template(["📄 Store the template"])
-    none(["⛔ Store NULL<br/><small>only if the fact sheet or the template itself fails<br/>page shows the factor list without prose</small>"])
+    minimal(["🔢 Store a minimal model-only line<br/><small>minimal_narration() from the prediction row alone<br/>Our model gives KC 60% and BUF 40%.</small>"])
+    none(["⛔ Store NULL<br/><small>only if even the minimal line fails<br/>page shows the factor list without prose</small>"])
 
     row[("predictions row<br/><small>probability and factors are written<br/>unchanged on every path</small>")]
-    summary["End-of-run summary line<br/><small>narration: N written, K kept, F fallback, J none<br/>WARNING when any game has none</small>"]
+    summary["End-of-run summary line<br/><small>narration: N written, K kept, F fallback, L minimal, J none<br/>WARNING when any game has none</small>"]
 
     prob --> sheet
     factors --> sheet
     data --> sheet
-    sheet -.->|"build error"| none
+    sheet -.->|"build error"| minimal
     sheet --> key
     key -->|yes| prompt --> claude --> clean --> check
     key -->|no| prev
@@ -53,10 +54,12 @@ flowchart TB
     prev -->|yes| kept
     prev -->|no| fallback --> fbcheck
     fbcheck -->|yes| template
-    fbcheck -->|no| none
+    fbcheck -->|no| minimal
+    minimal -.->|"even this fails"| none
     accept --> row
     kept --> row
     template --> row
+    minimal --> row
     none --> row
     row --> summary
 
@@ -72,11 +75,13 @@ narration layer strictly downstream of the model, never upstream" and "The narra
 fact sheet, not raw SHAP values" in [`DECISIONS.md`](../DECISIONS.md).
 
 **A failed narration costs prose, never a prediction, and rarely even the prose.** Each game gets
-at most 3 API calls. If none survives the check, the stored narration is kept when it still
-passes today's facts, and otherwise a deterministic template built from the same fact sheet is
-stored, so a matchup does not have an empty booth section. `NULL` is left for the rare game whose
-fact sheet cannot be built or whose template fails the check, and the page then shows the factor
-list. A failure in any step is caught per game, so one bad game never blocks its own prediction
+at most 3 API calls. If none survives the check, the stored narration is kept only when it is
+still exactly true today: today's exact percentages, every other number on today's sheet, and no
+weather talk that today's weather does not back. Otherwise a deterministic template built from
+the same fact sheet is stored. If the fact sheet cannot be built or the template fails its check,
+a minimal model-only line ("Our model gives KC 60% and BUF 40%.") is built from the prediction row
+alone, so a matchup does not have an empty booth section. `NULL` is left only if even that line
+fails, and the page then shows the factor list. A failure in any step is caught per game, so one bad game never blocks its own prediction
 or the rest of the slate. The probability and factors in the row are identical on every path.
 
 **Each rule family exists because of a real bug.** Narrations misread the stored spread sign,
@@ -92,7 +97,10 @@ raw data upstream, for the same reason. See the narration and SHAP-direction ent
 pass puts a wrong claim on the page. What it still cannot see: a surname that is also a common
 word, a pronoun that resolves to the wrong team, a number with no team nearby, whether an injury
 is listed Out or Doubtful, and invented history that contains no number. CFB narrations may not
-mention injuries at all, since there is no reliable college injury report.
+mention injuries at all, since there is no reliable college injury report. An AI draft that
+names a Las Vegas venue for a game with no posted line is rejected by the market-talk rule, so
+that game gets the template, which leaves the venue out. Extreme mismatches can read 100% and 0%,
+consistent with the page's own whole-number rounding.
 
 ---
 _Last updated: 2026-10-02 · reflects v1.1.0_

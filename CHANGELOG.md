@@ -31,14 +31,16 @@ unchanged; the retrain is a later release. Claude Haiku (via
   with a prediction gets a booth section even when no AI draft survives.
 - `Team.mascot` (migration `c3f1a9d27e48`, additive), filled by the next
   `seed_cfb` run. The migration is applied automatically on API deploy
-  (`railway.json` runs `alembic upgrade head` on boot).
+  (`railway.json` runs `alembic upgrade head` on boot), but CFB mascots only
+  appear after `seed_cfb` is run once following it. Post-deploy order: the
+  migration (automatic), then `seed_cfb`, then the `predict_week` re-runs.
 - `python -m app.jobs.narration_eval --sport nfl --week N` measures the
   guardrail pass rate, mean attempts and fallback coverage without writing
   anything. `--stored` re-checks saved narrations for free; fresh
   generation spends Anthropic tokens and requires `--spend-tokens`.
 - A per-run narration summary from `predict_week`:
-  `narration: N written, K kept, F fallback, J none`, with a `WARNING:`
-  line when any game ended up with none.
+  `narration: N written, K kept, F fallback, L minimal, J none`, with a
+  `WARNING:` line when any game ended up with none.
 
 ### Changed
 - The narrator voice: a pregame-show structure at whip-around pace (stakes
@@ -46,9 +48,10 @@ unchanged; the retrain is a later release. Claude Haiku (via
   sheet). No real show names. Temperature is 0.8.
 - A rejected draft's reason is now fed back to the model on the retry (up
   to 3 attempts) instead of a blind second try.
-- The `predict_week` chain: a fresh AI draft, else the stored
-  narration if it still passes today's fact check, else the deterministic
-  template.
+- The `predict_week` chain: a fresh AI draft, else the stored narration
+  only if it is still exactly true today, else the deterministic template
+  from the fact sheet, else a minimal model-only line (both teams'
+  abbreviations and percentages) if even the fact sheet cannot be built.
 
 ### Fixed
 - Narrations that misread the stored spread sign. A positive home spread
@@ -62,7 +65,9 @@ unchanged; the retrain is a later release. Claude Haiku (via
 - A failed narration can no longer block a prediction: fact-sheet or
   narration errors are caught per game and the prediction is still written.
 - A failed re-narration can no longer erase a still-valid one: the stored
-  narration is kept when it passes today's check.
+  narration is kept when it is still exactly true today (every percentage is
+  today's number, every other number is on today's fact sheet, weather talk
+  is backed by today's weather), and replaced otherwise.
 
 ## [1.0.14] — 2026-10-01
 

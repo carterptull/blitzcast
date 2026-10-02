@@ -87,8 +87,11 @@ Full setup + env vars: [README.md](./README.md) and
   market favorite and line wording, names, scores, records, ranks). A
   checkable fact (which team is actually favored) must never be misstated
   even if the cited number is correct. If no draft passes, `predict_week`
-  keeps the stored narration only if it still passes, else uses the
-  deterministic template in `fallback_narration.py`.
+  keeps the stored narration only if it is still exactly true today
+  (`still_true`: exact percentages, every other number on today's sheet),
+  else uses the deterministic template in `fallback_narration.py`, else a
+  minimal model-only line if even the fact sheet cannot be built. The run
+  ends with `narration: N written, K kept, F fallback, L minimal, J none`.
 - **Market-factor SHAP direction:** in `ml/explain.py`, `market_spread_home`
   and `market_home_prob`'s displayed `direction` comes from the feature's
   own raw value, never the SHAP sign — these represent an independently

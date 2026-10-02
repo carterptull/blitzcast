@@ -7,6 +7,7 @@ Usage: python -m app.jobs.predict_week [--season 2026] [--week N] [--sport nfl|c
 
 import argparse
 import logging
+import re
 from collections import Counter
 from datetime import UTC, datetime, time, timedelta
 from typing import NamedTuple
@@ -19,8 +20,12 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
-from app.services.fact_sheet import GameFacts, build_game_facts
-from app.services.fallback_narration import fallback_narration
+from app.services.fact_sheet import GameFacts, build_game_facts, render_fact_sheet
+from app.services.fallback_narration import (
+    fallback_narration,
+    fallback_reason,
+    minimal_narration,
+)
 from app.services.narrate import check_narration, narrate
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
@@ -106,16 +111,67 @@ def facts_for_row(
     return build_game_facts(db, game, prob, factors, spread, ranks, prev_ranks)
 
 
-def _skip(db: Session, game_id: str, step: str, exc: Exception) -> None:
+def _failed(db: Session, game_id: str, step: str, exc: Exception) -> None:
     # Only the error type: messages can carry URLs or data.
     if isinstance(exc, SQLAlchemyError):
         db.rollback()
-    logger.warning("%s skipped for %s: %s", step, game_id, type(exc).__name__)
+    logger.warning("%s failed for %s: %s", step, game_id, type(exc).__name__)
+
+
+_PUNCTUATION_RE = re.compile("[\u2014\u2013;:]")
+_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"\d+(?:[.-]\d+)*")
+_UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(degrees|mph)\b", re.IGNORECASE)
+_COIN_FLIP_RE = re.compile(r"\bcoin\s*flip|\btoss[\s-]?up\b", re.IGNORECASE)
+_PRECIP_RE = re.compile(
+    r"\b(?:rain\w*|snow\w*|sleet|showers?|drizzle|wet|soggy)\b", re.IGNORECASE
+)
+_WEATHER_RE = re.compile(
+    r"\b(?:degrees|mph|wind\w*|gust\w*|weather|forecast|cold|chilly|freezing|frigid|icy"
+    r"|hot|heat|humid\w*|indoors|dome|roof)\b",
+    re.IGNORECASE,
+)
+
+
+def still_true(previous: str, facts: GameFacts) -> bool:
+    """A stored narration may be republished only when it is exactly true
+    against today's sheet, not merely close: every percentage is today's whole
+    number, every other number (scores, records, degrees, lines, ranks, years)
+    is on today's sheet, a coin flip is still 50%, weather talk is backed by
+    today's weather, and the punctuation is plain. Stricter than check_narration
+    on purpose: a miss only costs a fresh template."""
+    if _PUNCTUATION_RE.search(previous) or check_narration(previous, facts) is not None:
+        return False
+    p = facts.home_win_prob
+    model_pcts = {round(p * 100), round((1 - p) * 100)}
+    if any(float(m.group(1)) not in model_pcts for m in _PCT_RE.finditer(previous)):
+        return False
+    if _COIN_FLIP_RE.search(previous) and round(p * 100) != 50:
+        return False
+    sheet = " ".join(render_fact_sheet(facts).split())
+    on_sheet = set(_NUMBER_RE.findall(sheet))
+    if any(n not in on_sheet for n in _NUMBER_RE.findall(_PCT_RE.sub(" ", previous))):
+        return False
+    units = {(n, u.lower()) for n, u in _UNIT_RE.findall(sheet)}
+    if any((n, u.lower()) not in units for n, u in _UNIT_RE.findall(previous)):
+        return False
+    weather = facts.weather or ""
+    if _PRECIP_RE.search(previous) and "rain or snow" not in weather:
+        return False
+    return not (_WEATHER_RE.search(previous) and not weather)
 
 
 class Narration(NamedTuple):
     text: str | None
-    source: str  # "llm", "kept", "fallback" or "none"
+    source: str  # "llm", "kept", "fallback", "minimal" or "none"
+
+
+def _minimal(db: Session, row: pd.Series, prob: float) -> Narration:
+    try:
+        return Narration(minimal_narration(row["home_abbr"], row["away_abbr"], prob), "minimal")
+    except Exception as exc:
+        _failed(db, row["game_id"], "minimal narration", exc)
+        return Narration(None, "none")
 
 
 def narrate_safely(
@@ -129,48 +185,65 @@ def narrate_safely(
 ) -> Narration:
     """Fact-sheet building and narration may fail for one game without costing
     that game, or the rest of the slate, its prediction. The chain: a fresh AI
-    draft, else the previous narration if it still passes today's fact check,
-    else the deterministic fallback. Without a fact sheet there is nothing true
-    to say. Rolling back is safe: since the last per-game commit the loop has
-    only read."""
+    draft, else the previous narration only if it is still exactly true today,
+    else the deterministic fallback from the fact sheet, else (no fact sheet, or
+    a fallback that fails its check) a model-only line from the row. Rolling
+    back is safe: since the last per-game commit the loop has only read."""
     game_id = row["game_id"]
     try:
         facts = facts_for_row(db, row, prob, factors, ranks, prev_ranks)
     except Exception as exc:
-        _skip(db, game_id, "narration", exc)
-        return Narration(None, "none")
+        _failed(db, game_id, "fact sheet", exc)
+        return _minimal(db, row, prob)
     try:
         text = narrate(facts)
     except Exception as exc:
-        _skip(db, game_id, "narration", exc)
+        _failed(db, game_id, "narration draft", exc)
         text = None
     if text:
         return Narration(text, "llm")
     if previous:
         try:
-            if check_narration(previous, facts) is None:
+            if still_true(previous, facts):
                 return Narration(previous, "kept")
         except Exception as exc:
-            _skip(db, game_id, "previous narration check", exc)
+            _failed(db, game_id, "previous narration check", exc)
     try:
         text = fallback_narration(facts)
-        reason = check_narration(text, facts)
+        reason = fallback_reason(text, facts)
     except Exception as exc:
-        _skip(db, game_id, "fallback narration", exc)
-        return Narration(None, "none")
+        _failed(db, game_id, "fallback narration", exc)
+        return _minimal(db, row, prob)
     if reason is not None:
         logger.warning("fallback narration rejected for %s: %s", game_id, reason)
-        return Narration(None, "none")
+        return _minimal(db, row, prob)
     return Narration(text, "fallback")
+
+
+def narrate_and_store(
+    db: Session,
+    row: pd.Series,
+    version: str,
+    prob: float,
+    factors: list,
+    ranks: dict[int, int],
+    prev_ranks: dict[int, int],
+) -> Narration:
+    previous = existing_narrative(db, row["game_id"], version)
+    narration = narrate_safely(db, row, prob, factors, ranks, prev_ranks, previous=previous)
+    upsert_prediction(db, row["game_id"], version, prob, factors, narration.text)
+    return narration
 
 
 def narration_summary(sources: Counter) -> list[str]:
     lines = [
         f"narration: {sources['llm']} written, {sources['kept']} kept, "
-        f"{sources['fallback']} fallback, {sources['none']} none"
+        f"{sources['fallback']} fallback, {sources['minimal']} minimal, {sources['none']} none"
     ]
-    if sources["none"]:
-        lines.append(f"WARNING: {sources['none']} games have no booth narration")
+    none = sources["none"]
+    if none:
+        games = "1 game has" if none == 1 else f"{none} games have"
+        lines.append(f"WARNING: {games} no booth narration")
     return lines
 
 
@@ -251,13 +324,8 @@ def main() -> None:
                 spread_available=bool(row["has_market_spread"]),
             )
 
-            previous = existing_narrative(db, row["game_id"], version)
-            narration = narrate_safely(
-                db, row, prob, factors, ranks, prev_ranks, previous=previous
-            )
+            narration = narrate_and_store(db, row, version, prob, factors, ranks, prev_ranks)
             sources[narration.source] += 1
-
-            upsert_prediction(db, row["game_id"], version, prob, factors, narration.text)
             # Commit per game: a full CFB slate is ~100 sequential Claude calls,
             # and the upsert is idempotent, so partial progress is safe to keep.
             db.commit()

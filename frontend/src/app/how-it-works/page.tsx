@@ -165,9 +165,11 @@ export default function HowItWorksPage() {
             sheet of verified pre-game facts: each team&apos;s record, last result, and streak,
             the betting line written out in words, and for the NFL the official injury report.
             Every name, percentage, and betting claim it writes is checked against that sheet
-            before it is published. A draft that fails gets another try with the reason attached,
-            and if every draft fails the page shows a plain, template-written preview built from
-            the same verified facts, so a matchup never has an empty booth section.
+            before it is published. A draft that fails gets another try with the reason attached.
+            If every draft fails, the last preview stays up only if it is still exactly true
+            today, otherwise the page shows a plain, template-written preview built from the same
+            verified facts, and if even those facts cannot be gathered, a one-line summary of the
+            model&apos;s percentages. A matchup never has an empty booth section.
           </p>
         </Section>
 

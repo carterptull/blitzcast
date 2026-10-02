@@ -202,6 +202,26 @@ def test_fallback_uses_sheet_phrases_and_current_ranks_only():
     assert "Sunday" in week1 and "announced" not in week1
 
 
+@pytest.mark.parametrize(
+    ("venue", "kept_venue"),
+    [
+        ("Test Field – North: Gate A in Testville", False),
+        ("Test Field: North in Testville", False),
+        ("Test Field; North in Testville", False),
+        ("Test Field – North in Testville", True),
+    ],
+)
+def test_fallback_scrubs_punctuation_copied_from_names(venue, kept_venue):
+    facts = _game(
+        "NFL", _team(**BROWNS, record="2-1"), _team(**STEELERS, record="2-1"), 0.62, 2.5,
+        venue=venue, matchup_note="AFC North division game",
+    )
+    text = fallback_narration(facts)
+    _assert_plain(text, facts)
+    assert ("Test Field, North" in text) is kept_venue
+    assert "Gate" not in text
+
+
 def test_fallback_is_deterministic():
     facts = SCENARIOS["nfl-divisional"]
     assert fallback_narration(facts) == fallback_narration(facts)

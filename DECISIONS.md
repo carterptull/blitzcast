@@ -70,6 +70,8 @@ turns the model into a black box with no way to sanity-check individual predicti
 
 ## LLM narration layer strictly downstream of the model, never upstream
 
+_Superseded in 1.1.0 by "Narration chain ending in deterministic copy, never a blank section" for what a failed narration shows (a template, not the bare factor list); the model-first boundary below still holds._
+
 The narration step receives the model's probability and SHAP factors as fixed inputs and only
 turns them into prose: it cannot change the numbers, and a failed narration falls back to
 showing the factor list without prose rather than blocking the prediction. **Why:** keeping the
@@ -261,6 +263,8 @@ model's weights and features are unchanged; only how a factor's direction is *la
 
 ## Narration guardrail checks favorite/underdog attribution, not just percentage magnitude
 
+_Superseded in 1.1.0 by "The narrator works from a fact sheet, not raw SHAP values"._
+
 `narrate.py`'s `_percentages_consistent` guardrail only ever checked that a cited percentage's
 *magnitude* matched the home/away win probability, never which *team* it (or "favorite"/"the
 edge" language) was attached to. **Why:** found live in production — three CFB Week 1 2026
@@ -290,6 +294,8 @@ misleading sentinel sitting in `games.home_moneyline`/`away_moneyline` for any o
 the same cost and closes the whole class of bug.
 
 ## A second, separate narration guardrail for market-specific attribution
+
+_Superseded in 1.1.0 by "The narrator works from a fact sheet, not raw SHAP values"._
 
 `_favorite_attribution_consistent` checks favorite/underdog language against the *model's own*
 win probability; a distinct `_market_attribution_consistent` checks it against the *raw spread*,
@@ -479,25 +485,37 @@ mistake or trades it for a different one, while a specific reason usually fixes 
 call. It costs nothing extra on the common path where the first draft passes. **Alternative:**
 resample the same prompt: simpler, but it spends the same calls with a lower pass rate.
 
-## Three-step chain ending in a deterministic template, never a blank section
+## Narration chain ending in deterministic copy, never a blank section
 
 `predict_week` resolves each game's narration in order: a fresh AI draft that passed the check,
-else the previous stored narration if it still passes today's check, else a deterministic template
-from `fallback_narration.py`, which is built from the same fact sheet and held to the same
-guardrail. The end-of-run summary line reports the counts and warns when any game has none.
-**Why:** a production check found 5 of 22 model-vs-market disagreement games had no booth section
-at all (0 of about 430 agreeing games), and those are the games visitors most want explained.
-Keeping the previous narration is allowed only when it still passes the check against current
-facts, because a narration written last week can name an injury or a line that has since changed,
-and an unchecked stale claim is worse than a plain template. This supersedes the earlier
-behavior of storing NULL and showing only the factor list. **Alternative:** leave the section
-empty on failure: honest, but it left the most interesting games bare.
+else the previous stored narration only if it is still exactly true today, else a deterministic
+template from `fallback_narration.py`, which is built from the same fact sheet and held to the
+same guardrail, else a minimal model-only line ("Our model gives KC 60% and BUF 40%.") built from
+the prediction row alone, used only when the fact sheet cannot be built or the template fails its
+check. The end-of-run summary line (`narration: N written, K kept, F fallback, L minimal, J
+none`) reports the counts and warns when any game has none. **Why:** a production check found 5
+of 22 model-vs-market disagreement games had no booth section at all (0 of about 430 agreeing
+games), and those are the games visitors most want explained. "Still exactly true" is stricter
+than `check_narration`, which allows a 1-point rounding tolerance and does not check weather: a
+kept text must cite today's percentages exactly, every other number in it (scores, records,
+degrees, lines, ranks) must be on today's sheet, it may call a coin flip only at 50%, and weather
+talk needs today's weather. Otherwise a narration written yesterday could restate yesterday's
+forecast or a lean the model no longer has, and a stale claim is worse than a fresh template.
+This supersedes the earlier behavior of storing NULL and showing only the factor list. **Known
+limits:** an AI draft that names a Las Vegas venue for a game with no posted line is rejected by
+the market-talk rule (`vegas`), so those games get the template, which leaves the venue out; an
+extreme mismatch can read 100% and 0%, consistent with the page's own whole-number rounding; and
+the guardrail's residual limits are listed under the name-allowlist entry above.
+**Alternative:** leave the section empty on failure: honest, but it left the most interesting
+games bare.
 
 ## Team mascots are stored on `Team`
 
 `teams.mascot` (migration `c3f1a9d27e48`, additive) holds the CFBD mascot, filled by `seed_cfb`.
-NFL nicknames still come from `team_names.nickname()`. **Why:** CFB team names are school names,
-so a narration saying "the Buckeyes" could not be matched to Ohio State, which left mascot-only
+NFL nicknames still come from `team_names.nickname()`. The migration runs automatically on deploy,
+but CFB mascots only appear after `seed_cfb` is run once following it, so the post-deploy order
+is: the migration (automatic), then `seed_cfb`, then the `predict_week` re-runs. **Why:** CFB team
+names are school names, so a narration saying "the Buckeyes" could not be matched to Ohio State, which left mascot-only
 mentions unchecked (the documented gap in the old diagram) and made correct copy look like an
 unknown name. With the mascot in the sheet, both the allowlist and team attribution recognize it.
 **Alternative:** hardcode a mascot table in the narration code: it would drift from the CFBD data

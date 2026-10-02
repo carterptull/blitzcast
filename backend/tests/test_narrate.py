@@ -699,6 +699,19 @@ def test_dashes_are_rewritten():
     assert "—" not in narrate_mod._plain_punctuation("Texas — at home — rolls.")
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Allegiant Stadium in Las Vegas", True),
+        ("The Bills are favored by 3 points.", True),
+        ("the line of scrimmage", False),
+        ("Test Field in Testville", False),
+    ],
+)
+def test_mentions_market(text, expected):
+    assert narrate_mod.mentions_market(text) is expected
+
+
 # A second, independent corpus written after the guardrail was tuned on the
 # first one, in five new scenarios.
 # S1: Packers at Bears, Packers favored by 3, model Bears 54%, injuries both sides.

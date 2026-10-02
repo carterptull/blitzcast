@@ -1,14 +1,17 @@
 """Deterministic "From the booth" copy for when no AI draft survives the fact
 check. Every phrase is built from the fact sheet, so the text passes the same
 guardrail the AI narration does: digits only, no injuries or player names, no
-market talk without a posted line."""
+market talk without a posted line. `minimal_narration` is the last resort when
+not even the fact sheet can be built."""
 
 import re
 
 from app.services.fact_sheet import GameFacts, TeamFacts, market_favorite
-from app.services.narrate import _MARKET_RE, check_narration
+from app.services.narrate import _plain_punctuation, check_narration, mentions_market
 
 MAX_WORDS = 69
+# Copied venue or team names can carry these; the guardrail does not reject them.
+_UNSAFE_PUNCTUATION_RE = re.compile(r"[;:]")
 
 
 def _plural(facts: GameFacts) -> bool:
@@ -37,7 +40,7 @@ def _cap(text: str) -> str:
 
 def _setting(facts: GameFacts, venue: bool) -> str:
     # "Allegiant Stadium in Las Vegas" reads as market talk when no line is posted.
-    if facts.spread_home is None and facts.venue and _MARKET_RE.search(facts.venue):
+    if facts.spread_home is None and facts.venue and mentions_market(facts.venue):
         venue = False
     day = facts.when.split(",")[0].strip()
     home, away = _ref(facts.home, facts), _ref(facts.away, facts)
@@ -132,10 +135,11 @@ def _form(facts: GameFacts, detail: bool) -> str:
 
 
 def _drafts(facts: GameFacts) -> list[str]:
-    """Richest first; later drafts drop detail to stay short."""
+    """Richest first; later drafts drop detail, then the venue, to stay short
+    and plain. Dashes copied from a name become commas."""
     model, market = _model(facts), _market(facts)
     core = " ".join(s for s in (model, market) if s)
-    return [
+    drafts = [
         f"{_setting(facts, True)} {core} {_form(facts, True)}",
         f"{_setting(facts, True)} {core} {_form(facts, False)}",
         f"{_setting(facts, False)} {core} {_form(facts, False)}",
@@ -143,6 +147,14 @@ def _drafts(facts: GameFacts) -> list[str]:
         core,
         model,
     ]
+    return [_plain_punctuation(d) for d in drafts]
+
+
+def fallback_reason(text: str, facts: GameFacts) -> str | None:
+    """Why a fallback text cannot ship, or None."""
+    if _UNSAFE_PUNCTUATION_RE.search(text):
+        return "contains a semicolon or colon"
+    return check_narration(text, facts)
 
 
 def fallback_narration(facts: GameFacts) -> str:
@@ -150,6 +162,18 @@ def fallback_narration(facts: GameFacts) -> str:
     the model sentence alone as the last resort."""
     drafts = _drafts(facts)
     for text in drafts:
-        if len(text.split()) <= MAX_WORDS and check_narration(text, facts) is None:
+        if len(text.split()) <= MAX_WORDS and fallback_reason(text, facts) is None:
             return text
     return drafts[-1]
+
+
+def minimal_narration(home_abbr: str, away_abbr: str, home_win_prob: float) -> str:
+    """One sentence from the prediction row alone: abbreviations and the
+    model's whole-number percentages, nothing that needs the database."""
+    for abbr in (home_abbr, away_abbr):
+        if not isinstance(abbr, str) or not abbr.strip():
+            raise ValueError("missing team abbreviation")
+    home_pct, away_pct = round(home_win_prob * 100), round((1 - home_win_prob) * 100)
+    if home_pct == 50:
+        return f"Our model sees a coin flip between {home_abbr} and {away_abbr}."
+    return f"Our model gives {home_abbr} {home_pct}% and {away_abbr} {away_pct}%."

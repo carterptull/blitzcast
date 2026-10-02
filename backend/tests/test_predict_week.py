@@ -1,6 +1,7 @@
 """predict_week selection predicates and fact-sheet shaping."""
 
 import logging
+import re
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 
@@ -16,8 +17,14 @@ from app.jobs.predict_week import (
     existing_narrative,
     narrate_safely,
     narration_summary,
+    still_true,
 )
 from app.models import SPORT_CFB, SPORT_NFL, Game, Team
+from app.services.narrate import check_narration
+from tests.test_fallback_narration import CAL, UNLV, _game, _team
+
+BILLS = dict(name="Bills", full_name="Buffalo Bills", abbr="BUF")
+CHIEFS = dict(name="Chiefs", full_name="Kansas City Chiefs", abbr="KC")
 
 
 def test_default_week_is_sport_scoped(db):
@@ -214,10 +221,14 @@ def test_default_week_skips_a_stale_week_with_a_permanently_unscored_game(db):
 
 
 SECRET = "postgresql://user:hunter2@db.example/prod"
+MINIMAL = "Our model gives KC 60% and BUF 40%."
 
 
 def _narrate_args(db, **row_cols):
-    row = _row("2026_01_BUF_KC", has_market_line=1.0, has_market_spread=1.0, **row_cols)
+    row = _row(
+        "2026_01_BUF_KC", has_market_line=1.0, has_market_spread=1.0,
+        home_abbr="KC", away_abbr="BUF", **row_cols,
+    )
     return db, row, 0.6, [], {}, {}
 
 
@@ -230,9 +241,8 @@ def _raise(exc):
 def test_narrate_safely_survives_a_fact_sheet_failure(db, monkeypatch, caplog):
     monkeypatch.setattr(predict_week, "facts_for_row", _raise(ValueError(SECRET)))
     with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
-        assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
-    assert "ValueError" in caplog.text
-    assert "2026_01_BUF_KC" in caplog.text
+        assert narrate_safely(*_narrate_args(db)) == Narration(MINIMAL, "minimal")
+    assert "fact sheet failed for 2026_01_BUF_KC: ValueError" in caplog.text
     assert SECRET not in caplog.text
 
 
@@ -241,16 +251,70 @@ def test_narrate_safely_survives_a_narrator_failure(db, monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
         result = narrate_safely(*_narrate_args(db))
     assert result.source == "fallback" and result.text
-    assert "RuntimeError" in caplog.text
+    assert "narration draft failed for 2026_01_BUF_KC: RuntimeError" in caplog.text
     assert SECRET not in caplog.text
+
+
+def test_narrate_safely_logs_no_draft_failure_without_an_exception(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    with caplog.at_level(logging.INFO, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)).source == "fallback"
+    assert "failed" not in caplog.text and "skipped" not in caplog.text
 
 
 def test_narrate_safely_rolls_back_after_a_database_error(db, monkeypatch):
     rollbacks = []
     monkeypatch.setattr(db, "rollback", lambda: rollbacks.append(1))
     monkeypatch.setattr(predict_week, "facts_for_row", _raise(SQLAlchemyError(SECRET)))
-    assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
+    assert narrate_safely(*_narrate_args(db)) == Narration(MINIMAL, "minimal")
     assert rollbacks == [1]
+
+
+def test_minimal_line_when_the_fact_sheet_fails_is_still_stored(db, monkeypatch):
+    from app.jobs.predict_week import narrate_and_store
+
+    db, row, prob, factors, ranks, prev_ranks = _narrate_args(db)
+    monkeypatch.setattr(predict_week, "facts_for_row", _raise(ValueError(SECRET)))
+    # A stored narration cannot be verified without today's fact sheet.
+    predict_week.upsert_prediction(db, "2026_01_BUF_KC", "1.0.0", 0.55, [], "older text")
+    db.commit()
+    result = narrate_and_store(db, row, "1.0.0", prob, factors, ranks, prev_ranks)
+    assert result == Narration(MINIMAL, "minimal")
+    stored = predict_week._stored_prediction(db, "2026_01_BUF_KC", "1.0.0")
+    assert stored.llm_narrative == MINIMAL
+    assert stored.home_win_prob == 0.6
+
+
+@pytest.mark.parametrize("prob", [0.0, 0.004, 0.3, 0.495, 0.5, 0.505, 0.51, 0.7, 0.996, 1.0])
+def test_minimal_line_holds_only_abbreviations_and_percentages(prob):
+    from app.services.fallback_narration import minimal_narration
+
+    text = minimal_narration("KC", "BUF", prob)
+    home, away = round(prob * 100), round((1 - prob) * 100)
+    if home == 50:
+        assert text == "Our model sees a coin flip between KC and BUF."
+    else:
+        assert text == f"Our model gives KC {home}% and BUF {away}%."
+    words = re.sub(r"\b(?:KC|BUF|\d{1,3}%)", "", text)
+    assert set(words.split()) <= {"Our", "model", "gives", "and", ".", "sees", "a", "coin",
+                                  "flip", "between"}
+
+
+def test_minimal_line_when_the_fallback_raises(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    monkeypatch.setattr(predict_week, "fallback_narration", _raise(IndexError(SECRET)))
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)) == Narration(MINIMAL, "minimal")
+    assert "IndexError" in caplog.text and SECRET not in caplog.text
+
+
+def test_none_only_when_even_the_minimal_line_fails(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "facts_for_row", _raise(ValueError(SECRET)))
+    monkeypatch.setattr(predict_week, "minimal_narration", _raise(KeyError(SECRET)))
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
+    assert "minimal narration failed for 2026_01_BUF_KC: KeyError" in caplog.text
+    assert SECRET not in caplog.text
 
 
 def test_narrate_safely_returns_the_narration(db, monkeypatch):
@@ -271,6 +335,8 @@ def test_narrate_safely_returns_the_narration(db, monkeypatch):
 
 GOOD_PREVIOUS = "Our model gives the Chiefs 60% and the Bills 40%."
 STALE_PREVIOUS = "The Chiefs are favored by 3 points, and our model gives them 60%."
+# Passes check_narration's +-1 tolerance, but the model now says 60%.
+OFF_BY_ONE_PREVIOUS = "Our model gives the Chiefs 61% and the Bills 39%."
 
 
 @pytest.mark.parametrize(
@@ -278,13 +344,14 @@ STALE_PREVIOUS = "The Chiefs are favored by 3 points, and our model gives them 6
     [
         (None, GOOD_PREVIOUS, Narration(GOOD_PREVIOUS, "kept")),
         (None, STALE_PREVIOUS, "fallback"),
+        (None, OFF_BY_ONE_PREVIOUS, "fallback"),
         (None, None, "fallback"),
         ("", None, "fallback"),
         ("fresh", GOOD_PREVIOUS, Narration("fresh", "llm")),
     ],
     ids=[
-        "keeps-valid-previous", "drops-stale-previous", "no-previous", "empty-draft",
-        "new-draft-wins",
+        "keeps-valid-previous", "drops-stale-previous", "drops-off-by-one-previous",
+        "no-previous", "empty-draft", "new-draft-wins",
     ],
 )
 def test_narrate_safely_chain(db, monkeypatch, draft, previous, expected):
@@ -323,29 +390,88 @@ def test_narrate_safely_falls_back_when_the_previous_check_raises(db, monkeypatc
     assert "KeyError" in caplog.text and SECRET not in caplog.text
 
 
-def test_narrate_safely_returns_none_when_the_fallback_raises(db, monkeypatch, caplog):
-    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
-    monkeypatch.setattr(predict_week, "fallback_narration", _raise(IndexError(SECRET)))
-    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
-        assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
-    assert "IndexError" in caplog.text and SECRET not in caplog.text
-
-
-def test_narrate_safely_returns_none_when_the_fallback_fails_its_check(db, monkeypatch, caplog):
+def test_minimal_line_when_the_fallback_fails_its_check(db, monkeypatch, caplog):
     monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
     monkeypatch.setattr(predict_week, "fallback_narration", lambda facts: "Chiefs by 77%.")
     with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
-        assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
+        assert narrate_safely(*_narrate_args(db)) == Narration(MINIMAL, "minimal")
     assert "fallback narration rejected" in caplog.text
 
 
+def test_minimal_line_when_the_fallback_has_a_colon(db, monkeypatch):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    monkeypatch.setattr(
+        predict_week, "fallback_narration", lambda facts: "Our model: the Chiefs at 60%."
+    )
+    assert narrate_safely(*_narrate_args(db)) == Narration(MINIMAL, "minimal")
+
+
 def test_narration_summary_counts_each_source():
-    sources = Counter({"llm": 3, "kept": 2, "fallback": 1})
-    assert narration_summary(sources) == ["narration: 3 written, 2 kept, 1 fallback, 0 none"]
-    sources["none"] = 2
+    sources = Counter({"llm": 3, "kept": 2, "fallback": 1, "minimal": 1})
+    assert narration_summary(sources) == [
+        "narration: 3 written, 2 kept, 1 fallback, 1 minimal, 0 none"
+    ]
+    sources["none"] = 1
     lines = narration_summary(sources)
-    assert lines[0] == "narration: 3 written, 2 kept, 1 fallback, 2 none"
-    assert lines[1].startswith("WARNING: 2 games")
+    assert lines[0] == "narration: 3 written, 2 kept, 1 fallback, 1 minimal, 1 none"
+    assert lines[1] == "WARNING: 1 game has no booth narration"
+    sources["none"] = 2
+    assert narration_summary(sources)[1] == "WARNING: 2 games have no booth narration"
+
+
+def _bills_chiefs(p: float, weather: str | None):
+    return _game(
+        "NFL", _team(**BILLS, record="3-1"), _team(**CHIEFS, record="2-2"), p, 3.0,
+        venue="Highmark Stadium in Orchard Park", weather=weather,
+    )
+
+
+SNOWY_PREVIOUS = (
+    "It is 31 degrees in Orchard Park with snow likely and wind at 22 mph, and the Bills are "
+    "3-1. Our model gives the Bills 60%, and they are favored by 3 points."
+)
+
+
+@pytest.mark.parametrize("weather", ["48 degrees, wind 5 mph", None])
+def test_still_true_drops_yesterdays_weather_and_percentage(weather):
+    facts = _bills_chiefs(0.61, weather)
+    assert check_narration(SNOWY_PREVIOUS, facts) is None  # the guardrail alone keeps it
+    assert not still_true(SNOWY_PREVIOUS, facts)
+
+
+def test_still_true_drops_a_lean_that_flipped():
+    facts = _game("CFB", _team(**UNLV, record="3-1"), _team(**CAL, record="2-2"), 0.497, None)
+    text = "Our model gives UNLV 51% and California 49%."
+    assert check_narration(text, facts) is None
+    assert not still_true(text, facts)
+
+
+def test_still_true_drops_a_coin_flip_that_is_no_longer_one():
+    text = "Our model sees a coin flip, with 50% for each side."
+    facts = _game("CFB", _team(**UNLV), _team(**CAL), 0.514, None)
+    assert check_narration(text, facts) is None
+    assert not still_true(text, facts)
+    assert still_true(text, _game("CFB", _team(**UNLV), _team(**CAL), 0.5, None))
+
+
+def test_still_true_drops_a_weather_claim_with_no_weather_today():
+    text = "Snow is likely in Orchard Park, and our model gives the Bills 61%."
+    assert still_true(text, _bills_chiefs(0.61, "34 degrees, wind 8 mph, rain or snow likely"))
+    assert not still_true(text, _bills_chiefs(0.61, None))
+    assert not still_true(text, _bills_chiefs(0.61, "48 degrees, wind 5 mph"))
+
+
+def test_still_true_keeps_a_text_that_is_exactly_true_today():
+    text = (
+        "It is 48 degrees in Orchard Park with wind at 5 mph, and the Bills are 3-1. Our model "
+        "gives the Bills 61% and the Chiefs 39%, and the Bills are favored by 3 points."
+    )
+    facts = _bills_chiefs(0.61, "48 degrees, wind 5 mph")
+    assert still_true(text, facts)
+    assert not still_true(text.replace("61%", "60%"), facts)
+    assert not still_true(text.replace(", and the Bills are 3-1", "; the Bills are 3-1"), facts)
+    assert not still_true(text, _bills_chiefs(0.62, "48 degrees, wind 5 mph"))
+    assert not still_true(text, _bills_chiefs(0.61, "47 degrees, wind 5 mph"))
 
 
 def test_existing_narrative_reads_the_stored_text(db):
