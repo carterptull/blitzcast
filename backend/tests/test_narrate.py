@@ -1212,3 +1212,63 @@ def test_plain_punctuation_is_public():
     assert narrate_mod.plain_punctuation("Texas — at home — rolls.") == (
         "Texas, at home, rolls."
     )
+
+
+LINK_OR_NUMBER = "contains a link, handle, or long number"
+
+
+@pytest.mark.parametrize("lead", [
+    "Picks at scam dot com.",
+    "Picks at scam DOT net.",
+    "Call 555-0199 tonight.",
+    "Text 8005 550 199 tonight.",
+    "Text 8 0 0 5 5 5 0 1 9 9 tonight.",
+    "Dial 800.555.019 tonight.",
+    "Hxxp scam tonight.",
+    "Visit hxxps scam tonight.",
+    "Ohio State went 800-555 019-919 lately.",
+    # NFKC: full-width and look-alike punctuation is read as what it looks like.
+    "Follow ＠scam tonight.",
+    "Visit scam．com tonight.",
+    "Visit scam․com tonight.",
+    "Text ８００５５５０１９９ tonight.",
+])
+def test_output_rules_reject_link_and_phone_evasions(lead):
+    assert check_narration(f"{lead} Our model leans Ohio State at 55%.", FACTS) == LINK_OR_NUMBER
+
+
+@pytest.mark.parametrize("text", [
+    "Texas beat Baylor 38-17 at home.",
+    "They won 24-17, then 27-24.",
+    "They won 24-17 27-24 30-27 in a row.",
+    "The 2-1-1 Bears and the 3-1 Packers meet.",
+    "Kickoff is 7:30 p.m., and the total is 49.5.",
+    "Kickoff is 11 a.m. in Week 5.",
+    "A 3-point favorite with a 4-3 defense.",
+    "No. 1 hosts No. 3 in Week 17 of 2025.",
+    "The best game of the 2026 season.",
+    "Two unbeaten teams, and nobody blinks.",
+    "The 49ers visit the Rams.",
+    "A dot on the map and a team on the rise.",
+])
+def test_output_rules_leave_real_copy_alone(text):
+    assert not narrate_mod.unsafe_output(text)
+
+
+def test_trusted_text_drops_mascots_and_scores_in_the_game_type():
+    from app.services.fact_sheet import trusted_numbers_text
+
+    facts = replace(
+        FACTS, home=replace(TEX, mascot="Longhorns won 9 straight"),
+        matchup_note="SEC 9-0 conference game lost 3 straight",
+    )
+    trusted = trusted_numbers_text(facts)
+    assert "9-0" not in trusted and "straight" not in trusted
+    assert "Texas (TEX)" in trusted and "Longhorns" not in trusted
+    assert "Game type: SEC conference game" in trusted
+    for note in ("Big 12 conference game", "AFC North division game"):
+        assert f"Game type: {note}" in trusted_numbers_text(replace(FACTS, matchup_note=note))
+    niners = replace(FACTS, home=replace(TEX, name="49ers", full_name="San Francisco 49ers"))
+    assert "49ers (TEX)" in trusted_numbers_text(niners)
+    reason = check_narration("Texas is 9-0. Our model leans Ohio State at 55%.", facts)
+    assert reason is not None and "fact sheet has no such" in reason

@@ -86,6 +86,13 @@ unchanged; the retrain is a later release. Claude Haiku (via
   letter; numbers are checked only against trusted fields, never venue or
   player text; rejections are logged as fixed categories; and the Anthropic
   client times out after 30 seconds with one retry.
+- A venue, city, conference or division that does not read like a name (a
+  link word, 3 or more digits in a row, or a lowercase word other than "of",
+  "the", "de" and similar) is treated as missing, so the template can never
+  publish an ad posing as a stadium. Published copy is checked in its NFKC
+  form and may not contain "dot com" links, "hxxp", or a phone-like digit
+  run; scores and streaks inside team, mascot or conference text back no
+  claim; and the minimal line only uses abbreviations that look like one.
 
 ## [1.0.14] — 2026-10-01
 

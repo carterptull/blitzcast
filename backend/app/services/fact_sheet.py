@@ -2,6 +2,7 @@
 rendered here in plain words, from data strictly before kickoff, so each claim
 in the narration can be checked against it."""
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -113,8 +114,46 @@ def _clean(value: str | None, max_len: int) -> str | None:
     return text if any(ch.isalnum() for ch in text) else None
 
 
+# A score, record or streak inside a team's feed text would back a claim.
+_SCORE_OR_STREAK_RE = re.compile(
+    r"\d+-\d+(?:-\d+)?|\b(?:won|lost)\s+\d+\s+straight\b", re.IGNORECASE
+)
+
+
+def _without_scores(text: str | None) -> str | None:
+    if text is None:
+        return None
+    text = " ".join(_SCORE_OR_STREAK_RE.sub(" ", text).split())
+    return text if any(ch.isalnum() for ch in text) else None
+
+
+def _team_text(value: str | None, max_len: int) -> str | None:
+    return _without_scores(_clean(value, max_len))
+
+
+_LINK_WORD_RE = re.compile(r"\b(?:dot|com|net|org|www|https?|hxxps?)\b", re.IGNORECASE)
+_PLACE_WORD_RE = re.compile(r"(?<![\w'])[^\W\d_][\w']*")
+_FUNCTION_WORDS = {
+    "of", "at", "the", "and", "in", "de", "la", "del", "on", "du", "von", "van", "le", "y",
+    "a", "&",
+}
+
+
+def _place(value: str | None, max_len: int) -> str | None:
+    """A cleaned venue, city, conference or division, or None when it does not
+    read like a name: a link word, a run of 3+ digits, or a lowercase word other
+    than a function word ("of", "de"). Real names are Title Case."""
+    text = _clean(value, max_len)
+    if text is None or _LINK_WORD_RE.search(text) or re.search(r"\d{3,}", text):
+        return None
+    words = _PLACE_WORD_RE.findall(text)
+    if any(w[0].islower() and w not in _FUNCTION_WORDS for w in words):
+        return None
+    return text
+
+
 def _team_name(team: Team) -> str:
-    name = _clean(team.name, 60) or _clean(team.abbr, 16)
+    name = _team_text(team.name, 60) or _team_text(team.abbr, 16)
     if name is None:
         raise ValueError("team has no usable name")
     return name
@@ -234,12 +273,12 @@ def _team_facts(db, game, team, ranks, prev_ranks) -> TeamFacts:
     games = season_games_before(db, team.team_id, game)
     is_nfl = team.sport == SPORT_NFL
     name = _team_name(team)
-    mascot = _clean(team.mascot, 40)
+    mascot = _team_text(team.mascot, 40)
     full_name = name if is_nfl else f"{name} {mascot or ''}".strip()
     return TeamFacts(
         name=_short_name(team),
         full_name=full_name,
-        abbr=_clean(team.abbr, 16) or name,
+        abbr=_team_text(team.abbr, 16) or name,
         mascot=nickname(name) if is_nfl else mascot,
         record=record_string(games, team.team_id),
         games_this_season=len(games),
@@ -263,17 +302,17 @@ def _when(game: Game) -> str:
 
 def _venue(game: Game) -> str | None:
     if game.stadium is not None:
-        name, city = _clean(game.stadium.name, 80), _clean(game.stadium.city, 60)
+        name, city = _place(game.stadium.name, 80), _place(game.stadium.city, 60)
         if name and city:
             return f"{name} in {city}"
         return name
-    return _clean(game.venue_name, 80)
+    return _place(game.venue_name, 80)
 
 
 def _matchup_note(game: Game) -> str | None:
-    home_conf = _clean(game.home_team.conference, 40)
-    away_conf = _clean(game.away_team.conference, 40)
-    division = _clean(game.home_team.division, 10)
+    home_conf = _place(game.home_team.conference, 40)
+    away_conf = _place(game.away_team.conference, 40)
+    division = _place(game.home_team.division, 10)
     if game.sport == SPORT_NFL:
         if not (home_conf and away_conf):
             return None
@@ -419,7 +458,12 @@ def _market_line(facts: GameFacts) -> str:
 
 
 def _team_block(t: TeamFacts, sport: str, poll_available: bool, trusted: bool) -> list[str]:
-    head = f"{t.full_name} ({t.abbr})" + (f", also called the {t.mascot}" if t.mascot else "")
+    if trusted:
+        head = f"{t.name} ({t.abbr})"
+    else:
+        head = f"{t.full_name} ({t.abbr})" + (
+            f", also called the {t.mascot}" if t.mascot else ""
+        )
     rows = [head, f"- Record this season: {t.record}"]
     if t.rank:
         rows.append(f"- AP rank: #{t.rank}" + (f", {t.rank_note}" if t.rank_note else ""))
@@ -451,8 +495,9 @@ def _sheet_lines(facts: GameFacts, trusted: bool) -> list[str]:
     ]
     if facts.venue and not trusted:
         lines.append(f"Where: {facts.venue}")
-    if facts.matchup_note:
-        lines.append(f"Game type: {facts.matchup_note}")
+    note = _without_scores(facts.matchup_note) if trusted else facts.matchup_note
+    if note:
+        lines.append(f"Game type: {note}")
     lines.append(
         f"Model: {model_fav.name} {p:.0%} to win, {model_dog.name} {1 - p:.0%}"
     )
@@ -476,7 +521,8 @@ def render_fact_sheet(facts: GameFacts) -> str:
 
 
 def trusted_numbers_text(facts: GameFacts) -> str:
-    """The sheet without per-game feed text (the venue and the injury report).
-    Scores, records, streaks and ranks in the narration are checked against
-    this, so a number smuggled into a venue or player name backs no claim."""
+    """The sheet without per-game feed text: no venue, injury report or mascot,
+    and no score or streak inside the game type. Scores, records, streaks and
+    ranks in the narration are checked against this, so a number smuggled into
+    a venue, player, mascot or conference string backs no claim."""
     return "\n".join(_sheet_lines(facts, trusted=True))

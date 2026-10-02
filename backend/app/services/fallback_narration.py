@@ -7,11 +7,18 @@ not even the fact sheet can be built."""
 import re
 
 from app.services.fact_sheet import GameFacts, TeamFacts, market_favorite
-from app.services.narrate import check_narration, mentions_market, plain_punctuation
+from app.services.narrate import (
+    check_narration,
+    mentions_market,
+    plain_punctuation,
+    unsafe_output,
+)
 
 MAX_WORDS = 69
 # Copied venue or team names can carry these; the guardrail does not reject them.
 _UNSAFE_PUNCTUATION_RE = re.compile(r"[;:]")
+# Up to 8 capitals, digits or "&", with at most one inner hyphen (CFBD's "M-OH").
+_ABBR_RE = re.compile(r"(?=.{1,8}$)[A-Z0-9&]+(?:-[A-Z0-9&]+)?")
 
 
 def _plural(facts: GameFacts) -> bool:
@@ -169,11 +176,16 @@ def fallback_narration(facts: GameFacts) -> str:
 
 def minimal_narration(home_abbr: str, away_abbr: str, home_win_prob: float) -> str:
     """One sentence from the prediction row alone: abbreviations and the
-    model's whole-number percentages, nothing that needs the database."""
+    model's whole-number percentages, nothing that needs the database. An
+    abbreviation that does not look like one ("SCAM.IO") raises ValueError."""
     for abbr in (home_abbr, away_abbr):
-        if not isinstance(abbr, str) or not abbr.strip():
-            raise ValueError("missing team abbreviation")
+        if not isinstance(abbr, str) or not _ABBR_RE.fullmatch(abbr):
+            raise ValueError("unusable team abbreviation")
     home_pct, away_pct = round(home_win_prob * 100), round((1 - home_win_prob) * 100)
     if home_pct == 50:
-        return f"Our model sees a coin flip between {home_abbr} and {away_abbr}."
-    return f"Our model gives {home_abbr} {home_pct}% and {away_abbr} {away_pct}%."
+        text = f"Our model sees a coin flip between {home_abbr} and {away_abbr}."
+    else:
+        text = f"Our model gives {home_abbr} {home_pct}% and {away_abbr} {away_pct}%."
+    if unsafe_output(text):
+        raise ValueError("unsafe minimal narration")
+    return text

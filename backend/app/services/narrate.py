@@ -6,6 +6,7 @@ prediction (returns None)."""
 import logging
 import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 
 import anthropic
@@ -155,10 +156,17 @@ _CAP_RE = re.compile(r"\b[^\W\d_](?:[^\W_]|['’&.])*")
 # Feed text can carry a link, handle or phone number; the copy never does.
 # "p.m.", "No. 1", "vs." and "St." are not domains; "over/under" is the one slash.
 _LINK_RE = re.compile(
-    r"https?://|\bwww\.|@|(?<!\bover)/|\bover/(?!under\b)|\b[a-z0-9-]+\.[a-z]{2,}\b",
+    r"https?://|\bwww\.|@|(?<!\bover)/|\bover/(?!under\b)|\b[a-z0-9-]+\.[a-z]{2,}\b"
+    r"|\bdot\s+(?:com|net|org|io|co|ly|bet|gg|us|app|xyz)\b|\bhxxps?\b",
     re.IGNORECASE,
 )
-_DIGIT_RUN_RE = re.compile(r"\d{5,}|\b\d{3}[\s.-]\d{3}[\s.-]\d{4}\b|\(\d{3}\)")
+_DIGIT_RUN_RE = re.compile(
+    r"\d{5,}|\b\d{3}[\s.-]\d{3}[\s.-]\d{4}\b|\(\d{3}\)|\b\d{3}[\s.-]\d{4}\b"
+)
+# 7+ digits joined by single spaces, dots or hyphens read as a phone number,
+# unless the run is only scores or records ("24-17 27-24 30-27").
+_NUMBER_RUN_RE = re.compile(r"\d(?:[\s.-]?\d){6,}")
+_SCORE_LIST_RE = re.compile(r"\d{1,2}-\d{1,2}(?:-\d{1,2})?(?:\s\d{1,2}-\d{1,2}(?:-\d{1,2})?)*")
 _LOWER_WORD_RE = re.compile(r"\b[a-z][a-z'’]*")
 # A trailing period or comma still ends the token ("went 5-0." is checked).
 _SCORE_RE = re.compile(r"(?<![\w.-])\d{1,3}-\d{1,3}(?:-\d{1,3})?(?![\w-]|\.\d)")
@@ -848,13 +856,23 @@ def _ownership_reason(s: _Sentence, facts: GameFacts) -> str | None:
     return None
 
 
+def unsafe_output(text: str) -> bool:
+    """True when `text` carries a link, handle, or phone-like digit run. The
+    rules read the NFKC form, so a full-width "＠" or a one-dot leader counts."""
+    norm = unicodedata.normalize("NFKC", text)
+    if _LINK_RE.search(norm) or _DIGIT_RUN_RE.search(norm):
+        return True
+    return any(not _SCORE_LIST_RE.fullmatch(m.group(0)) for m in _NUMBER_RUN_RE.finditer(norm))
+
+
 def check_narration(text: str, facts: GameFacts) -> str | None:
     """Return why `text` breaks a rule, or None when every check passes."""
     if not text:
         return "empty response"
-    if _LINK_RE.search(text) or _DIGIT_RUN_RE.search(text):
+    if unsafe_output(text):
         return "contains a link, handle, or long number"
-    if any(ord(ch) > 0xFF and ch.isalpha() for ch in text):
+    norm = unicodedata.normalize("NFKC", text)
+    if any(ord(ch) > 0xFF and ch.isalpha() for ch in text + norm):
         return "uses non-Latin letters"
     words = len(text.split())
     if words > MAX_WORDS:

@@ -492,6 +492,34 @@ def test_still_true_never_keeps_a_link():
     assert not still_true(f"Free picks at scam.example. {good}", facts)
 
 
+@pytest.mark.parametrize("lead", [
+    "Picks at scam dot com.", "Call 555-0199.", "Text 8005 550 199.", "Hxxp scam.",
+    "Visit scam․com.",
+])
+def test_still_true_never_keeps_a_link_or_phone_evasion(lead):
+    facts = _bills_chiefs(0.6, None)
+    assert not still_true(f"{lead} Our model gives the Bills 60% and the Chiefs 40%.", facts)
+
+
+@pytest.mark.parametrize("abbr", [
+    "SCAM.IO", "8005550199", "1234567", "800-5550", "kc", "", " ", "A B", "TOOLONGAB", None,
+])
+def test_minimal_line_rejects_a_hostile_abbreviation(abbr):
+    from app.services.fallback_narration import minimal_narration
+
+    with pytest.raises(ValueError):
+        minimal_narration(abbr, "BUF", 0.61)
+    with pytest.raises(ValueError):
+        minimal_narration("KC", abbr, 0.5)
+
+
+@pytest.mark.parametrize("abbr", ["KC", "BUF", "UNLV", "A&M", "OSU", "MIAOH", "M-OH"])
+def test_minimal_line_accepts_real_abbreviations(abbr):
+    from app.services.fallback_narration import minimal_narration
+
+    assert minimal_narration(abbr, "BUF", 0.61) == f"Our model gives {abbr} 61% and BUF 39%."
+
+
 def test_fallback_rejection_log_carries_only_a_category(db, monkeypatch, caplog):
     monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
     monkeypatch.setattr(
