@@ -2,6 +2,7 @@
 rendered here in plain words, from data strictly before kickoff, so each claim
 in the narration can be checked against it."""
 
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -86,12 +87,45 @@ def _utc(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
+_SAFE_PUNCTUATION = set(".'&()-")
+_APOSTROPHES = set("‘’ʻʼ`")
+
+
+def _clean(value: str | None, max_len: int) -> str | None:
+    """Feed text (names, venues, conferences) as one plain line: letters,
+    digits, spaces and . ' & ( ) - only. Control and format characters are
+    dropped, any other symbol becomes a space. None when nothing is left."""
+    if value is None:
+        return None
+    out = []
+    for ch in unicodedata.normalize("NFKC", str(value)):
+        if ch.isspace():
+            out.append(" ")
+        elif unicodedata.category(ch) in ("Cc", "Cf"):
+            continue
+        elif ch in _APOSTROPHES:
+            out.append("'")
+        elif ch.isalnum() or ch in _SAFE_PUNCTUATION:
+            out.append(ch)
+        else:
+            out.append(" ")
+    text = " ".join("".join(out).split())[:max_len].strip()
+    return text if any(ch.isalnum() for ch in text) else None
+
+
+def _team_name(team: Team) -> str:
+    name = _clean(team.name, 60) or _clean(team.abbr, 16)
+    if name is None:
+        raise ValueError("team has no usable name")
+    return name
+
+
 def _short_name(team: Team) -> str:
-    return nickname(team.name) if team.sport == SPORT_NFL else team.name
+    return nickname(_team_name(team)) if team.sport == SPORT_NFL else _team_name(team)
 
 
 def _opponent_ref(team: Team) -> str:
-    return f"the {nickname(team.name)}" if team.sport == SPORT_NFL else team.name
+    return f"the {_short_name(team)}" if team.sport == SPORT_NFL else _short_name(team)
 
 
 def _scores(g: Game, team_id: int) -> tuple[int, int]:
@@ -168,14 +202,18 @@ def _injuries(db: Session, game: Game, team_id: int) -> tuple[str, ...]:
     rows = db.scalars(
         select(Injury).where(Injury.game_id == game.game_id, Injury.team_id == team_id)
     ).all()
-    listed = [r for r in rows if (r.status or "").lower() in NARRATED_INJURY_STATUSES]
+    listed = []
+    for r in rows:
+        status = (r.status or "").lower()
+        name = _clean(r.player_name, 80)
+        if status in NARRATED_INJURY_STATUSES and name:
+            listed.append((name, _clean(r.position, 6), status.title()))
     listed.sort(
-        key=lambda r: -POSITION_WEIGHTS.get((r.position or "").upper(), DEFAULT_POSITION_WEIGHT)
+        key=lambda r: -POSITION_WEIGHTS.get((r[1] or "").upper(), DEFAULT_POSITION_WEIGHT)
     )
     return tuple(
-        f"{r.player_name}{f' ({r.position})' if r.position else ''} is listed "
-        f"{r.status.title()}"
-        for r in listed[:MAX_INJURIES_PER_TEAM]
+        f"{name}{f' ({position})' if position else ''} is listed {status}"
+        for name, position, status in listed[:MAX_INJURIES_PER_TEAM]
     )
 
 
@@ -195,12 +233,14 @@ def _rank_note(team_id: int, ranks: dict[int, int], prev_ranks: dict[int, int]) 
 def _team_facts(db, game, team, ranks, prev_ranks) -> TeamFacts:
     games = season_games_before(db, team.team_id, game)
     is_nfl = team.sport == SPORT_NFL
-    full_name = team.name if is_nfl else f"{team.name} {team.mascot or ''}".strip()
+    name = _team_name(team)
+    mascot = _clean(team.mascot, 40)
+    full_name = name if is_nfl else f"{name} {mascot or ''}".strip()
     return TeamFacts(
         name=_short_name(team),
         full_name=full_name,
-        abbr=team.abbr,
-        mascot=nickname(team.name) if is_nfl else team.mascot,
+        abbr=_clean(team.abbr, 16) or name,
+        mascot=nickname(name) if is_nfl else mascot,
         record=record_string(games, team.team_id),
         games_this_season=len(games),
         last_game=_result_phrase(games[-1], team.team_id) if games else None,
@@ -223,22 +263,29 @@ def _when(game: Game) -> str:
 
 def _venue(game: Game) -> str | None:
     if game.stadium is not None:
-        return f"{game.stadium.name} in {game.stadium.city}"
-    return game.venue_name
+        name, city = _clean(game.stadium.name, 80), _clean(game.stadium.city, 60)
+        if name and city:
+            return f"{name} in {city}"
+        return name
+    return _clean(game.venue_name, 80)
 
 
 def _matchup_note(game: Game) -> str | None:
-    home, away = game.home_team, game.away_team
+    home_conf = _clean(game.home_team.conference, 40)
+    away_conf = _clean(game.away_team.conference, 40)
+    division = _clean(game.home_team.division, 10)
     if game.sport == SPORT_NFL:
-        if game.is_divisional and home.division:
-            return f"{home.conference} {home.division} division game"
-        if home.conference == away.conference:
-            return f"{home.conference} matchup"
-        return f"{away.conference} versus {home.conference} interconference game"
-    if game.is_divisional and home.conference:
-        return f"{home.conference} conference game"
-    if home.conference and away.conference and home.conference != away.conference:
-        return f"nonconference game, {away.conference} at {home.conference}"
+        if not (home_conf and away_conf):
+            return None
+        if game.is_divisional and division:
+            return f"{home_conf} {division} division game"
+        if home_conf == away_conf:
+            return f"{home_conf} matchup"
+        return f"{away_conf} versus {home_conf} interconference game"
+    if game.is_divisional and home_conf:
+        return f"{home_conf} conference game"
+    if home_conf and away_conf and home_conf != away_conf:
+        return f"nonconference game, {away_conf} at {home_conf}"
     return None
 
 
@@ -260,8 +307,9 @@ def _last_meeting(db: Session, game: Game) -> str | None:
     if prior is None:
         return None
     hs, as_ = prior.home_score, prior.away_score
-    last_regular_week = 18 if prior.sport == SPORT_NFL else 15
-    if prior.week > last_regular_week:
+    # Only CFB regular-season games are loaded, and CFBD numbers some of them
+    # (Army-Navy) week 16, so a CFB meeting is never called postseason.
+    if prior.sport == SPORT_NFL and prior.week > 18:
         when = f"in the {prior.season} postseason"
     else:
         when = f"in Week {prior.week} of {prior.season}"
@@ -370,7 +418,7 @@ def _market_line(facts: GameFacts) -> str:
     )
 
 
-def _team_block(t: TeamFacts, sport: str, poll_available: bool) -> list[str]:
+def _team_block(t: TeamFacts, sport: str, poll_available: bool, trusted: bool) -> list[str]:
     head = f"{t.full_name} ({t.abbr})" + (f", also called the {t.mascot}" if t.mascot else "")
     rows = [head, f"- Record this season: {t.record}"]
     if t.rank:
@@ -385,12 +433,12 @@ def _team_block(t: TeamFacts, sport: str, poll_available: bool) -> list[str]:
             rows.append(f"- {label}: {value}")
     if t.games_this_season == 0:
         rows.append("- First game of the season")
-    for injury in t.injuries:
-        rows.append(f"- Injury report: {injury}")
+    if not trusted:
+        rows += [f"- Injury report: {injury}" for injury in t.injuries]
     return rows
 
 
-def render_fact_sheet(facts: GameFacts) -> str:
+def _sheet_lines(facts: GameFacts, trusted: bool) -> list[str]:
     p_home = facts.home_win_prob
     model_fav, model_dog, p = (
         (facts.home, facts.away, p_home) if p_home >= 0.5 else (facts.away, facts.home, 1 - p_home)
@@ -401,7 +449,7 @@ def render_fact_sheet(facts: GameFacts) -> str:
         + (" (neutral site)" if facts.is_neutral_site else ""),
         f"When: {facts.when}",
     ]
-    if facts.venue:
+    if facts.venue and not trusted:
         lines.append(f"Where: {facts.venue}")
     if facts.matchup_note:
         lines.append(f"Game type: {facts.matchup_note}")
@@ -414,10 +462,21 @@ def render_fact_sheet(facts: GameFacts) -> str:
     if facts.weather:
         lines.append(f"Weather: {facts.weather}")
     lines.append("")
-    lines += _team_block(facts.home, facts.sport, facts.poll_available)
+    lines += _team_block(facts.home, facts.sport, facts.poll_available, trusted)
     lines.append("")
-    lines += _team_block(facts.away, facts.sport, facts.poll_available)
+    lines += _team_block(facts.away, facts.sport, facts.poll_available, trusted)
     if facts.factor_lines:
         lines += ["", "Biggest factors behind the model's number (team they favor: factor):"]
         lines += [f"- {line}" for line in facts.factor_lines]
-    return "\n".join(lines)
+    return lines
+
+
+def render_fact_sheet(facts: GameFacts) -> str:
+    return "\n".join(_sheet_lines(facts, trusted=False))
+
+
+def trusted_numbers_text(facts: GameFacts) -> str:
+    """The sheet without per-game feed text (the venue and the injury report).
+    Scores, records, streaks and ranks in the narration are checked against
+    this, so a number smuggled into a venue or player name backs no claim."""
+    return "\n".join(_sheet_lines(facts, trusted=True))

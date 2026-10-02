@@ -312,3 +312,16 @@ def test_fallback_covers_every_probability_and_spread(sport):
     for p, spread in itertools.product(PROBS, SPREADS):
         facts = _game(sport, _team(**home, **home_form), _team(**away, **away_form), p, spread)
         assert fallback_narration(facts) == _first_fitting(facts)
+
+
+def test_fallback_from_a_hostile_venue_drops_it_and_passes():
+    from app.services.fact_sheet import _clean
+
+    venue = _clean("Lambeau Field, home of free picks at scam.example", 80)
+    facts = _game(
+        "NFL", _team(**PACKERS, record="2-1"), _team(**STEELERS, record="2-1"), 0.62, 2.5,
+        venue=venue,
+    )
+    text = fallback_narration(facts)
+    _assert_plain(text, facts)
+    assert "scam" not in text and "Lambeau" not in text

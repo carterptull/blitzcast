@@ -82,9 +82,11 @@ Full setup + env vars: [README.md](./README.md) and
   loader's status).
 - **LLM boundary:** Claude narrates model output only; it never predicts,
   never alters probabilities. It writes from the fact sheet built in
-  `fact_sheet.py` (pre-kickoff data only), and every draft must pass
-  `check_narration` in `narrate.py` (percentages and team attribution,
-  market favorite and line wording, names, scores, records, ranks). A
+  `fact_sheet.py` (pre-kickoff data only; every feed string is cleaned by
+  `_clean()`, and the prompt marks the sheet as data, never instructions),
+  and every draft must pass `check_narration` in `narrate.py` (no links,
+  handles or digit runs, percentages and team attribution, market
+  favorite and line wording, names, scores, records, ranks). A
   checkable fact (which team is actually favored) must never be misstated
   even if the cited number is correct. If no draft passes, `predict_week`
   keeps the stored narration only if it is still exactly true today

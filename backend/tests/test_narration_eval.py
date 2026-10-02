@@ -197,3 +197,19 @@ def test_fresh_mode_with_flag_uses_generate_and_hides_raw_errors(eval_db, capsys
     assert "spends Anthropic tokens" in out
     assert "sk-ant" not in out and "https://" not in out
     assert "api error" in out
+
+
+def test_evaluate_rolls_back_after_a_database_error(eval_db, capsys, monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    rollbacks = []
+    real_rollback = eval_db.rollback
+    monkeypatch.setattr(eval_db, "rollback", lambda: (rollbacks.append(1), real_rollback()))
+
+    def boom(*args, **kwargs):
+        raise SQLAlchemyError("aborted")
+
+    monkeypatch.setattr(narration_eval, "facts_for_row", boom)
+    results, _ = narration_eval.evaluate(eval_db, "NFL", 2026, 1, 20, stored=True)
+    assert [r.rejections for _, r in results] == [["fact sheet failed"]] * 2
+    assert len(rollbacks) == 2

@@ -483,3 +483,106 @@ def test_existing_narrative_reads_the_stored_text(db):
     assert existing_narrative(db, "2026_01_BUF_KC", "1.0.0") == "stored text"
     assert existing_narrative(db, "2026_01_BUF_KC", "9.9.9") is None
     assert existing_narrative(db, "no_such_game", "1.0.0") is None
+
+
+def test_still_true_never_keeps_a_link():
+    facts = _bills_chiefs(0.6, None)
+    good = "Our model gives the Bills 60% and the Chiefs 40%."
+    assert still_true(good, facts)
+    assert not still_true(f"Free picks at scam.example. {good}", facts)
+
+
+def test_fallback_rejection_log_carries_only_a_category(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    monkeypatch.setattr(
+        predict_week, "fallback_reason",
+        lambda text, facts: "names not in the fact sheet: evil\nFORGED LOG LINE",
+    )
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)) == Narration(MINIMAL, "minimal")
+    assert "FORGED" not in caplog.text and "evil" not in caplog.text
+    assert all("\n" not in r.getMessage() for r in caplog.records)
+    assert "fallback narration rejected for 2026_01_BUF_KC: names not in the fact sheet" in (
+        caplog.text
+    )
+
+
+class _FakeModel:
+    def predict_proba(self, x):
+        import numpy as np
+
+        return np.array([[0.4, 0.6]])
+
+
+class _Identity:
+    def transform(self, raw):
+        return raw
+
+
+def _run_main(db, monkeypatch, narrate_fn, capsys, **patches):
+    from contextlib import contextmanager
+
+    @contextmanager
+    def scope():
+        yield db
+
+    real_unplayed = predict_week.unplayed_game_ids
+    monkeypatch.setattr(predict_week, "load_latest", lambda sport: {
+        "model": _FakeModel(), "calibrator": _Identity(), "feature_columns": ["elo_diff"],
+    })
+    monkeypatch.setattr(predict_week, "make_explainer", lambda model: None)
+    monkeypatch.setattr(predict_week, "top_factors", lambda *a, **kw: [])
+    monkeypatch.setattr(predict_week, "session_scope", scope)
+    monkeypatch.setattr(
+        predict_week, "unplayed_game_ids",
+        lambda *a: real_unplayed(*a, now=datetime(2026, 9, 1, tzinfo=UTC)),
+    )
+    monkeypatch.setattr(predict_week, "narrate", narrate_fn)
+    for name, value in patches.items():
+        monkeypatch.setattr(predict_week, name, value)
+    commits = []
+    real_commit = db.commit
+    monkeypatch.setattr(db, "commit", lambda: (commits.append(1), real_commit()))
+    monkeypatch.setattr("sys.argv", ["predict_week", "--season", "2026", "--week", "1"])
+    predict_week.main()
+    return capsys.readouterr().out, commits
+
+
+def _stored_texts(db):
+    from app.models import Prediction
+
+    rows = db.scalars(select(Prediction).where(Prediction.model_version == "1.0.0")).all()
+    return {p.game_id: p.llm_narrative for p in rows if p.game_id.startswith("2026_01")}
+
+
+def test_main_counts_each_tier_and_commits_every_game(db, monkeypatch, capsys):
+    def draft(facts):
+        return "A fresh booth draft." if facts.home.abbr == "KC" else None
+
+    out, commits = _run_main(db, monkeypatch, draft, capsys)
+    assert "narration: 1 written, 0 kept, 1 fallback, 0 minimal, 0 none" in out
+    assert "WARNING" not in out
+    assert len(commits) == 2
+    stored = _stored_texts(db)
+    assert stored["2026_01_BUF_KC"] == "A fresh booth draft."
+    assert stored["2026_01_PHI_DAL"] and "60%" in stored["2026_01_PHI_DAL"]
+
+
+def test_main_warns_only_when_a_game_has_no_narration(db, monkeypatch, capsys):
+    real_facts = predict_week.facts_for_row
+
+    def facts(db_, row, *a):
+        if row["game_id"] == "2026_01_PHI_DAL":
+            raise ValueError("no sheet")
+        return real_facts(db_, row, *a)
+
+    out, commits = _run_main(
+        db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+        facts_for_row=facts, minimal_narration=_raise(KeyError("no abbr")),
+    )
+    assert "narration: 1 written, 0 kept, 0 fallback, 0 minimal, 1 none" in out
+    assert "WARNING: 1 game has no booth narration" in out
+    assert len(commits) == 2
+    assert _stored_texts(db) == {
+        "2026_01_BUF_KC": "A fresh booth draft.", "2026_01_PHI_DAL": None,
+    }

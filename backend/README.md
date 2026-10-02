@@ -151,8 +151,8 @@ fresh narrations are generated, which **spends Anthropic tokens** (up to 3
 calls per game) and refuses to run unless you also pass `--spend-tokens`.
 Every mode also verifies the deterministic fallback passes the guardrail and
 exits 1 if it does not. Each `predict_week` run ends with
-`narration: N written, K kept, F fallback, J none` and a `WARNING:` line when
-any game has no narration.
+`narration: N written, K kept, F fallback, L minimal, J none` and a `WARNING:`
+line when any game has no narration.
 
 `/api/games` and `/api/schedule` also take `status=all|final|upcoming`
 (default `all`), filtering on whether both scores are present, not on the
@@ -190,8 +190,13 @@ serve fixture data so the frontend can develop without a database.
   never computes the prediction. It writes from a pre-game fact sheet
   (records, last result, streak, venue, the betting line in words, NFL
   injury-report names, CFB poll ranks) and every draft is checked against
-  that sheet before it is stored. If no draft passes, the stored narration
-  is kept when it still passes, else a deterministic template is used.
+  that sheet before it is stored. Feed text (team, venue and player names)
+  is cleaned to one plain line before it reaches the sheet, the sheet is
+  marked as data in the prompt, and the copy may not contain links, handles
+  or long digit runs. If no draft passes, the stored narration is kept only
+  when it is still exactly true today (`still_true`), else a deterministic
+  template is used, else a minimal model-only line when even the fact sheet
+  cannot be built.
 
 ## Model
 

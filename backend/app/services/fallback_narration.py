@@ -7,7 +7,7 @@ not even the fact sheet can be built."""
 import re
 
 from app.services.fact_sheet import GameFacts, TeamFacts, market_favorite
-from app.services.narrate import _plain_punctuation, check_narration, mentions_market
+from app.services.narrate import check_narration, mentions_market, plain_punctuation
 
 MAX_WORDS = 69
 # Copied venue or team names can carry these; the guardrail does not reject them.
@@ -147,7 +147,7 @@ def _drafts(facts: GameFacts) -> list[str]:
         core,
         model,
     ]
-    return [_plain_punctuation(d) for d in drafts]
+    return [plain_punctuation(d) for d in drafts]
 
 
 def fallback_reason(text: str, facts: GameFacts) -> str | None:

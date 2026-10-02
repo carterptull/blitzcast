@@ -169,7 +169,7 @@ export default function HowItWorksPage() {
             If every draft fails, the last preview stays up only if it is still exactly true
             today, otherwise the page shows a plain, template-written preview built from the same
             verified facts, and if even those facts cannot be gathered, a one-line summary of the
-            model&apos;s percentages. A matchup never has an empty booth section.
+            model&apos;s percentages. Every upcoming matchup gets a booth section.
           </p>
         </Section>
 

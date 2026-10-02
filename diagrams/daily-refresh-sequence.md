@@ -59,7 +59,7 @@ sequenceDiagram
             J->>J: predict_proba, Platt calibration, top_factors via SHAP
             J->>L: build the fact sheet, then narrate(fact sheet)
             L-->>J: draft that passed check_narration, or None after 3 attempts
-            J->>J: None falls back to the stored narration if it still passes, else the template
+            J->>J: None keeps the stored narration only if still exactly true, else the template, else a minimal line
             J->>DB: upsert prediction on (game_id, model_version) and commit
         end
         J->>J: print the narration summary line, with a WARNING if any game has none
@@ -83,9 +83,10 @@ until the season has a final game. CFB turnovers and yards stay NULL, since CFBD
 
 **A narration never costs a prediction.** Each game's fact sheet and narration are built inside a
 guard, so an error there still writes the prediction. The chain is a fresh AI draft, then the
-stored narration if it still passes today's fact check, then the deterministic template. The
-run ends with `narration: N written, K kept, F fallback, J none`, plus a `WARNING:` line when any
-game has none. See [`llm-narration-boundary.md`](llm-narration-boundary.md).
+stored narration only if it is still exactly true today (`still_true`), then the deterministic
+template, then a minimal model-only line when even the fact sheet cannot be built. The run ends
+with `narration: N written, K kept, F fallback, L minimal, J none`, plus a `WARNING:` line when
+any game has none. See [`llm-narration-boundary.md`](llm-narration-boundary.md).
 
 **Idempotent and resumable.** Every loader upserts on a natural key, and `predict_week` commits
 after each game, so a crash halfway through a ~100-game CFB slate keeps what finished and a

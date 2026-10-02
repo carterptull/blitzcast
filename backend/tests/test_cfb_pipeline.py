@@ -299,3 +299,20 @@ def test_upsert_teams_records_mascot(cfb_db):
         select(Team).where(Team.sport == SPORT_CFB, Team.name == "Georgia")
     ).one()
     assert team.mascot == "Bulldogs"
+
+
+def test_upsert_teams_truncates_a_long_mascot_and_drops_an_empty_one(cfb_db):
+    from data_pipeline.seed_cfb import upsert_teams
+
+    teams = pd.DataFrame([
+        {"school": "Georgia", "mascot": "B" * 60, "conference": "SEC",
+         "abbreviation": "UGA", "logos": None, "color": None, "alternateColor": None},
+        {"school": "Alabama", "mascot": "   ", "conference": "SEC",
+         "abbreviation": "ALA", "logos": None, "color": None, "alternateColor": None},
+    ])
+    upsert_teams(cfb_db, teams, {"Georgia": "FBS", "Alabama": "FBS"}, {}, {})
+    teams_by_name = {
+        t.name: t for t in cfb_db.scalars(select(Team).where(Team.sport == SPORT_CFB))
+    }
+    assert teams_by_name["Georgia"].mascot == "B" * 40
+    assert teams_by_name["Alabama"].mascot is None

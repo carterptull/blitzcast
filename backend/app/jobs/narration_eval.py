@@ -11,13 +11,13 @@ The DB is only read: the session is rolled back and never committed.
 """
 
 import argparse
-import re
 import sys
 from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
@@ -26,44 +26,18 @@ from app.models import Prediction
 from app.services.fact_sheet import GameFacts
 from app.services.fallback_narration import fallback_narration
 from app.services.narrate import NarrationResult, check_narration, generate
+from app.services.narrate import reason_category as narration_reason_category
 from app.services.predictions import poll_ranks_entering
 from ml.features import build_features
 
 NO_NARRATION = "no narration stored"
 FACTS_ERROR = "fact sheet failed"
 
-# Fixed labels only: rejection text can echo names, numbers or API error detail.
-_CATEGORIES: tuple[tuple[str, str], ...] = (
-    (r"^empty response", "empty response"),
-    (r"^too long", "too long"),
-    (r"^more than 4 sentences", "more than 4 sentences"),
-    (r"^uses banned phrase", "uses banned phrase"),
-    (r"^spells out a number", "spells out a number"),
-    (r"^mentions injuries", "mentions injuries"),
-    (r"^cites a percentage", "cites a percentage"),
-    (r"^names not in the fact sheet", "names not in the fact sheet"),
-    (r"^api error", "api error"),
-    (r"^mentions a betting market", "mentions a betting market"),
-    (r"^cites a total", "cites a total"),
-    (r"^cites .* points but the line", "cites points off the line"),
-    (r"but that .* belongs to", "cites another team's number"),
-    (r"but the fact sheet has no such", "cites a fact the sheet lacks"),
-    (r"^gives .* but the model has", "wrong percentage for a team"),
-    (r"^puts .* on the wrong team", "player on the wrong team"),
-    (r"betting favorite|favorite is getting points|wrong team is the", "market favorite wrong"),
-    (r"model's favorite", "model favorite wrong"),
-    (f"^{NO_NARRATION}$", NO_NARRATION),
-    (f"^{FACTS_ERROR}$", FACTS_ERROR),
-)
-_COMPILED = tuple((re.compile(pattern), label) for pattern, label in _CATEGORIES)
-
-
 def reason_category(reason: str) -> str:
-    """Map a rejection to a fixed label; anything unrecognized is just "other"."""
-    for pattern, label in _COMPILED:
-        if pattern.search(reason):
-            return label
-    return "other"
+    """A fixed label for a rejection, including this script's own two."""
+    if reason in (NO_NARRATION, FACTS_ERROR):
+        return reason
+    return narration_reason_category(reason)
 
 
 def summarize(results: list[tuple[str, NarrationResult]]) -> dict:
@@ -148,6 +122,8 @@ def evaluate(
                 db, row, pred.home_win_prob, pred.shap_top_features or [], ranks, prev
             )
         except Exception as exc:
+            if isinstance(exc, SQLAlchemyError):
+                db.rollback()  # else every later game fails on the aborted transaction
             print(f"{game_id} {FACTS_ERROR} ({type(exc).__name__})")
             results.append((game_id, NarrationResult(None, 0, [FACTS_ERROR])))
             continue

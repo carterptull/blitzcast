@@ -20,13 +20,13 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
-from app.services.fact_sheet import GameFacts, build_game_facts, render_fact_sheet
+from app.services.fact_sheet import GameFacts, build_game_facts, trusted_numbers_text
 from app.services.fallback_narration import (
     fallback_narration,
     fallback_reason,
     minimal_narration,
 )
-from app.services.narrate import check_narration, narrate
+from app.services.narrate import check_narration, narrate, reason_category
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
 from ml.features import build_features
@@ -137,9 +137,11 @@ def still_true(previous: str, facts: GameFacts) -> bool:
     """A stored narration may be republished only when it is exactly true
     against today's sheet, not merely close: every percentage is today's whole
     number, every other number (scores, records, degrees, lines, ranks, years)
-    is on today's sheet, a coin flip is still 50%, weather talk is backed by
-    today's weather, and the punctuation is plain. Stricter than check_narration
-    on purpose: a miss only costs a fresh template."""
+    is on the trusted part of today's sheet (no venue or injury text), a coin
+    flip is still 50%, weather talk is backed by today's weather, and the
+    punctuation is plain. It must also pass check_narration, so the link,
+    handle and digit-run rules apply too. Stricter than check_narration on
+    purpose: a miss only costs a fresh template."""
     if _PUNCTUATION_RE.search(previous) or check_narration(previous, facts) is not None:
         return False
     p = facts.home_win_prob
@@ -148,7 +150,7 @@ def still_true(previous: str, facts: GameFacts) -> bool:
         return False
     if _COIN_FLIP_RE.search(previous) and round(p * 100) != 50:
         return False
-    sheet = " ".join(render_fact_sheet(facts).split())
+    sheet = " ".join(trusted_numbers_text(facts).split())
     on_sheet = set(_NUMBER_RE.findall(sheet))
     if any(n not in on_sheet for n in _NUMBER_RE.findall(_PCT_RE.sub(" ", previous))):
         return False
@@ -215,7 +217,9 @@ def narrate_safely(
         _failed(db, game_id, "fallback narration", exc)
         return _minimal(db, row, prob)
     if reason is not None:
-        logger.warning("fallback narration rejected for %s: %s", game_id, reason)
+        logger.warning(
+            "fallback narration rejected for %s: %s", game_id, reason_category(reason)
+        )
         return _minimal(db, row, prob)
     return Narration(text, "fallback")
 

@@ -32,8 +32,10 @@ unchanged; the retrain is a later release. Claude Haiku (via
 - `Team.mascot` (migration `c3f1a9d27e48`, additive), filled by the next
   `seed_cfb` run. The migration is applied automatically on API deploy
   (`railway.json` runs `alembic upgrade head` on boot), but CFB mascots only
-  appear after `seed_cfb` is run once following it. Post-deploy order: the
-  migration (automatic), then `seed_cfb`, then the `predict_week` re-runs.
+  appear after `seed_cfb` is run once following it. Deploy order: merge
+  outside the 09:00 to 10:00 UTC cron window and confirm the API deploy
+  (which applies the migration) succeeded before the crons read
+  `Team.mascot`, then `seed_cfb`, then the `predict_week` re-runs.
 - `python -m app.jobs.narration_eval --sport nfl --week N` measures the
   guardrail pass rate, mean attempts and fallback coverage without writing
   anything. `--stored` re-checks saved narrations for free; fresh
@@ -68,6 +70,22 @@ unchanged; the retrain is a later release. Claude Haiku (via
   narration is kept when it is still exactly true today (every percentage is
   today's number, every other number is on today's fact sheet, weather talk
   is backed by today's weather), and replaced otherwise.
+- A CFB rematch is never called a "postseason" meeting: CFBD numbers
+  Army-Navy as regular-season week 16, so every CFB meeting reads
+  "Week N of season".
+- `seed_cfb` cuts a mascot to the 40-character column, so one long value
+  cannot roll back the whole seed.
+
+### Security
+- Untrusted feed text is cleaned before it reaches the narration: team,
+  mascot, conference, venue, city and injury-report strings become one
+  plain line (no newlines, control characters or symbols beyond
+  `. ' & ( ) -`), so a vandalized value cannot forge fact-sheet rows. The
+  prompt marks the sheet as data, never instructions. Published copy may
+  not contain a link, domain, handle, slash, long digit run or non-Latin-1
+  letter; numbers are checked only against trusted fields, never venue or
+  player text; rejections are logged as fixed categories; and the Anthropic
+  client times out after 30 seconds with one retry.
 
 ## [1.0.14] — 2026-10-01
 
