@@ -7,7 +7,9 @@ Usage: python -m app.jobs.predict_week [--season 2026] [--week N] [--sport nfl|c
 
 import argparse
 import logging
+from collections import Counter
 from datetime import UTC, datetime, time, timedelta
+from typing import NamedTuple
 
 import pandas as pd
 from sqlalchemy import func, select
@@ -18,6 +20,7 @@ from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
 from app.services.fact_sheet import GameFacts, build_game_facts
+from app.services.fallback_narration import fallback_narration
 from app.services.narrate import check_narration, narrate
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
@@ -110,6 +113,11 @@ def _skip(db: Session, game_id: str, step: str, exc: Exception) -> None:
     logger.warning("%s skipped for %s: %s", step, game_id, type(exc).__name__)
 
 
+class Narration(NamedTuple):
+    text: str | None
+    source: str  # "llm", "kept", "fallback" or "none"
+
+
 def narrate_safely(
     db: Session,
     row: pd.Series,
@@ -118,30 +126,52 @@ def narrate_safely(
     ranks: dict[int, int],
     prev_ranks: dict[int, int],
     previous: str | None = None,
-) -> str | None:
+) -> Narration:
     """Fact-sheet building and narration may fail for one game without costing
-    that game, or the rest of the slate, its prediction. When a fresh draft
-    fails, the previous narration is kept only if it still passes today's fact
-    check. Rolling back is safe: since the last per-game commit the loop has
+    that game, or the rest of the slate, its prediction. The chain: a fresh AI
+    draft, else the previous narration if it still passes today's fact check,
+    else the deterministic fallback. Without a fact sheet there is nothing true
+    to say. Rolling back is safe: since the last per-game commit the loop has
     only read."""
     game_id = row["game_id"]
     try:
         facts = facts_for_row(db, row, prob, factors, ranks, prev_ranks)
     except Exception as exc:
         _skip(db, game_id, "narration", exc)
-        return None
+        return Narration(None, "none")
     try:
         text = narrate(facts)
     except Exception as exc:
         _skip(db, game_id, "narration", exc)
         text = None
-    if text or not previous:
-        return text
+    if text:
+        return Narration(text, "llm")
+    if previous:
+        try:
+            if check_narration(previous, facts) is None:
+                return Narration(previous, "kept")
+        except Exception as exc:
+            _skip(db, game_id, "previous narration check", exc)
     try:
-        return previous if check_narration(previous, facts) is None else None
+        text = fallback_narration(facts)
+        reason = check_narration(text, facts)
     except Exception as exc:
-        _skip(db, game_id, "previous narration check", exc)
-        return None
+        _skip(db, game_id, "fallback narration", exc)
+        return Narration(None, "none")
+    if reason is not None:
+        logger.warning("fallback narration rejected for %s: %s", game_id, reason)
+        return Narration(None, "none")
+    return Narration(text, "fallback")
+
+
+def narration_summary(sources: Counter) -> list[str]:
+    lines = [
+        f"narration: {sources['llm']} written, {sources['kept']} kept, "
+        f"{sources['fallback']} fallback, {sources['none']} none"
+    ]
+    if sources["none"]:
+        lines.append(f"WARNING: {sources['none']} games have no booth narration")
+    return lines
 
 
 def unplayed_game_ids(
@@ -206,6 +236,7 @@ def main() -> None:
         # Both weeks resolve AP first, so the rank movement compares the same poll in practice.
         prev_ranks = poll_ranks_entering(db, sport, args.season, week - 1) if week > 1 else {}
         print(f"predicting {len(target)} {sport} games for {args.season} week {week}")
+        sources: Counter = Counter()
 
         for _, row in target.iterrows():
             x = row[feature_columns].to_frame().T.astype(float)
@@ -221,18 +252,19 @@ def main() -> None:
             )
 
             previous = existing_narrative(db, row["game_id"], version)
-            narrative = narrate_safely(
+            narration = narrate_safely(
                 db, row, prob, factors, ranks, prev_ranks, previous=previous
             )
+            sources[narration.source] += 1
 
-            upsert_prediction(db, row["game_id"], version, prob, factors, narrative)
+            upsert_prediction(db, row["game_id"], version, prob, factors, narration.text)
             # Commit per game: a full CFB slate is ~100 sequential Claude calls,
             # and the upsert is idempotent, so partial progress is safe to keep.
             db.commit()
-            print(
-                f"  {row['game_id']}: home {prob:.1%}"
-                + (" (narrated)" if narrative else " (no narrative)")
-            )
+            print(f"  {row['game_id']}: home {prob:.1%} (narration: {narration.source})")
+
+        for line in narration_summary(sources):
+            print(line)
 
     print("prediction batch complete")
 

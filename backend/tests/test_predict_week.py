@@ -1,6 +1,7 @@
 """predict_week selection predicates and fact-sheet shaping."""
 
 import logging
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
@@ -9,7 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.jobs import predict_week
-from app.jobs.predict_week import default_week, existing_narrative, narrate_safely
+from app.jobs.predict_week import (
+    Narration,
+    default_week,
+    existing_narrative,
+    narrate_safely,
+    narration_summary,
+)
 from app.models import SPORT_CFB, SPORT_NFL, Game, Team
 
 
@@ -223,7 +230,7 @@ def _raise(exc):
 def test_narrate_safely_survives_a_fact_sheet_failure(db, monkeypatch, caplog):
     monkeypatch.setattr(predict_week, "facts_for_row", _raise(ValueError(SECRET)))
     with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
-        assert narrate_safely(*_narrate_args(db)) is None
+        assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
     assert "ValueError" in caplog.text
     assert "2026_01_BUF_KC" in caplog.text
     assert SECRET not in caplog.text
@@ -232,7 +239,8 @@ def test_narrate_safely_survives_a_fact_sheet_failure(db, monkeypatch, caplog):
 def test_narrate_safely_survives_a_narrator_failure(db, monkeypatch, caplog):
     monkeypatch.setattr(predict_week, "narrate", _raise(RuntimeError(SECRET)))
     with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
-        assert narrate_safely(*_narrate_args(db)) is None
+        result = narrate_safely(*_narrate_args(db))
+    assert result.source == "fallback" and result.text
     assert "RuntimeError" in caplog.text
     assert SECRET not in caplog.text
 
@@ -241,7 +249,7 @@ def test_narrate_safely_rolls_back_after_a_database_error(db, monkeypatch):
     rollbacks = []
     monkeypatch.setattr(db, "rollback", lambda: rollbacks.append(1))
     monkeypatch.setattr(predict_week, "facts_for_row", _raise(SQLAlchemyError(SECRET)))
-    assert narrate_safely(*_narrate_args(db)) is None
+    assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
     assert rollbacks == [1]
 
 
@@ -257,7 +265,7 @@ def test_narrate_safely_returns_the_narration(db, monkeypatch):
         return "ok"
 
     monkeypatch.setattr(predict_week, "narrate", fake_narrate)
-    assert narrate_safely(db, row, 0.6, [], {}, {}) == "ok"
+    assert narrate_safely(db, row, 0.6, [], {}, {}) == Narration("ok", "llm")
     assert seen[0].home.name == "Chiefs"
 
 
@@ -268,23 +276,76 @@ STALE_PREVIOUS = "The Chiefs are favored by 3 points, and our model gives them 6
 @pytest.mark.parametrize(
     ("draft", "previous", "expected"),
     [
-        (None, GOOD_PREVIOUS, GOOD_PREVIOUS),
-        (None, STALE_PREVIOUS, None),
-        (None, None, None),
-        ("fresh", GOOD_PREVIOUS, "fresh"),
+        (None, GOOD_PREVIOUS, Narration(GOOD_PREVIOUS, "kept")),
+        (None, STALE_PREVIOUS, "fallback"),
+        (None, None, "fallback"),
+        ("", None, "fallback"),
+        ("fresh", GOOD_PREVIOUS, Narration("fresh", "llm")),
     ],
-    ids=["keeps-valid-previous", "drops-stale-previous", "no-previous", "new-draft-wins"],
+    ids=[
+        "keeps-valid-previous", "drops-stale-previous", "no-previous", "empty-draft",
+        "new-draft-wins",
+    ],
 )
-def test_narrate_safely_keeps_a_previous_narration_only_if_it_still_checks_out(
-    db, monkeypatch, draft, previous, expected
-):
+def test_narrate_safely_chain(db, monkeypatch, draft, previous, expected):
     monkeypatch.setattr(predict_week, "narrate", lambda facts: draft)
-    assert narrate_safely(*_narrate_args(db), previous=previous) == expected
+    result = narrate_safely(*_narrate_args(db), previous=previous)
+    if expected == "fallback":
+        assert result.source == "fallback"
+        assert result.text and result.text != previous
+        assert "Chiefs" in result.text and "60%" in result.text
+    else:
+        assert result == expected
 
 
 def test_narrate_safely_keeps_a_valid_previous_when_the_narrator_raises(db, monkeypatch):
     monkeypatch.setattr(predict_week, "narrate", _raise(RuntimeError("down")))
-    assert narrate_safely(*_narrate_args(db), previous=GOOD_PREVIOUS) == GOOD_PREVIOUS
+    assert narrate_safely(*_narrate_args(db), previous=GOOD_PREVIOUS) == Narration(
+        GOOD_PREVIOUS, "kept"
+    )
+
+
+def test_narrate_safely_falls_back_when_the_previous_check_raises(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    real_check = predict_week.check_narration
+    calls = []
+
+    def check(text, facts):
+        calls.append(text)
+        if text == GOOD_PREVIOUS:
+            raise KeyError(SECRET)
+        return real_check(text, facts)
+
+    monkeypatch.setattr(predict_week, "check_narration", check)
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        result = narrate_safely(*_narrate_args(db), previous=GOOD_PREVIOUS)
+    assert result.source == "fallback"
+    assert "KeyError" in caplog.text and SECRET not in caplog.text
+
+
+def test_narrate_safely_returns_none_when_the_fallback_raises(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    monkeypatch.setattr(predict_week, "fallback_narration", _raise(IndexError(SECRET)))
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
+    assert "IndexError" in caplog.text and SECRET not in caplog.text
+
+
+def test_narrate_safely_returns_none_when_the_fallback_fails_its_check(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    monkeypatch.setattr(predict_week, "fallback_narration", lambda facts: "Chiefs by 77%.")
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)) == Narration(None, "none")
+    assert "fallback narration rejected" in caplog.text
+
+
+def test_narration_summary_counts_each_source():
+    sources = Counter({"llm": 3, "kept": 2, "fallback": 1})
+    assert narration_summary(sources) == ["narration: 3 written, 2 kept, 1 fallback, 0 none"]
+    sources["none"] = 2
+    lines = narration_summary(sources)
+    assert lines[0] == "narration: 3 written, 2 kept, 1 fallback, 2 none"
+    assert lines[1].startswith("WARNING: 2 games")
 
 
 def test_existing_narrative_reads_the_stored_text(db):
