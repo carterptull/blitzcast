@@ -1,6 +1,6 @@
 # ER diagram: the Postgres schema
 
-All ten tables from `backend/app/models.py` (managed by the three Alembic migrations in
+All ten tables from `backend/app/models.py` (managed by the four Alembic migrations in
 `backend/alembic/versions/`). NFL and CFB share every table, separated by a `sport` column
 rather than a second schema.
 
@@ -34,6 +34,7 @@ erDiagram
         string sport UK "NFL or CFB, unique with abbr"
         string abbr UK
         string name
+        string mascot "CFB only, from CFBD, used by narration"
         string conference
         string division "NFL only"
         string tier "CFB only, FBS or FCS"
@@ -124,7 +125,7 @@ erDiagram
         float home_win_prob "calibrated"
         timestamptz predicted_at
         jsonb shap_top_features "top 4 factors"
-        text llm_narrative "NULL when narration failed"
+        text llm_narrative "AI draft, kept draft, or template"
     }
 ```
 
@@ -151,4 +152,4 @@ CFB has no rows in `injuries` (there is no standardized CFB injury report), and 
 `poll_ranks`.
 
 ---
-_Last updated: 2026-10-01 · reflects v1.0.14_
+_Last updated: 2026-10-02 · reflects v1.1.0_

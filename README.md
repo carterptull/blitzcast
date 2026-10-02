@@ -29,9 +29,12 @@ log: [DECISIONS.md](./DECISIONS.md) · Release history:
    closing line.
 3. **API** (`backend/app/`): FastAPI serves cached predictions; a weekly
    batch job (features → predict → SHAP → narrate → upsert) does the work.
-4. **Narration**: Claude (Haiku 4.5) turns the probability + top SHAP
-   factors into 2–4 sentences of radio-broadcaster color. Guardrailed: it
-   can never change or invent the numbers.
+4. **Narration**: Claude (Haiku 4.5) turns the probability, the top
+   factors, and a fact sheet of verified pre-game facts (records, streaks,
+   the betting line, NFL injury report, CFB poll ranks) into 2 to 4 sentences
+   of broadcast color. Every name, percentage, and betting claim is checked
+   against the sheet before it is stored, and a deterministic template
+   stands in if no draft passes. It can never change or invent the numbers.
 5. **Frontend** (`frontend/`): Next.js + Tailwind, with a week slate,
    turf-hero matchup pages, light/dark themes, mobile-first.
 
@@ -133,7 +136,7 @@ stats and injuries for polls):
 ```
 
 **No API keys yet?** Everything still runs: refresh jobs skip politely,
-narration falls back to the factor list, and the frontend has a full mock
+narration uses the template-written preview, and the frontend has a full mock
 mode (`NEXT_PUBLIC_USE_MOCK=1`) plus the backend's `BLITZCAST_MOCK=1`.
 
 ## Deployment

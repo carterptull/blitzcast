@@ -31,8 +31,8 @@ flowchart TB
     cron -->|fetch| sources
     cron -->|"idempotent upserts"| db
     cron --> predict
-    predict -->|"probability + factors, fixed"| claude
-    claude -.->|"prose, or nothing"| predict
+    predict -->|"probability, factors, fact sheet, all fixed"| claude
+    claude -.->|"checked prose, or nothing"| predict
     predict -->|"upsert predictions"| db
 
     style request fill:transparent,stroke:#1565C0,stroke-width:2px
@@ -47,7 +47,8 @@ in [`DECISIONS.md`](../DECISIONS.md)).
 
 **The model and the LLM are deliberately in a line, not side by side.** The model decides the
 probability; Claude only receives it, already fixed, and turns it into prose. The dotted arrow
-back is the whole of Claude's influence: text, or nothing at all.
+back is the whole of Claude's influence: text that is checked against the fact sheet, or nothing
+at all, in which case the batch stores a deterministic template instead.
 
 ## Go deeper
 
@@ -64,4 +65,4 @@ back is the whole of Claude's influence: text, or nothing at all.
 | How is it hosted and secured? | [`deployment-security.md`](deployment-security.md) |
 
 ---
-_Last updated: 2026-10-01 · reflects v1.0.14_
+_Last updated: 2026-10-02 · reflects v1.1.0_

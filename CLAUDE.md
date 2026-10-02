@@ -16,7 +16,9 @@ choices.
 - **`backend/app/`** — FastAPI. Contract endpoints: `/api/teams`,
   `/api/schedule`, `/api/games`, `/api/predictions/{game_id}`. Predictions
   are **cached rows** written by `app/jobs/predict_week.py` — never computed
-  per-request. Narration in `app/services/narrate.py` (Claude, guardrailed).
+  per-request. Narration: `app/services/fact_sheet.py` (pre-game facts),
+  `narrate.py` (Claude plus the `check_narration` guardrail), and
+  `fallback_narration.py` (deterministic template).
 - **`backend/ml/`** — Elo (`elo.py`), leakage-safe features
   (`features.py`), XGBoost + Platt calibration (`train.py`), walk-forward
   backtest vs Vegas (`backtest.py`), SHAP (`explain.py`). `ml/artifacts/` is
@@ -44,7 +46,8 @@ Backend (from `backend/`, using `.venv\Scripts\python`):
 - Migrations: `python -m alembic upgrade head`
 - Pipeline: `python -m data_pipeline.seed` / `.backfill` /
   `.refresh_week`; model: `python -m ml.train` / `ml.backtest`;
-  predictions: `python -m app.jobs.predict_week`
+  predictions: `python -m app.jobs.predict_week`; narration quality:
+  `python -m app.jobs.narration_eval --sport nfl --week N --stored`
 
 Frontend (from `frontend/`): `npm run dev` / `lint` / `build` (port 3000)
 
@@ -78,11 +81,14 @@ Full setup + env vars: [README.md](./README.md) and
   feature builder's played-game checks, the stats refresh, and the NFL
   loader's status).
 - **LLM boundary:** Claude narrates model output only; it never predicts,
-  never alters probabilities. Guardrails live in `narrate.py` — they check
-  both percentage magnitude (`_percentages_consistent`) and team
-  attribution (`_favorite_attribution_consistent`); a checkable fact
-  (which team is actually favored) must never be misstated even if the
-  cited number is correct.
+  never alters probabilities. It writes from the fact sheet built in
+  `fact_sheet.py` (pre-kickoff data only), and every draft must pass
+  `check_narration` in `narrate.py` (percentages and team attribution,
+  market favorite and line wording, names, scores, records, ranks). A
+  checkable fact (which team is actually favored) must never be misstated
+  even if the cited number is correct. If no draft passes, `predict_week`
+  keeps the stored narration only if it still passes, else uses the
+  deterministic template in `fallback_narration.py`.
 - **Market-factor SHAP direction:** in `ml/explain.py`, `market_spread_home`
   and `market_home_prob`'s displayed `direction` comes from the feature's
   own raw value, never the SHAP sign — these represent an independently

@@ -161,11 +161,13 @@ export default function HowItWorksPage() {
             matchup page.
           </p>
           <p>
-            Claude never sees the raw game data and never touches the math. It gets the number and
-            the factor list as fixed inputs and is guardrailed against changing or inventing
-            either one. If narration ever fails or comes back looking off, the page falls back to
-            showing the factor list plainly rather than letting a bad sentence stand in for the
-            model&apos;s actual call.
+            Claude never touches the math. It is handed the number, the factors, and a short fact
+            sheet of verified pre-game facts: each team&apos;s record, last result, and streak,
+            the betting line written out in words, and for the NFL the official injury report.
+            Every name, percentage, and betting claim it writes is checked against that sheet
+            before it is published. A draft that fails gets another try with the reason attached,
+            and if every draft fails the page shows a plain, template-written preview built from
+            the same verified facts, so a matchup never has an empty booth section.
           </p>
         </Section>
 

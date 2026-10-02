@@ -439,3 +439,88 @@ season has a final game, and a missing key warns and exits 0, matching every oth
 turnovers and yards stay NULL because CFBD PPA does not carry them, so the turnover form feature
 stays inert for CFB. **Alternative:** a week-scoped PPA call that fetches only the latest week:
 more code and a second set of selection and delete rules, all to save a single call a day.
+
+## The narrator works from a fact sheet, not raw SHAP values
+
+`app/services/fact_sheet.py` builds a short plain-English sheet for each game (records, last result,
+streak, venue, kickoff window, the betting line in words, NFL injury-report names, CFB poll ranks
+and movement, and the model's top factors as phrases) and the narrator is told to use only what
+is written there. **Why:** every narration bug before 1.1.0 was the model interpreting numbers:
+reading a stored spread's sign backwards, calling a factor "recent form" when its window still
+spanned last season, inventing a player or a venue to fill a gap. A sheet turns interpretation
+into transcription, and it gives the guardrail a ground truth to check each claim against. The
+sheet is built only from data before kickoff, so it follows the same leakage rule as the
+features. **Alternative:** keep handing the model SHAP values and a spread and rely on the prompt
+to explain them correctly: that is what shipped the bugs, and a prompt cannot be tested the way a
+rendered sheet can.
+
+## The name allowlist comes from the rendered fact sheet, not a blocklist
+
+`check_narration` collects every capitalized word in a draft and rejects the draft if any of them
+is neither in the rendered sheet nor a plain English word on a short list (sentence openers,
+calendar words, football terms). A lone sentence-initial unknown word is deliberately still
+rejected. **Why:** an invented name is the worst failure (a wrong claim stated as fact on the
+page), and a blocklist can never name every player who might be hallucinated. A false positive
+costs one retry with feedback, a false negative puts a wrong claim in front of a visitor, so the
+check leans strict. Documented residual limits: a surname that is also a common word (Good, Key,
+Will) cannot be told apart from an opener; a pronoun is attributed to the clause or sentence
+subject, which can be wrong; a number with no team near it is checked against the sheet but not
+tied to a team; an injury's status (Out versus Doubtful) is not checked; and invented history
+with no number in it ("hasn't lost at home all season") is not caught. **Alternative:** a
+blocklist or an LLM judge on the output: the first misses every unseen name, the second adds a
+second non-deterministic step to a boundary whose point is to be deterministic.
+
+## A rejected draft's reason is fed back on the retry
+
+When a draft fails `check_narration`, the next attempt (up to 3) is sent the original request, the
+rejected draft, and a message naming the rule it broke, such as which percentage was wrong or
+which name is not on the sheet. **Why:** a blind retry at temperature 0.8 often repeats the same
+mistake or trades it for a different one, while a specific reason usually fixes it in one more
+call. It costs nothing extra on the common path where the first draft passes. **Alternative:**
+resample the same prompt: simpler, but it spends the same calls with a lower pass rate.
+
+## Three-step chain ending in a deterministic template, never a blank section
+
+`predict_week` resolves each game's narration in order: a fresh AI draft that passed the check,
+else the previous stored narration if it still passes today's check, else a deterministic template
+from `fallback_narration.py`, which is built from the same fact sheet and held to the same
+guardrail. The end-of-run summary line reports the counts and warns when any game has none.
+**Why:** a production check found 5 of 22 model-vs-market disagreement games had no booth section
+at all (0 of about 430 agreeing games), and those are the games visitors most want explained.
+Keeping the previous narration is allowed only when it still passes the check against current
+facts, because a narration written last week can name an injury or a line that has since changed,
+and an unchecked stale claim is worse than a plain template. This supersedes the earlier
+behavior of storing NULL and showing only the factor list. **Alternative:** leave the section
+empty on failure: honest, but it left the most interesting games bare.
+
+## Team mascots are stored on `Team`
+
+`teams.mascot` (migration `c3f1a9d27e48`, additive) holds the CFBD mascot, filled by `seed_cfb`.
+NFL nicknames still come from `team_names.nickname()`. **Why:** CFB team names are school names,
+so a narration saying "the Buckeyes" could not be matched to Ohio State, which left mascot-only
+mentions unchecked (the documented gap in the old diagram) and made correct copy look like an
+unknown name. With the mascot in the sheet, both the allowlist and team attribution recognize it.
+**Alternative:** hardcode a mascot table in the narration code: it would drift from the CFBD data
+that already feeds every other team field.
+
+## Temperature 0.8 on Haiku, with `ANTHROPIC_MODEL` as the lever
+
+The narrator calls Claude Haiku at temperature 0.8, max 3 attempts, and the model remains a
+setting. **Why:** a week has about 80 games and near-identical sheets produce near-identical copy
+at low temperature, which reads as templated. Correctness is enforced by the checker rather than
+by sampling, so extra variety costs only an occasional retry. If `narration_eval` shows pass rates
+falling, the first lever is a larger model through `ANTHROPIC_MODEL`, not loosening the checks.
+**Alternative:** temperature 0 for fewer rejections: more repetitive prose across a slate.
+
+## Guardrail tuned against measured pass rates on two independent corpora
+
+The guardrail was measured on how often it wrongly rejected narrations known to be true: 31.6
+percent before tuning, 1.3 percent on the first corpus after, and 0 of 47 on a fresh second
+corpus that was not used to tune it. `python -m app.jobs.narration_eval` keeps that kind of
+measurement repeatable. **Why:** the first round of fixes was written against one probe set and
+looked finished; the fresh set is what showed whether the rules generalized or merely memorized
+the first one. Several later fixes (pronouns, plain openers, city aliases, rank ownership) came
+from that second look. The lesson is to keep a held-out corpus and report against it, because a
+guardrail tuned only against its own probe set looks better than it is. **Alternative:** tune by
+eyeballing a handful of narrations: fast, but it cannot show a rejection rate or catch
+regressions.

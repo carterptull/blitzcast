@@ -6,6 +6,64 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-02
+
+The "From the booth" narration is rebuilt around verified facts. The model,
+its probabilities, and `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`) are
+unchanged; the retrain is a later release. Claude Haiku (via
+`ANTHROPIC_MODEL`) still writes the copy.
+
+### Added
+- A pre-game fact sheet (`app/services/fact_sheet.py`) that the narrator
+  works from instead of raw SHAP values: each team's record, last result,
+  streak, and recent scoring, the venue and kickoff window, the betting
+  line written out in words, NFL injury-report names (Out and Doubtful),
+  CFB AP poll ranks and week-over-week movement, and the model's top
+  factors in plain English. Every fact is built from data strictly before
+  kickoff.
+- `check_narration` in `app/services/narrate.py`, the guardrail every draft
+  must pass. It verifies the model's pick and each percentage per team, the
+  market favorite and the line wording, every capitalized name against the
+  fact sheet, spelled-out numbers, scores, records, streaks and ranks, and
+  CFB injury talk.
+- A deterministic fallback narration (`app/services/fallback_narration.py`),
+  built from the same fact sheet and held to the same check, so every game
+  with a prediction gets a booth section even when no AI draft survives.
+- `Team.mascot` (migration `c3f1a9d27e48`, additive), filled by the next
+  `seed_cfb` run. The migration is applied automatically on API deploy
+  (`railway.json` runs `alembic upgrade head` on boot).
+- `python -m app.jobs.narration_eval --sport nfl --week N` measures the
+  guardrail pass rate, mean attempts and fallback coverage without writing
+  anything. `--stored` re-checks saved narrations for free; fresh
+  generation spends Anthropic tokens and requires `--spend-tokens`.
+- A per-run narration summary from `predict_week`:
+  `narration: N written, K kept, F fallback, J none`, with a `WARNING:`
+  line when any game ended up with none.
+
+### Changed
+- The narrator voice: a pregame-show structure at whip-around pace (stakes
+  first, then the model's pick and number, then one or two reasons from the
+  sheet). No real show names. Temperature is 0.8.
+- A rejected draft's reason is now fed back to the model on the retry (up
+  to 3 attempts) instead of a blind second try.
+- The `predict_week` chain: a fresh AI draft, else the stored
+  narration if it still passes today's fact check, else the deterministic
+  template.
+
+### Fixed
+- Narrations that misread the stored spread sign. A positive home spread
+  means the home team is favored, and the fact sheet now states the
+  favorite and the line in words so there is nothing to misread.
+- Invented player names and venues, and "last five games" talk when the
+  window actually spans last season (the sheet flags those factors).
+- Games with no booth section. A production check found 5 of 22
+  model-vs-market disagreement games had none (0 of about 430 agreeing
+  games); the fallback closes that gap.
+- A failed narration can no longer block a prediction: fact-sheet or
+  narration errors are caught per game and the prediction is still written.
+- A failed re-narration can no longer erase a still-valid one: the stored
+  narration is kept when it passes today's check.
+
 ## [1.0.14] — 2026-10-01
 
 ### Security
