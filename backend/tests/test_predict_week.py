@@ -1,11 +1,15 @@
 """predict_week selection predicates and fact-sheet shaping."""
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
+import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.jobs.predict_week import default_week
+from app.jobs import predict_week
+from app.jobs.predict_week import default_week, existing_narrative, narrate_safely
 from app.models import SPORT_CFB, SPORT_NFL, Game, Team
 
 
@@ -200,3 +204,95 @@ def test_default_week_skips_a_stale_week_with_a_permanently_unscored_game(db):
 
     now = datetime(2026, 10, 1, tzinfo=UTC)   # weeks later
     assert default_week(db, 2026, SPORT_NFL, now=now) != 1
+
+
+SECRET = "postgresql://user:hunter2@db.example/prod"
+
+
+def _narrate_args(db, **row_cols):
+    row = _row("2026_01_BUF_KC", has_market_line=1.0, has_market_spread=1.0, **row_cols)
+    return db, row, 0.6, [], {}, {}
+
+
+def _raise(exc):
+    def boom(*args, **kwargs):
+        raise exc
+    return boom
+
+
+def test_narrate_safely_survives_a_fact_sheet_failure(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "facts_for_row", _raise(ValueError(SECRET)))
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)) is None
+    assert "ValueError" in caplog.text
+    assert "2026_01_BUF_KC" in caplog.text
+    assert SECRET not in caplog.text
+
+
+def test_narrate_safely_survives_a_narrator_failure(db, monkeypatch, caplog):
+    monkeypatch.setattr(predict_week, "narrate", _raise(RuntimeError(SECRET)))
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert narrate_safely(*_narrate_args(db)) is None
+    assert "RuntimeError" in caplog.text
+    assert SECRET not in caplog.text
+
+
+def test_narrate_safely_rolls_back_after_a_database_error(db, monkeypatch):
+    rollbacks = []
+    monkeypatch.setattr(db, "rollback", lambda: rollbacks.append(1))
+    monkeypatch.setattr(predict_week, "facts_for_row", _raise(SQLAlchemyError(SECRET)))
+    assert narrate_safely(*_narrate_args(db)) is None
+    assert rollbacks == [1]
+
+
+def test_narrate_safely_returns_the_narration(db, monkeypatch):
+    from ml.features import build_features
+
+    features = build_features(db, seasons=[2026], sport=SPORT_NFL)
+    row = features[features["game_id"] == "2026_01_BUF_KC"].iloc[0]
+    seen = []
+
+    def fake_narrate(facts):
+        seen.append(facts)
+        return "ok"
+
+    monkeypatch.setattr(predict_week, "narrate", fake_narrate)
+    assert narrate_safely(db, row, 0.6, [], {}, {}) == "ok"
+    assert seen[0].home.name == "Chiefs"
+
+
+GOOD_PREVIOUS = "Our model gives the Chiefs 60% and the Bills 40%."
+STALE_PREVIOUS = "The Chiefs are favored by 3 points, and our model gives them 60%."
+
+
+@pytest.mark.parametrize(
+    ("draft", "previous", "expected"),
+    [
+        (None, GOOD_PREVIOUS, GOOD_PREVIOUS),
+        (None, STALE_PREVIOUS, None),
+        (None, None, None),
+        ("fresh", GOOD_PREVIOUS, "fresh"),
+    ],
+    ids=["keeps-valid-previous", "drops-stale-previous", "no-previous", "new-draft-wins"],
+)
+def test_narrate_safely_keeps_a_previous_narration_only_if_it_still_checks_out(
+    db, monkeypatch, draft, previous, expected
+):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: draft)
+    assert narrate_safely(*_narrate_args(db), previous=previous) == expected
+
+
+def test_narrate_safely_keeps_a_valid_previous_when_the_narrator_raises(db, monkeypatch):
+    monkeypatch.setattr(predict_week, "narrate", _raise(RuntimeError("down")))
+    assert narrate_safely(*_narrate_args(db), previous=GOOD_PREVIOUS) == GOOD_PREVIOUS
+
+
+def test_existing_narrative_reads_the_stored_text(db):
+    from app.jobs.predict_week import upsert_prediction
+
+    assert existing_narrative(db, "2026_01_BUF_KC", "1.0.0") is None
+    upsert_prediction(db, "2026_01_BUF_KC", "1.0.0", 0.6, [], "stored text")
+    db.commit()
+    assert existing_narrative(db, "2026_01_BUF_KC", "1.0.0") == "stored text"
+    assert existing_narrative(db, "2026_01_BUF_KC", "9.9.9") is None
+    assert existing_narrative(db, "no_such_game", "1.0.0") is None
