@@ -1,8 +1,9 @@
 """Batch prediction job: features -> predict_proba -> SHAP -> narrate ->
 upsert predictions. Idempotent on (game_id, model_version); re-running
 refreshes predictions with the latest inputs. Without --week it predicts the
-default week plus every game kicking off within LOOKAHEAD_DAYS, and exits 1
-if any game failed (after finishing the rest).
+default week plus every game kicking off within LOOKAHEAD_DAYS. It ends with a
+coverage check and exits 1 if any game failed (after finishing the rest) or any
+upcoming game lacks a prediction or booth section.
 
 Usage: python -m app.jobs.predict_week [--season 2026] [--week N] [--sport nfl|cfb]
 """
@@ -377,6 +378,17 @@ def predict_one(
     return narration
 
 
+def coverage_report(db: Session, season: int, sport: str, week: int | None) -> int:
+    """Print the end-of-run coverage check and return its exit status. Imported
+    late because app.jobs.coverage reads this module's selection."""
+    from app.jobs.coverage import check_coverage, coverage_outcome
+
+    lines, status = coverage_outcome(check_coverage(db, season, sport, week=week))
+    for line in lines:
+        print(line)
+    return status
+
+
 def _week_span(weeks: list[int]) -> str:
     lo, hi = min(weeks), max(weeks)
     return f"week {lo}" if lo == hi else f"weeks {lo}-{hi}"
@@ -439,8 +451,9 @@ def main() -> None:
             print(f"WARNING: prediction failed for {games}: {', '.join(failed)}")
         for line in narration_summary(sources):
             print(line)
+        gaps = coverage_report(db, args.season, sport, args.week)
 
-    if failed:
+    if failed or gaps:
         sys.exit(1)
     print("prediction batch complete")
 

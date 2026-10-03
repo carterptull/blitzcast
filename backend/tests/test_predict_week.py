@@ -568,7 +568,15 @@ def _run_main(db, monkeypatch, narrate_fn, capsys, model=None, argv=None, **patc
     def scope():
         yield db
 
+    from app.jobs import coverage
+
     real_select = predict_week.select_target_ids
+    monkeypatch.setattr(
+        coverage, "select_target_ids",
+        lambda db_, season, sport, **kw: real_select(
+            db_, season, sport, **{**kw, "now": datetime(2026, 9, 1, tzinfo=UTC)}
+        ),
+    )
     monkeypatch.setattr(predict_week, "load_latest", lambda sport: {
         "model": model or _FakeModel(), "calibrator": _Identity(),
         "feature_columns": ["elo_diff"],
@@ -609,6 +617,7 @@ def test_main_counts_each_tier_and_commits_every_game(db, monkeypatch, capsys):
     out, commits = _run_main(db, monkeypatch, draft, capsys)
     assert "predictions: 2 ok, 0 failed" in out
     assert "narration: 1 written, 0 kept, 1 fallback, 0 minimal, 0 none" in out
+    assert "coverage: 2 upcoming games, 0 missing a prediction, 0 missing a booth section" in out
     assert "WARNING" not in out
     assert len(commits) == 2
     stored = _stored_texts(db)
@@ -624,13 +633,17 @@ def test_main_warns_only_when_a_game_has_no_narration(db, monkeypatch, capsys):
             raise ValueError("no sheet")
         return real_facts(db_, row, *a)
 
-    out, commits = _run_main(
-        db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
-        facts_for_row=facts, minimal_narration=_raise(KeyError("no abbr")),
-    )
+    with pytest.raises(SystemExit) as exit_info:
+        _run_main(
+            db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+            facts_for_row=facts, minimal_narration=_raise(KeyError("no abbr")),
+        )
+    assert exit_info.value.code == 1
+    out = capsys.readouterr().out
     assert "narration: 1 written, 0 kept, 0 fallback, 0 minimal, 1 none" in out
     assert "WARNING: 1 game has no booth narration" in out
-    assert len(commits) == 2
+    assert "coverage: 2 upcoming games, 0 missing a prediction, 1 missing a booth section" in out
+    assert "WARNING: no booth section for 2026_01_PHI_DAL" in out
     assert _stored_texts(db) == {
         "2026_01_BUF_KC": "A fresh booth draft.", "2026_01_PHI_DAL": None,
     }
@@ -776,6 +789,10 @@ def test_predict_one_rolls_back_a_storage_failure(db, monkeypatch, caplog):
 
 
 def test_main_finishes_the_slate_and_exits_nonzero_on_a_failed_game(db, monkeypatch, capsys):
+    from app.models import Prediction
+
+    db.query(Prediction).filter_by(game_id="2026_01_BUF_KC").delete()
+    db.commit()
     with pytest.raises(SystemExit) as exit_info:
         _run_main(
             db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
@@ -785,6 +802,8 @@ def test_main_finishes_the_slate_and_exits_nonzero_on_a_failed_game(db, monkeypa
     out = capsys.readouterr().out
     assert "predictions: 1 ok, 1 failed" in out
     assert re.search(r"WARNING: prediction failed for 1 game: 2026_01_\w+", out)
+    assert "coverage: 2 upcoming games, 1 missing a prediction, 0 missing a booth section" in out
+    assert re.search(r"WARNING: no prediction for 2026_01_\w+", out)
     assert "narration: 1 written, 0 kept, 0 fallback, 0 minimal, 0 none" in out
     assert SECRET not in out
     assert sum(text == "A fresh booth draft." for text in _stored_texts(db).values()) == 1
@@ -827,3 +846,11 @@ def test_ranks_for_week_reads_each_game_week_once(db, monkeypatch):
     assert week3 == ({}, {ala.team_id: 5})
     assert ranks_for_week(db, SPORT_CFB, 2026, 2, cache) == week2
     assert sorted(reads) == [1, 2, 3]
+
+
+def test_exit_status_is_one_when_any_game_failed_or_coverage_has_gaps():
+    from app.jobs.coverage import Coverage, Gap, coverage_outcome
+
+    assert coverage_outcome(Coverage(3, []))[1] == 0
+    assert coverage_outcome(Coverage(3, [Gap("g", "narration")]))[1] == 1
+    assert coverage_outcome(Coverage(3, [Gap("g", "prediction")]))[1] == 1
