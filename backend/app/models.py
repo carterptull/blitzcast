@@ -49,6 +49,7 @@ class Team(Base):
     )
     abbr: Mapped[str] = mapped_column(String(16), index=True)
     name: Mapped[str] = mapped_column(String(60))
+    mascot: Mapped[str | None] = mapped_column(String(40))
     conference: Mapped[str] = mapped_column(String(40))
     division: Mapped[str | None] = mapped_column(String(10))
     # CFB only: "FBS"/"FCS" tier and ESPN numeric id for logos. NULL for NFL.

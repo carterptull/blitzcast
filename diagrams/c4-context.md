@@ -37,8 +37,9 @@ it. Every data provider sits on the batch side and is called by scheduled jobs, 
 tier's budget is set by the cron schedule, not by how many people visit.
 
 **Anthropic is a dependency, not an authority.** It receives a finished probability and its top
-factors and returns prose. It has no way to change a number, and if it's down (or its output
-fails a guardrail) predictions still ship, just without narration. See
+factors, plus a fact sheet of verified pre-game facts, and returns prose that is checked against
+that sheet. It has no way to change a number, and if it's down (or its output fails the check)
+predictions still ship with a stored or template-written preview instead. See
 [`llm-narration-boundary.md`](llm-narration-boundary.md).
 
 **ESPN shows up for two unrelated reasons:** the NFL injury refresh reads ESPN's unofficial
@@ -46,4 +47,4 @@ injuries endpoint (falling back to nflverse if it fails), and team logos load fr
 That includes CFB: the logo URLs are seeded from CollegeFootballData, but they point at ESPN.
 
 ---
-_Last updated: 2026-10-01 · reflects v1.0.14_
+_Last updated: 2026-10-02 · reflects v1.1.0_

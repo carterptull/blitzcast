@@ -12,7 +12,7 @@ sequenceDiagram
     participant X as External APIs
     participant DB as Postgres
     participant J as predict_week
-    participant L as narrate.py and Claude
+    participant L as fact sheet, narrate.py and Claude
 
     alt NFL, nfl-cron at 09:00 UTC
         R->>O: python -m data_pipeline.refresh_week
@@ -57,10 +57,12 @@ sequenceDiagram
         J->>DB: build_features() for the season, each row as of its kickoff
         loop each game that week with both scores NULL
             J->>J: predict_proba, Platt calibration, top_factors via SHAP
-            J->>L: narrate(probability, factors, spread, notes)
-            L-->>J: guardrail-checked prose, or None
+            J->>L: build the fact sheet, then narrate(fact sheet)
+            L-->>J: draft that passed check_narration, or None after 3 attempts
+            J->>J: None keeps the stored narration only if still exactly true, else the template, else a minimal line
             J->>DB: upsert prediction on (game_id, model_version) and commit
         end
+        J->>J: print the narration summary line, with a WARNING if any game has none
     end
 ```
 
@@ -79,6 +81,13 @@ only and the next step still runs.
 (one CFBD call a day) into `team_game_stats`, which feeds the rolling EPA form features. It skips
 until the season has a final game. CFB turnovers and yards stay NULL, since CFBD PPA has neither.
 
+**A narration never costs a prediction.** Each game's fact sheet and narration are built inside a
+guard, so an error there still writes the prediction. The chain is a fresh AI draft, then the
+stored narration only if it is still exactly true today (`still_true`), then the deterministic
+template, then a minimal model-only line when even the fact sheet cannot be built. The run ends
+with `narration: N written, K kept, F fallback, L minimal, J none`, plus a `WARNING:` line when
+any game has none. See [`llm-narration-boundary.md`](llm-narration-boundary.md).
+
 **Idempotent and resumable.** Every loader upserts on a natural key, and `predict_week` commits
 after each game, so a crash halfway through a ~100-game CFB slate keeps what finished and a
 re-run simply overwrites the same rows.
@@ -95,4 +104,4 @@ records a day even with CFB's 8-day window. See "Odds API: one batch call per da
 into January. Outside those months the jobs simply don't fire.
 
 ---
-_Last updated: 2026-10-01 · reflects v1.0.14_
+_Last updated: 2026-10-02 · reflects v1.1.0_

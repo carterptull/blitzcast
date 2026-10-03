@@ -200,7 +200,7 @@ def get_schedule(
     games = _season_games(db, season, sport=sport, status=status)
     probs = _prediction_probs(db, season, sport)
     week_ranks = _poll_ranks_by_week(db, sport, season)
-    odds_by_game = _latest_odds_by_game(db, {g.game_id: g for g in games})
+    odds_by_game = latest_odds_by_game(db, {g.game_id: g for g in games})
     weeks: dict[int, list[GameSummary]] = {}
     for game in games:
         weeks.setdefault(game.week, []).append(
@@ -224,22 +224,22 @@ def get_games(
     games = _season_games(db, season, week, sport=sport, status=status)
     probs = _prediction_probs(db, season, sport, week)
     ranks = poll_ranks_entering(db, sport, season, week)
-    odds_by_game = _latest_odds_by_game(db, {g.game_id: g for g in games})
+    odds_by_game = latest_odds_by_game(db, {g.game_id: g for g in games})
     return [
         _game_summary(g, probs.get(g.game_id), ranks, _market_prob(g, odds_by_game.get(g.game_id)))
         for g in games
     ]
 
 
-def _record_entering(db: Session, team_id: int, game: Game) -> str:
-    """Team's W-L(-T) record in this season before this game's kickoff.
-
-    Falls back to game_date when kickoff is TBD (NULL)."""
+def season_games_before(db: Session, team_id: int, game: Game) -> list[Game]:
+    """Finished games this season before `game`'s kickoff (game_date when TBD), oldest first."""
     if game.kickoff_time is not None:
         before = Game.kickoff_time < game.kickoff_time
+        order = Game.kickoff_time
     else:
         before = Game.game_date < game.game_date
-    prior = db.scalars(
+        order = Game.game_date
+    return list(db.scalars(
         select(Game).where(
             Game.season == game.season,
             Game.sport == game.sport,
@@ -247,10 +247,13 @@ def _record_entering(db: Session, team_id: int, game: Game) -> str:
             Game.home_score.is_not(None),
             Game.away_score.is_not(None),
             (Game.home_team_id == team_id) | (Game.away_team_id == team_id),
-        )
-    ).all()
+        ).order_by(order)
+    ))
+
+
+def record_string(games: list[Game], team_id: int) -> str:
     wins = losses = ties = 0
-    for g in prior:
+    for g in games:
         own = g.home_score if g.home_team_id == team_id else g.away_score
         opp = g.away_score if g.home_team_id == team_id else g.home_score
         if own > opp:
@@ -261,6 +264,11 @@ def _record_entering(db: Session, team_id: int, game: Game) -> str:
             ties += 1
     record = f"{wins}-{losses}"
     return f"{record}-{ties}" if ties else record
+
+
+def _record_entering(db: Session, team_id: int, game: Game) -> str:
+    """Team's W-L(-T) record in this season before this game's kickoff."""
+    return record_string(season_games_before(db, team_id, game), team_id)
 
 
 def _team_detail(
@@ -404,7 +412,7 @@ def _as_utc(value: datetime | date) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
-def _latest_odds_by_game(db: Session, games: dict[str, Game]) -> dict[str, Odds]:
+def latest_odds_by_game(db: Session, games: dict[str, Game]) -> dict[str, Odds]:
     """Latest *pre-kickoff* captured Odds row per game, oldest first so later
     rows win. An in-play or post-kickoff capture is not a market's pre-game
     view and must be dropped here -- same boundary ml/features.py enforces
@@ -444,7 +452,7 @@ def get_record(db: Session, season: int, sport: str | None = None) -> RecordOut:
         )
 
     games = {g.game_id: g for g in db.scalars(select(Game).where(Game.game_id.in_(probs)))}
-    odds_by_game = _latest_odds_by_game(db, games)
+    odds_by_game = latest_odds_by_game(db, games)
 
     correct = total = market_correct = 0
     for game_id, home_prob in probs.items():

@@ -93,6 +93,8 @@ def upsert_teams(
             db.add(team)
             existing[abbr] = team
         team.name = school
+        # Bounded to the column width so one bad value cannot roll back the seed.
+        team.mascot = str(field(row, "mascot") or "").strip()[:40] or None
         team.conference = field(row, "conference") or "FCS-Ind"
         team.division = None
         team.tier = tiers[school]

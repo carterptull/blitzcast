@@ -6,20 +6,33 @@ Usage: python -m app.jobs.predict_week [--season 2026] [--week N] [--sport nfl|c
 """
 
 import argparse
+import logging
+import re
+from collections import Counter
 from datetime import UTC, datetime, time, timedelta
+from typing import NamedTuple
 
 import pandas as pd
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import session_scope
-from app.models import SPORT_CFB, SPORT_NFL, Game, Prediction, Team
-from app.services.narrate import narrate
+from app.models import SPORT_NFL, Game, Prediction
+from app.services.fact_sheet import GameFacts, build_game_facts, trusted_numbers_text
+from app.services.fallback_narration import (
+    fallback_narration,
+    fallback_reason,
+    minimal_narration,
+)
+from app.services.narrate import check_narration, narrate, reason_category
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
 from ml.features import build_features
 from ml.model_store import load_latest
+
+logger = logging.getLogger(__name__)
 
 STALE_AFTER = timedelta(hours=36)
 
@@ -56,14 +69,23 @@ def default_week(
     return None
 
 
-def upsert_prediction(
-    db: Session, game_id: str, version: str, prob: float, factors: list, narrative: str | None
-) -> None:
-    existing = db.scalar(
+def _stored_prediction(db: Session, game_id: str, version: str) -> Prediction | None:
+    return db.scalar(
         select(Prediction).where(
             Prediction.game_id == game_id, Prediction.model_version == version
         )
     )
+
+
+def existing_narrative(db: Session, game_id: str, version: str) -> str | None:
+    stored = _stored_prediction(db, game_id, version)
+    return stored.llm_narrative if stored is not None else None
+
+
+def upsert_prediction(
+    db: Session, game_id: str, version: str, prob: float, factors: list, narrative: str | None
+) -> None:
+    existing = _stored_prediction(db, game_id, version)
     if existing is None:
         existing = Prediction(game_id=game_id, model_version=version)
         db.add(existing)
@@ -73,47 +95,160 @@ def upsert_prediction(
     existing.predicted_at = datetime.now(UTC)
 
 
-def _rank_phrase(name: str, rank: int | None) -> str:
-    return f"{name} ranked #{rank}" if rank else f"{name} unranked"
-
-
-def build_narration_payload(
+def facts_for_row(
+    db: Session,
     row: pd.Series,
     prob: float,
     factors: list,
-    teams_by_abbr: dict[str, Team],
-    sport: str,
-    ranks: dict[int, int] | None = None,
-) -> dict:
-    """Narration input. CFB adds poll/conference color keys and carries no
-    QB/injury note (no standardized CFB injury report to cite)."""
-    home = teams_by_abbr.get(row["home_abbr"])
-    away = teams_by_abbr.get(row["away_abbr"])
+    ranks: dict[int, int],
+    prev_ranks: dict[int, int],
+) -> GameFacts:
+    """Narration input. Only a posted spread is narrated as the betting line; a
+    moneyline-derived or Elo-derived one never reaches it."""
+    game = db.get(Game, row["game_id"])
     has_spread = bool(row.get("has_market_spread", 1.0))
-    spread = row.get("market_spread_home") if has_spread else None
-    payload = {
-        "sport": sport,
-        "home_name": home.name if home else row["home_abbr"],
-        "home_abbr": row["home_abbr"],
-        "away_name": away.name if away else row["away_abbr"],
-        "away_abbr": row["away_abbr"],
-        "home_win_prob": prob,
-        "factors": factors,
-        "spread_home": None if spread is None or pd.isna(spread) else float(spread),
-    }
-    if sport == SPORT_CFB:
-        ranks = ranks or {}
-        home_rank = ranks.get(home.team_id) if home else None
-        away_rank = ranks.get(away.team_id) if away else None
-        if home_rank or away_rank:
-            payload["poll_note"] = (
-                f"{_rank_phrase(payload['home_name'], home_rank)}, "
-                f"{_rank_phrase(payload['away_name'], away_rank)} "
-                "(AP poll entering the week)"
-            )
-        if row.get("is_divisional") and home is not None and home.conference:
-            payload["conference_note"] = f"Same-conference clash in the {home.conference}"
-    return payload
+    spread = float(row["market_spread_home"]) if has_spread else None
+    return build_game_facts(db, game, prob, factors, spread, ranks, prev_ranks)
+
+
+def _failed(db: Session, game_id: str, step: str, exc: Exception) -> None:
+    # Only the error type: messages can carry URLs or data.
+    if isinstance(exc, SQLAlchemyError):
+        db.rollback()
+    logger.warning("%s failed for %s: %s", step, game_id, type(exc).__name__)
+
+
+_PUNCTUATION_RE = re.compile("[\u2014\u2013;:]")
+_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"\d+(?:[.-]\d+)*")
+_UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(degrees|mph)\b", re.IGNORECASE)
+_COIN_FLIP_RE = re.compile(r"\bcoin\s*flip|\btoss[\s-]?up\b", re.IGNORECASE)
+_PRECIP_RE = re.compile(
+    r"\b(?:rain\w*|snow\w*|sleet|showers?|drizzle|wet|soggy)\b", re.IGNORECASE
+)
+_WEATHER_RE = re.compile(
+    r"\b(?:degrees|mph|wind\w*|gust\w*|weather|forecast|cold|chilly|freezing|frigid|icy"
+    r"|hot|heat|humid\w*|indoors|dome|roof)\b",
+    re.IGNORECASE,
+)
+
+
+def still_true(previous: str, facts: GameFacts) -> bool:
+    """A stored narration may be republished only when it is exactly true
+    against today's sheet, not merely close: every percentage is today's whole
+    number, every other number (scores, records, degrees, lines, ranks, years)
+    is on the trusted part of today's sheet (no venue or injury text), a coin
+    flip is still 50%, weather talk is backed by today's weather, and the
+    punctuation is plain. It must also pass check_narration, so the link,
+    handle and digit-run rules apply too. Stricter than check_narration on
+    purpose: a miss only costs a fresh template."""
+    if _PUNCTUATION_RE.search(previous) or check_narration(previous, facts) is not None:
+        return False
+    p = facts.home_win_prob
+    model_pcts = {round(p * 100), round((1 - p) * 100)}
+    if any(float(m.group(1)) not in model_pcts for m in _PCT_RE.finditer(previous)):
+        return False
+    if _COIN_FLIP_RE.search(previous) and round(p * 100) != 50:
+        return False
+    sheet = " ".join(trusted_numbers_text(facts).split())
+    on_sheet = set(_NUMBER_RE.findall(sheet))
+    if any(n not in on_sheet for n in _NUMBER_RE.findall(_PCT_RE.sub(" ", previous))):
+        return False
+    units = {(n, u.lower()) for n, u in _UNIT_RE.findall(sheet)}
+    if any((n, u.lower()) not in units for n, u in _UNIT_RE.findall(previous)):
+        return False
+    weather = facts.weather or ""
+    if _PRECIP_RE.search(previous) and "rain or snow" not in weather:
+        return False
+    return not (_WEATHER_RE.search(previous) and not weather)
+
+
+class Narration(NamedTuple):
+    text: str | None
+    source: str  # "llm", "kept", "fallback", "minimal" or "none"
+
+
+def _minimal(db: Session, row: pd.Series, prob: float) -> Narration:
+    try:
+        return Narration(minimal_narration(row["home_abbr"], row["away_abbr"], prob), "minimal")
+    except Exception as exc:
+        _failed(db, row["game_id"], "minimal narration", exc)
+        return Narration(None, "none")
+
+
+def narrate_safely(
+    db: Session,
+    row: pd.Series,
+    prob: float,
+    factors: list,
+    ranks: dict[int, int],
+    prev_ranks: dict[int, int],
+    previous: str | None = None,
+) -> Narration:
+    """Fact-sheet building and narration may fail for one game without costing
+    that game, or the rest of the slate, its prediction. The chain: a fresh AI
+    draft, else the previous narration only if it is still exactly true today,
+    else the deterministic fallback from the fact sheet, else (no fact sheet, or
+    a fallback that fails its check) a model-only line from the row. Rolling
+    back is safe: since the last per-game commit the loop has only read."""
+    game_id = row["game_id"]
+    try:
+        facts = facts_for_row(db, row, prob, factors, ranks, prev_ranks)
+    except Exception as exc:
+        _failed(db, game_id, "fact sheet", exc)
+        return _minimal(db, row, prob)
+    try:
+        text = narrate(facts)
+    except Exception as exc:
+        _failed(db, game_id, "narration draft", exc)
+        text = None
+    if text:
+        return Narration(text, "llm")
+    if previous:
+        try:
+            if still_true(previous, facts):
+                return Narration(previous, "kept")
+        except Exception as exc:
+            _failed(db, game_id, "previous narration check", exc)
+    try:
+        text = fallback_narration(facts)
+        reason = fallback_reason(text, facts)
+    except Exception as exc:
+        _failed(db, game_id, "fallback narration", exc)
+        return _minimal(db, row, prob)
+    if reason is not None:
+        logger.warning(
+            "fallback narration rejected for %s: %s", game_id, reason_category(reason)
+        )
+        return _minimal(db, row, prob)
+    return Narration(text, "fallback")
+
+
+def narrate_and_store(
+    db: Session,
+    row: pd.Series,
+    version: str,
+    prob: float,
+    factors: list,
+    ranks: dict[int, int],
+    prev_ranks: dict[int, int],
+) -> Narration:
+    previous = existing_narrative(db, row["game_id"], version)
+    narration = narrate_safely(db, row, prob, factors, ranks, prev_ranks, previous=previous)
+    upsert_prediction(db, row["game_id"], version, prob, factors, narration.text)
+    return narration
+
+
+def narration_summary(sources: Counter) -> list[str]:
+    lines = [
+        f"narration: {sources['llm']} written, {sources['kept']} kept, "
+        f"{sources['fallback']} fallback, {sources['minimal']} minimal, {sources['none']} none"
+    ]
+    none = sources["none"]
+    if none:
+        games = "1 game has" if none == 1 else f"{none} games have"
+        lines.append(f"WARNING: {games} no booth narration")
+    return lines
 
 
 def unplayed_game_ids(
@@ -174,9 +309,11 @@ def main() -> None:
             print(f"no unplayed {sport} games found for {args.season} week {week}")
             return
 
-        teams_by_abbr = {t.abbr: t for t in db.scalars(select(Team).where(Team.sport == sport))}
         ranks = poll_ranks_entering(db, sport, args.season, week)
+        # Both weeks resolve AP first, so the rank movement compares the same poll in practice.
+        prev_ranks = poll_ranks_entering(db, sport, args.season, week - 1) if week > 1 else {}
         print(f"predicting {len(target)} {sport} games for {args.season} week {week}")
+        sources: Counter = Counter()
 
         for _, row in target.iterrows():
             x = row[feature_columns].to_frame().T.astype(float)
@@ -191,18 +328,15 @@ def main() -> None:
                 spread_available=bool(row["has_market_spread"]),
             )
 
-            narrative = narrate(
-                build_narration_payload(row, prob, factors, teams_by_abbr, sport, ranks)
-            )
-
-            upsert_prediction(db, row["game_id"], version, prob, factors, narrative)
+            narration = narrate_and_store(db, row, version, prob, factors, ranks, prev_ranks)
+            sources[narration.source] += 1
             # Commit per game: a full CFB slate is ~100 sequential Claude calls,
             # and the upsert is idempotent, so partial progress is safe to keep.
             db.commit()
-            print(
-                f"  {row['game_id']}: home {prob:.1%}"
-                + (" (narrated)" if narrative else " (no narrative)")
-            )
+            print(f"  {row['game_id']}: home {prob:.1%} (narration: {narration.source})")
+
+        for line in narration_summary(sources):
+            print(line)
 
     print("prediction batch complete")
 

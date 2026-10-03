@@ -48,7 +48,8 @@ All commands below run from `backend/` with the venv's Python
 | `MODEL_VERSION_CFB` | Same stamp for CFB (default `cfb-1.0.0`) |
 
 Every job degrades gracefully when its key is missing: odds/weather/injury
-refreshes print a message and exit; narration writes `null` and continues.
+refreshes print a message and exit; narration skips the AI draft and uses the
+deterministic template.
 
 ## Commands
 
@@ -74,6 +75,7 @@ refreshes print a message and exit; narration writes `null` and continues.
 | Train model | `python -m ml.train --sport nfl\|cfb` |
 | Backtest (writes `ml/reports/`) | `python -m ml.backtest --sport nfl\|cfb` |
 | Predict a week | `python -m app.jobs.predict_week --season 2026 --week 1 --sport nfl\|cfb` |
+| Check narration quality | `python -m app.jobs.narration_eval --sport nfl\|cfb --week N [--season 2026] [--limit 20] --stored` |
 | Backfill walk-forward predictions | `python -m app.jobs.backfill_predictions --sport nfl\|cfb` |
 | Run API | `python -m uvicorn app.main:app --reload` |
 | Tests | `python -m pytest` |
@@ -143,6 +145,15 @@ migrations.
 unique (CFB ids are prefixed `cfb_`) and the response carries `sport`.
 `predict_week` takes `--sport nfl|cfb` (default `nfl`).
 
+`narration_eval` only reads the database. `--stored` re-checks each game's
+saved narration against today's guardrail (free, no API calls). Without it,
+fresh narrations are generated, which **spends Anthropic tokens** (up to 3
+calls per game) and refuses to run unless you also pass `--spend-tokens`.
+Every mode also verifies the deterministic fallback passes the guardrail and
+exits 1 if it does not. Each `predict_week` run ends with
+`narration: N written, K kept, F fallback, L minimal, J none` and a `WARNING:`
+line when any game has no narration.
+
 `/api/games` and `/api/schedule` also take `status=all|final|upcoming`
 (default `all`), filtering on whether both scores are present, not on the
 `Game.status` column. Unlike `sport`, an unrecognized `status` value falls
@@ -176,7 +187,16 @@ serve fixture data so the frontend can develop without a database.
   A daily 8-day-ahead CFB slate is checked against the free tier's 1000
   records/day and stays comfortably under it alongside NFL's own run.
 - **Claude API** (`ANTHROPIC_API_KEY`): narrates the model output only,
-  never computes the prediction.
+  never computes the prediction. It writes from a pre-game fact sheet
+  (records, last result, streak, venue, the betting line in words, NFL
+  injury-report names, CFB poll ranks) and every draft is checked against
+  that sheet before it is stored. Feed text (team, venue and player names)
+  is cleaned to one plain line before it reaches the sheet, the sheet is
+  marked as data in the prompt, and the copy may not contain links, handles
+  or long digit runs. If no draft passes, the stored narration is kept only
+  when it is still exactly true today (`still_true`), else a deterministic
+  template is used, else a minimal model-only line when even the fact sheet
+  cannot be built.
 
 ## Model
 

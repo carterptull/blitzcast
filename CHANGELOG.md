@@ -6,6 +6,94 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-02
+
+The "From the booth" narration is rebuilt around verified facts. The model,
+its probabilities, and `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`) are
+unchanged; the retrain is a later release. Claude Haiku (via
+`ANTHROPIC_MODEL`) still writes the copy.
+
+### Added
+- A pre-game fact sheet (`app/services/fact_sheet.py`) that the narrator
+  works from instead of raw SHAP values: each team's record, last result,
+  streak, and recent scoring, the venue and kickoff window, the betting
+  line written out in words, NFL injury-report names (Out and Doubtful),
+  CFB AP poll ranks and week-over-week movement, and the model's top
+  factors in plain English. Every fact is built from data strictly before
+  kickoff.
+- `check_narration` in `app/services/narrate.py`, the guardrail every draft
+  must pass. It verifies the model's pick and each percentage per team, the
+  market favorite and the line wording, every capitalized name against the
+  fact sheet, spelled-out numbers, scores, records, streaks and ranks, and
+  CFB injury talk.
+- A deterministic fallback narration (`app/services/fallback_narration.py`),
+  built from the same fact sheet and held to the same check, so every game
+  with a prediction gets a booth section even when no AI draft survives.
+- `Team.mascot` (migration `c3f1a9d27e48`, additive), filled by the next
+  `seed_cfb` run. The migration is applied automatically on API deploy
+  (`railway.json` runs `alembic upgrade head` on boot), but CFB mascots only
+  appear after `seed_cfb` is run once following it. Deploy order: merge
+  outside the 09:00 to 10:00 UTC cron window and confirm the API deploy
+  (which applies the migration) succeeded before the crons read
+  `Team.mascot`, then `seed_cfb`, then the `predict_week` re-runs.
+- `python -m app.jobs.narration_eval --sport nfl --week N` measures the
+  guardrail pass rate, mean attempts and fallback coverage without writing
+  anything. `--stored` re-checks saved narrations for free; fresh
+  generation spends Anthropic tokens and requires `--spend-tokens`.
+- A per-run narration summary from `predict_week`:
+  `narration: N written, K kept, F fallback, L minimal, J none`, with a
+  `WARNING:` line when any game ended up with none.
+
+### Changed
+- The narrator voice: a pregame-show structure at whip-around pace (stakes
+  first, then the model's pick and number, then one or two reasons from the
+  sheet). No real show names. Temperature is 0.8.
+- A rejected draft's reason is now fed back to the model on the retry (up
+  to 3 attempts) instead of a blind second try.
+- The `predict_week` chain: a fresh AI draft, else the stored narration
+  only if it is still exactly true today, else the deterministic template
+  from the fact sheet, else a minimal model-only line (both teams'
+  abbreviations and percentages) if even the fact sheet cannot be built.
+
+### Fixed
+- Narrations that misread the stored spread sign. A positive home spread
+  means the home team is favored, and the fact sheet now states the
+  favorite and the line in words so there is nothing to misread.
+- Invented player names and venues, and "last five games" talk when the
+  window actually spans last season (the sheet flags those factors).
+- Games with no booth section. A production check found 5 of 22
+  model-vs-market disagreement games had none (0 of about 430 agreeing
+  games); the fallback closes that gap.
+- A failed narration can no longer block a prediction: fact-sheet or
+  narration errors are caught per game and the prediction is still written.
+- A failed re-narration can no longer erase a still-valid one: the stored
+  narration is kept when it is still exactly true today (every percentage is
+  today's number, every other number is on today's fact sheet, weather talk
+  is backed by today's weather), and replaced otherwise.
+- A CFB rematch is never called a "postseason" meeting: CFBD numbers
+  Army-Navy as regular-season week 16, so every CFB meeting reads
+  "Week N of season".
+- `seed_cfb` cuts a mascot to the 40-character column, so one long value
+  cannot roll back the whole seed.
+
+### Security
+- Untrusted feed text is cleaned before it reaches the narration: team,
+  mascot, conference, venue, city and injury-report strings become one
+  plain line (no newlines, control characters or symbols beyond
+  `. ' & ( ) -`), so a vandalized value cannot forge fact-sheet rows. The
+  prompt marks the sheet as data, never instructions. Published copy may
+  not contain a link, domain, handle, slash, long digit run or non-Latin-1
+  letter; numbers are checked only against trusted fields, never venue or
+  player text; rejections are logged as fixed categories; and the Anthropic
+  client times out after 30 seconds with one retry.
+- A venue, city, conference or division that does not read like a name (a
+  link word, 3 or more digits in a row, or a lowercase word other than "of",
+  "the", "de" and similar) is treated as missing, so the template can never
+  publish an ad posing as a stadium. Published copy is checked in its NFKC
+  form and may not contain "dot com" links, "hxxp", or a phone-like digit
+  run; scores and streaks inside team, mascot or conference text back no
+  claim; and the minimal line only uses abbreviations that look like one.
+
 ## [1.0.14] — 2026-10-01
 
 ### Security
