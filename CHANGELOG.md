@@ -6,6 +6,23 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-10-03
+
+A hotfix for the 1.1.0 narrator. The model, its probabilities, and
+`MODEL_VERSION` are unchanged.
+
+### Fixed
+- The narrator's API call no longer passes an argument the pinned SDK
+  rejects. 1.1.0 sent `temperature`, which `anthropic` 1.0.0 does not
+  accept, so every AI draft failed and every game fell back to the
+  template. Sampling is back to the API default; the 1.1.0 note about a
+  temperature of 0.8 never took effect.
+
+### Added
+- A signature-guard test that binds the narrator's call to the real SDK
+  `messages.create` signature, so a mocked client can no longer hide this
+  class of error.
+
 ## [1.1.0] — 2026-10-02
 
 The "From the booth" narration is rebuilt around verified facts. The model,

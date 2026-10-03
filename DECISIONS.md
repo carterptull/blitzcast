@@ -480,7 +480,7 @@ second non-deterministic step to a boundary whose point is to be deterministic.
 
 When a draft fails `check_narration`, the next attempt (up to 3) is sent the original request, the
 rejected draft, and a message naming the rule it broke, such as which percentage was wrong or
-which name is not on the sheet. **Why:** a blind retry at temperature 0.8 often repeats the same
+which name is not on the sheet. **Why:** a blind retry at default sampling often repeats the same
 mistake or trades it for a different one, while a specific reason usually fixes it in one more
 call. It costs nothing extra on the common path where the first draft passes. **Alternative:**
 resample the same prompt: simpler, but it spends the same calls with a lower pass rate.
@@ -526,14 +526,27 @@ unknown name. With the mascot in the sheet, both the allowlist and team attribut
 **Alternative:** hardcode a mascot table in the narration code: it would drift from the CFBD data
 that already feeds every other team field.
 
-## Temperature 0.8 on Haiku, with `ANTHROPIC_MODEL` as the lever
+## Default sampling on Haiku, with `ANTHROPIC_MODEL` as the lever
 
-The narrator calls Claude Haiku at temperature 0.8, max 3 attempts, and the model remains a
-setting. **Why:** a week has about 80 games and near-identical sheets produce near-identical copy
-at low temperature, which reads as templated. Correctness is enforced by the checker rather than
-by sampling, so extra variety costs only an occasional retry. If `narration_eval` shows pass rates
-falling, the first lever is a larger model through `ANTHROPIC_MODEL`, not loosening the checks.
-**Alternative:** temperature 0 for fewer rejections: more repetitive prose across a slate.
+The narrator calls Claude Haiku at the API's default temperature, max 3 attempts, and the model
+remains a setting. **Why:** the pinned SDK (`anthropic` 1.0.0) does not accept a `temperature`
+argument on `messages.create`, and the pre-1.1.0 narrator never passed one; 1.1.0 recorded a
+temperature of 0.8 that never took effect. Correctness is enforced by the checker rather than by
+sampling, so the default variety costs only an occasional retry. If `narration_eval` shows pass
+rates falling, the first lever is a larger model through `ANTHROPIC_MODEL`, not loosening the
+checks. **Alternative:** a tuned temperature for more or less variety across a slate: it needs an
+SDK bump, which is tied to retraining the committed models.
+
+## Mocked API clients hide signature errors: guard the real SDK signature
+
+v1.1.0 shipped a `temperature` keyword that the pinned SDK rejects, so every AI draft raised
+`TypeError`, the daily job fell back to the deterministic template for every game, and no game
+was left empty, which also hid the bug from the output. The first production regeneration
+exposed it. **Why:** the tests replaced the client with a mock that accepts any keyword, so the
+signature mismatch was invisible. `test_narrate.py` now binds the keywords `_call_api` sends to
+`inspect.signature` of the real `anthropic.Anthropic().messages.create`, which fails on any
+unexpected or missing argument without a network call. **Alternative:** a live smoke test in CI,
+rejected because CI must not call a paid API.
 
 ## Guardrail tuned against measured pass rates on two independent corpora
 

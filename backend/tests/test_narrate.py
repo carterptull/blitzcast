@@ -1,5 +1,6 @@
 """Narration tests: the real Anthropic API is never called."""
 
+import inspect
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -1272,3 +1273,33 @@ def test_trusted_text_drops_mascots_and_scores_in_the_game_type():
     assert "49ers (TEX)" in trusted_numbers_text(niners)
     reason = check_narration("Texas is 9-0. Our model leans Ohio State at 55%.", facts)
     assert reason is not None and "fact sheet has no such" in reason
+
+
+def _signature_checked_client(calls, text="ok text"):
+    """A client whose messages.create enforces the real SDK method signature."""
+    sig = inspect.signature(anthropic.Anthropic(api_key="test-key").messages.create)
+
+    def create(**kwargs):
+        sig.bind(**kwargs)
+        calls.append(kwargs)
+        return _mock_response(text)
+
+    return SimpleNamespace(messages=SimpleNamespace(create=create))
+
+
+def test_call_api_matches_the_real_sdk_signature():
+    calls = []
+    client = _signature_checked_client(calls)
+    messages = [{"role": "user", "content": "x"}]
+    assert narrate_mod._call_api(client, "claude-haiku-4-5", "system", messages) == "ok text"
+    assert len(calls) == 1
+
+
+def test_generate_matches_the_real_sdk_signature(settings_with_key, monkeypatch):
+    calls = []
+    client = _signature_checked_client(calls, GOOD)
+    monkeypatch.setattr(narrate_mod.anthropic, "Anthropic", lambda **kwargs: client)
+    result = narrate_mod.generate(FACTS)
+    assert result.text == GOOD
+    assert result.attempts == 1
+    assert {"model", "max_tokens", "system", "messages"} <= set(calls[0])
