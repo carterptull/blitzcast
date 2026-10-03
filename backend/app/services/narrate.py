@@ -159,8 +159,10 @@ _LINK_RE = re.compile(
     r"|\bdot\s+(?:com|net|org|io|co|ly|bet|gg|us|app|xyz)\b|\bhxxps?\b",
     re.IGNORECASE,
 )
+# The last branch is a vanity number like 1-800-PICKS.
 _DIGIT_RUN_RE = re.compile(
     r"\d{5,}|\b\d{3}[\s.-]\d{3}[\s.-]\d{4}\b|\(\d{3}\)|\b\d{3}[\s.-]\d{4}\b"
+    r"|\b1[\s.-]?8\d\d[\s.-]?[A-Za-z]{3,}"
 )
 # 7+ digits joined by single spaces, dots or hyphens read as a phone number,
 # unless the run is only scores or records ("24-17 27-24 30-27").

@@ -1233,6 +1233,12 @@ LINK_OR_NUMBER = "contains a link, handle, or long number"
     "Visit scam．com tonight.",
     "Visit scam․com tonight.",
     "Text ８００５５５０１９９ tonight.",
+    # Vanity numbers.
+    "Call 1-800-PICKS tonight.",
+    "Call 1-800-FREEPICKS tonight.",
+    "Call 1 800 PICKS tonight.",
+    "Call 1.888.WINNERS tonight.",
+    "Call 1866PICKS tonight.",
 ])
 def test_output_rules_reject_link_and_phone_evasions(lead):
     assert check_narration(f"{lead} Our model leans Ohio State at 55%.", FACTS) == LINK_OR_NUMBER
@@ -1251,6 +1257,9 @@ def test_output_rules_reject_link_and_phone_evasions(lead):
     "Two unbeaten teams, and nobody blinks.",
     "The 49ers visit the Rams.",
     "A dot on the map and a team on the rise.",
+    "A 3-point lead, a 100-yard rusher, and the No. 1 defense.",
+    "The 4-3 defense held them to 180 yards in an 18-10 win.",
+    "From 1-8 a year ago to 8-1 now, with 180 yards a game.",
 ])
 def test_output_rules_leave_real_copy_alone(text):
     assert not narrate_mod.unsafe_output(text)

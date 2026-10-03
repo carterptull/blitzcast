@@ -134,6 +134,35 @@ def test_sport_isolation(session):
     assert set(cfb["game_id"]) == {"cfb_1", "cfb_2", "cfb_3"}
 
 
+def test_cfb_season_with_no_played_games_builds_features():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, expire_on_commit=False)()
+    try:
+        teams = {}
+        for abbr, name, tier in (("UGA", "Georgia", "FBS"), ("BAMA", "Alabama", "FBS")):
+            teams[abbr] = Team(sport=SPORT_CFB, abbr=abbr, name=name, conference="SEC", tier=tier)
+            db.add(teams[abbr])
+        db.flush()
+        k = datetime(2026, 8, 29, 19, 0, tzinfo=UTC)
+        _add_game(db, "cfb_a", SPORT_CFB, 2026, 1, k, teams["UGA"], teams["BAMA"], None, None)
+        _add_game(
+            db, "cfb_b", SPORT_CFB, 2026, 2, k + timedelta(days=7),
+            teams["BAMA"], teams["UGA"], None, None,
+        )
+        db.commit()
+        df = build_features(db, sport=SPORT_CFB)
+        assert set(df["game_id"]) == {"cfb_a", "cfb_b"}
+        assert set(FEATURE_COLUMNS) <= set(df.columns)
+        assert df["epa_off_diff"].isna().all() and df["win_pct_diff"].isna().all()
+        assert df["home_win"].isna().all()
+    finally:
+        db.close()
+        engine.dispose()
+
+
 def test_tier_carried_in_metadata(session):
     cfb = build_features(session, sport=SPORT_CFB)
     row = _row(cfb, "cfb_1")
