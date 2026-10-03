@@ -42,6 +42,10 @@ STALE_AFTER = timedelta(hours=36)
 LOOKAHEAD_DAYS = 7
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 def _as_utc(value) -> datetime:
     dt = value if isinstance(value, datetime) else datetime.combine(value, time.min)
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
@@ -378,12 +382,20 @@ def predict_one(
     return narration
 
 
-def coverage_report(db: Session, season: int, sport: str, week: int | None) -> int:
+def coverage_report(
+    db: Session,
+    season: int,
+    sport: str,
+    week: int | None,
+    now: datetime | None = None,
+    version: str | None = None,
+) -> int:
     """Print the end-of-run coverage check and return its exit status. Imported
     late because app.jobs.coverage reads this module's selection."""
     from app.jobs.coverage import check_coverage, coverage_outcome
 
-    lines, status = coverage_outcome(check_coverage(db, season, sport, week=week))
+    coverage = check_coverage(db, season, sport, version=version, now=now, week=week)
+    lines, status = coverage_outcome(coverage)
     for line in lines:
         print(line)
     return status
@@ -413,24 +425,34 @@ def main() -> None:
         version=get_settings().model_version_for(sport),
     )
     failed: list[str] = []
+    # One clock reading for the whole run: a CFB slate can take tens of minutes,
+    # and the coverage check must audit the window that was selected.
+    now = _utc_now()
 
     with session_scope() as db:
-        playable = select_target_ids(db, args.season, sport, week=args.week)
+        playable = select_target_ids(db, args.season, sport, now=now, week=args.week)
+        if args.week is not None:
+            in_week = db.scalar(
+                select(func.count()).select_from(Game).where(
+                    Game.season == args.season, Game.sport == sport, Game.week == args.week
+                )
+            )
+            skipped = in_week - len(playable)
+            if skipped:
+                print(f"skipping {skipped} already-final {sport} games")
         if not playable:
-            where = f"week {args.week}" if args.week is not None else "the look-ahead window"
-            print(f"no unplayed {sport} games found for {args.season} {where}")
+            if args.week is not None:
+                print(f"no unplayed {sport} games found for {args.season} week {args.week}")
+            else:
+                print(f"no unplayed {sport} games found for season {args.season}")
             return
 
         features = build_features(db, seasons=[args.season], sport=sport)
-        if args.week is not None:
-            in_week = features[features["week"] == args.week]
-            skipped = len(in_week) - in_week["game_id"].isin(playable).sum()
-            if skipped:
-                print(f"skipping {skipped} already-final {sport} games")
         target = features[features["game_id"].isin(playable)]
         if target.empty:
-            print(f"no unplayed {sport} games found for {args.season}")
-            return
+            print(f"WARNING: no feature rows for {len(playable)} selected {sport} games")
+            coverage_report(db, args.season, sport, args.week, now=now, version=predictor.version)
+            sys.exit(1)
 
         span = _week_span([int(w) for w in target["week"]])
         print(f"predicting {len(target)} {sport} games for {args.season} {span}")
@@ -451,9 +473,11 @@ def main() -> None:
             print(f"WARNING: prediction failed for {games}: {', '.join(failed)}")
         for line in narration_summary(sources):
             print(line)
-        gaps = coverage_report(db, args.season, sport, args.week)
+        coverage_status = coverage_report(
+            db, args.season, sport, args.week, now=now, version=predictor.version
+        )
 
-    if failed or gaps:
+    if failed or coverage_status:
         sys.exit(1)
     print("prediction batch complete")
 

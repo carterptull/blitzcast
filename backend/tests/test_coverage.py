@@ -178,3 +178,15 @@ def test_cli_returns_cleanly_when_covered(db, monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["coverage", "--season", "2026", "--sport", "nfl"])
     coverage.main()
     assert "0 missing a prediction, 0 missing a booth section" in capsys.readouterr().out
+
+
+def test_coverage_report_audits_the_given_clock_and_version(db, capsys):
+    from app.jobs.predict_week import coverage_report
+
+    _add_game(db, "old_version", 1, datetime(2026, 9, 14, 17, tzinfo=UTC))
+    db.commit()
+    _predict(db, "old_version", "Text.", version="0.9.0")
+    assert coverage_report(db, 2026, SPORT_NFL, None, now=NOW) == 1
+    assert "WARNING: no prediction for 2026_01_PHI_DAL\n" in capsys.readouterr().out
+    assert coverage_report(db, 2026, SPORT_NFL, None, now=NOW, version=LIVE) == 1
+    assert "WARNING: no prediction for 2026_01_PHI_DAL, old_version" in capsys.readouterr().out
