@@ -993,3 +993,110 @@ def test_select_target_ids_with_no_default_week_uses_only_the_window(db, monkeyp
     assert select_target_ids(db, 2026, SPORT_NFL, now=NOW) == window | {"beyond"}
     monkeypatch.setattr(predict_week, "default_week", lambda *a, **kw: None)
     assert select_target_ids(db, 2026, SPORT_NFL, now=NOW) == window
+
+
+@pytest.mark.parametrize(
+    "prob, spread, expected",
+    [
+        (0.5, 2.5, 0.5001),
+        (0.5, -2.5, 0.4999),
+        (0.5, None, 0.5001),
+        (0.5, 0.0, 0.5001),
+        (0.50004, -1.5, 0.4999),
+        (0.49996, 3.0, 0.5001),
+        (0.49996, -3.0, 0.4999),
+        (0.5027, -7.0, 0.5027),
+        (0.4973, 7.0, 0.4973),
+        (0.5027, None, 0.5027),
+        (0.61, -3.0, 0.61),
+    ],
+)
+def test_break_exact_tie_truth_table(prob, spread, expected):
+    from app.jobs.predict_week import break_exact_tie
+
+    assert break_exact_tie(prob, spread) == expected
+
+
+class _TieCalibrator:
+    def transform(self, raw):
+        import numpy as np
+
+        return np.array([0.5])
+
+
+def _tie_predictor():
+    return predict_week.Predictor(
+        model=_FakeModel(), calibrator=_TieCalibrator(), explainer=None,
+        feature_columns=["elo_diff"], sport=SPORT_NFL, version="1.0.0",
+    )
+
+
+@pytest.mark.parametrize(
+    "spread, posted, expected, side",
+    [
+        (2.5, True, 0.5001, "home"),
+        (-2.5, True, 0.4999, "away"),
+        (0.0, True, 0.5001, "home"),
+        (-2.5, False, 0.5001, "home"),
+    ],
+)
+def test_predict_one_breaks_an_exact_tie_before_anything_reads_it(
+    db, monkeypatch, capsys, spread, posted, expected, side
+):
+    from app.jobs.predict_week import predict_one
+
+    _isolation_setup(db, monkeypatch)
+    seen = {}
+    monkeypatch.setattr(
+        predict_week, "top_factors",
+        lambda explainer, x, prob, **kw: seen.setdefault("factors", prob) and [],
+    )
+
+    def draft(facts):
+        seen["facts"] = facts.home_win_prob
+        return "A fresh booth draft."
+
+    monkeypatch.setattr(predict_week, "narrate", draft)
+    _, row = _week1_rows(db)
+    row = row.copy()
+    row["market_spread_home"], row["has_market_spread"] = spread, posted
+    assert predict_one(db, row, _tie_predictor(), {}, {}) is not None
+    stored = predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0").home_win_prob
+    assert stored == expected != 0.5
+    assert seen["factors"] == seen["facts"] == expected
+    assert f"2026_01_PHI_DAL: exact tie broken toward {side}" in capsys.readouterr().out
+
+
+def test_predict_one_keeps_a_non_tie_probability_and_prints_no_audit_line(
+    db, monkeypatch, capsys
+):
+    from app.jobs.predict_week import predict_one
+
+    _isolation_setup(db, monkeypatch)
+    _, row = _week1_rows(db)
+    assert predict_one(db, row, _predictor(_FakeModel()), {}, {}) is not None
+    assert predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0").home_win_prob == 0.6
+    assert "exact tie" not in capsys.readouterr().out
+
+
+def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(db, monkeypatch, capsys):
+    from app.models import Prediction
+
+    class _TieModel:
+        def predict_proba(self, x):
+            import numpy as np
+
+            return np.array([[0.5, 0.5]])
+
+    final = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    final.home_score, final.away_score = 27, 24
+    stored = db.scalar(select(Prediction).where(Prediction.game_id == "2026_01_BUF_KC"))
+    stored.home_win_prob = 0.5
+    stamped = stored.predicted_at
+    db.commit()
+    out, _ = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys, model=_TieModel())
+    db.refresh(stored)
+    assert stored.home_win_prob == 0.5 and stored.predicted_at == stamped
+    assert "2026_01_BUF_KC" not in out
+    live = predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0")
+    assert live.home_win_prob in (0.5001, 0.4999)

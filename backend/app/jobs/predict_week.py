@@ -346,6 +346,15 @@ class Predictor(NamedTuple):
     version: str
 
 
+def break_exact_tie(prob: float, spread_home: float | None) -> float:
+    """Nudge a dead-even stored probability 0.0001 toward the betting favorite
+    (positive spread_home: home favored), else the home team, so every game has
+    a pick. Anything that does not round to 0.5 is the model's own call."""
+    if round(prob, 4) != 0.5:
+        return prob
+    return 0.4999 if spread_home is not None and spread_home < 0 else 0.5001
+
+
 def predict_one(
     db: Session,
     row: pd.Series,
@@ -360,6 +369,13 @@ def predict_one(
         x = row[predictor.feature_columns].to_frame().T.astype(float)
         raw = predictor.model.predict_proba(x)[:, 1]
         prob = float(predictor.calibrator.transform(raw)[0])
+        spread = float(row["market_spread_home"]) if bool(row["has_market_spread"]) else None
+        broken = break_exact_tie(prob, spread)
+        if broken != prob:
+            print(
+                f"  {game_id}: exact tie broken toward {'home' if broken > 0.5 else 'away'}"
+            )
+            prob = broken
         factors = top_factors(
             predictor.explainer,
             x,
