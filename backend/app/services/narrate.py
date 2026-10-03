@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 MAX_WORDS = 90
-TEMPERATURE = 0.8
 API_TIMEOUT_S = 30.0
 
 SYSTEM_PROMPT = """You write the "From the booth" preview for one football game on Blitzcast, \
@@ -938,7 +937,7 @@ _NON_RETRYABLE = (
 
 def _call_api(client, model: str, system: str, messages: list[dict]) -> str:
     response = client.messages.create(
-        model=model, max_tokens=300, temperature=TEMPERATURE, system=system, messages=messages
+        model=model, max_tokens=300, system=system, messages=messages
     )
     text = "".join(block.text for block in response.content if block.type == "text")
     return plain_punctuation(text.strip().strip("*_#`").strip())

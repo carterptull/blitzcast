@@ -19,7 +19,7 @@ flowchart TB
     prompt["System prompt plus fact sheet<br/><small>the sheet sits inside fact_sheet tags and is data, never instructions<br/>studio-analyst voice · use only facts on the sheet<br/>digits only · 2 to 4 sentences · no betting advice<br/>CFB adds: never mention injuries</small>"]
 
     subgraph llm["The only non-deterministic step"]
-        claude["Claude Haiku 4.5, ANTHROPIC_MODEL<br/><small>messages.create, temperature 0.8, max_tokens 300<br/>client timeout 30 s, one SDK retry</small>"]
+        claude["Claude Haiku 4.5, ANTHROPIC_MODEL<br/><small>messages.create, default sampling, max_tokens 300<br/>client timeout 30 s, one SDK retry</small>"]
     end
 
     clean["_call_api() then plain_punctuation()<br/><small>surrounding markdown symbols stripped<br/>em and en dashes become commas, spacing tidied</small>"]
@@ -117,4 +117,4 @@ reason. A vandalized value that still looks like a plausible Title Case stadium 
 shown as the venue; the check limits what can be said about it.
 
 ---
-_Last updated: 2026-10-02 · reflects v1.1.0_
+_Last updated: 2026-10-03 · reflects v1.1.1_
