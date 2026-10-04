@@ -1,6 +1,9 @@
 """Batch prediction job: features -> predict_proba -> SHAP -> narrate ->
 upsert predictions. Idempotent on (game_id, model_version); re-running
-refreshes predictions with the latest inputs.
+refreshes predictions with the latest inputs. Without --week it predicts the
+default week plus every game kicking off within LOOKAHEAD_DAYS. It ends with a
+coverage check and exits 1 if any game failed (after finishing the rest) or any
+upcoming game lacks a prediction or booth section.
 
 Usage: python -m app.jobs.predict_week [--season 2026] [--week N] [--sport nfl|cfb]
 """
@@ -8,6 +11,7 @@ Usage: python -m app.jobs.predict_week [--season 2026] [--week N] [--sport nfl|c
 import argparse
 import logging
 import re
+import sys
 from collections import Counter
 from datetime import UTC, datetime, time, timedelta
 from typing import NamedTuple
@@ -35,6 +39,11 @@ from ml.model_store import load_latest
 logger = logging.getLogger(__name__)
 
 STALE_AFTER = timedelta(hours=36)
+LOOKAHEAD_DAYS = 7
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _as_utc(value) -> datetime:
@@ -277,6 +286,142 @@ def unplayed_game_ids(
     return set(rows)
 
 
+def select_target_ids(
+    db: Session,
+    season: int,
+    sport: str,
+    now: datetime | None = None,
+    week: int | None = None,
+    lookahead_days: int = LOOKAHEAD_DAYS,
+) -> set[str]:
+    """Unplayed, not-yet-kicked-off games to predict: an explicit week alone,
+    else the default week plus any game kicking off within the look-ahead
+    window. A TBD kickoff is judged by its game date, and one more than
+    STALE_AFTER in the past has left the window (a cancellation or a lagging
+    score must not be re-predicted forever)."""
+    now = now or datetime.now(UTC)
+    if week is not None:
+        return unplayed_game_ids(db, season, week, sport, now=now)
+    base = default_week(db, season, sport, now=now)
+    when = func.coalesce(Game.kickoff_time, Game.game_date)
+    in_window = (when <= now + timedelta(days=lookahead_days)) & (when > now - STALE_AFTER)
+    selected = in_window if base is None else (Game.week == base) | in_window
+    rows = db.scalars(
+        select(Game.game_id).where(
+            Game.season == season,
+            Game.sport == sport,
+            Game.home_score.is_(None),
+            Game.away_score.is_(None),
+            (Game.kickoff_time.is_(None)) | (Game.kickoff_time > now),
+            selected,
+        )
+    )
+    return set(rows)
+
+
+def ranks_for_week(
+    db: Session,
+    sport: str,
+    season: int,
+    week: int,
+    cache: dict[int, dict[int, int]],
+) -> tuple[dict[int, int], dict[int, int]]:
+    """(ranks entering week, ranks entering the week before), each poll read once.
+    A week with no published poll is {}, so the fact sheet prints no rank line."""
+
+    def ranks(wk: int) -> dict[int, int]:
+        if wk not in cache:
+            cache[wk] = poll_ranks_entering(db, sport, season, wk)
+        return cache[wk]
+
+    # Both weeks resolve AP first, so the rank movement compares the same poll in practice.
+    return ranks(week), (ranks(week - 1) if week > 1 else {})
+
+
+class Predictor(NamedTuple):
+    model: object
+    calibrator: object
+    explainer: object
+    feature_columns: list[str]
+    sport: str
+    version: str
+
+
+def break_exact_tie(prob: float, spread_home: float | None) -> float:
+    """Nudge a dead-even stored probability 0.0001 toward the betting favorite
+    (positive spread_home: home favored), else the home team, so every game has
+    a pick. Anything that does not round to 0.5 is the model's own call."""
+    if round(prob, 4) != 0.5:
+        return prob
+    return 0.4999 if spread_home is not None and spread_home < 0 else 0.5001
+
+
+def predict_one(
+    db: Session,
+    row: pd.Series,
+    predictor: Predictor,
+    ranks: dict[int, int],
+    prev_ranks: dict[int, int],
+) -> Narration | None:
+    """Predict, narrate, store and commit one game. Any failure is rolled back
+    and logged by type only, and returns None so the rest of the slate runs."""
+    game_id = row["game_id"]
+    try:
+        x = row[predictor.feature_columns].to_frame().T.astype(float)
+        raw = predictor.model.predict_proba(x)[:, 1]
+        prob = float(predictor.calibrator.transform(raw)[0])
+        spread = float(row["market_spread_home"]) if bool(row["has_market_spread"]) else None
+        broken = break_exact_tie(prob, spread)
+        tie_side = None if broken == prob else ("home" if broken > 0.5 else "away")
+        prob = broken
+        factors = top_factors(
+            predictor.explainer,
+            x,
+            prob,
+            sport=predictor.sport,
+            market_available=bool(row["has_market_line"]),
+            spread_available=bool(row["has_market_spread"]),
+        )
+        narration = narrate_and_store(
+            db, row, predictor.version, prob, factors, ranks, prev_ranks
+        )
+        # Commit per game: a full CFB slate is ~100 sequential Claude calls,
+        # and the upsert is idempotent, so partial progress is safe to keep.
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("prediction failed for %s: %s", game_id, type(exc).__name__)
+        return None
+    if tie_side:
+        print(f"  {game_id}: exact tie broken toward {tie_side}")
+    print(f"  {game_id}: home {prob:.1%} (narration: {narration.source})")
+    return narration
+
+
+def coverage_report(
+    db: Session,
+    season: int,
+    sport: str,
+    week: int | None,
+    now: datetime | None = None,
+    version: str | None = None,
+) -> int:
+    """Print the end-of-run coverage check and return its exit status. Imported
+    late because app.jobs.coverage reads this module's selection."""
+    from app.jobs.coverage import check_coverage, coverage_outcome
+
+    coverage = check_coverage(db, season, sport, version=version, now=now, week=week)
+    lines, status = coverage_outcome(coverage)
+    for line in lines:
+        print(line)
+    return status
+
+
+def _week_span(weeks: list[int]) -> str:
+    lo, hi = min(weeks), max(weeks)
+    return f"week {lo}" if lo == hi else f"weeks {lo}-{hi}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--season", type=int, default=2026)
@@ -287,57 +432,69 @@ def main() -> None:
 
     bundle = load_latest(sport=sport)
     model = bundle["model"]
-    calibrator = bundle["calibrator"]
-    feature_columns = bundle["feature_columns"]
-    version = get_settings().model_version_for(sport)
-    explainer = make_explainer(model)
+    predictor = Predictor(
+        model=model,
+        calibrator=bundle["calibrator"],
+        explainer=make_explainer(model),
+        feature_columns=bundle["feature_columns"],
+        sport=sport,
+        version=get_settings().model_version_for(sport),
+    )
+    failed: list[str] = []
+    # One clock reading for the whole run: a CFB slate can take tens of minutes,
+    # and the coverage check must audit the window that was selected.
+    now = _utc_now()
 
     with session_scope() as db:
-        week = args.week if args.week is not None else default_week(db, args.season, sport)
-        if week is None:
-            print(f"no unplayed {sport} games found for season {args.season}")
+        playable = select_target_ids(db, args.season, sport, now=now, week=args.week)
+        if args.week is not None:
+            in_week = db.scalar(
+                select(func.count()).select_from(Game).where(
+                    Game.season == args.season, Game.sport == sport, Game.week == args.week
+                )
+            )
+            skipped = in_week - len(playable)
+            if skipped:
+                print(f"skipping {skipped} already-final {sport} games")
+        if not playable:
+            if args.week is not None:
+                print(f"no unplayed {sport} games found for {args.season} week {args.week}")
+            else:
+                print(f"no unplayed {sport} games found for season {args.season}")
             return
 
         features = build_features(db, seasons=[args.season], sport=sport)
-        target = features[features["week"] == week]
-        playable = unplayed_game_ids(db, args.season, week, sport)
-        skipped = len(target) - target["game_id"].isin(playable).sum()
-        target = target[target["game_id"].isin(playable)]
-        if skipped:
-            print(f"skipping {skipped} already-final {sport} games")
+        target = features[features["game_id"].isin(playable)]
         if target.empty:
-            print(f"no unplayed {sport} games found for {args.season} week {week}")
-            return
+            print(f"WARNING: no feature rows for {len(playable)} selected {sport} games")
+            coverage_report(db, args.season, sport, args.week, now=now, version=predictor.version)
+            sys.exit(1)
 
-        ranks = poll_ranks_entering(db, sport, args.season, week)
-        # Both weeks resolve AP first, so the rank movement compares the same poll in practice.
-        prev_ranks = poll_ranks_entering(db, sport, args.season, week - 1) if week > 1 else {}
-        print(f"predicting {len(target)} {sport} games for {args.season} week {week}")
+        span = _week_span([int(w) for w in target["week"]])
+        print(f"predicting {len(target)} {sport} games for {args.season} {span}")
+        poll_cache: dict[int, dict[int, int]] = {}
         sources: Counter = Counter()
-
         for _, row in target.iterrows():
-            x = row[feature_columns].to_frame().T.astype(float)
-            raw = model.predict_proba(x)[:, 1]
-            prob = float(calibrator.transform(raw)[0])
-            factors = top_factors(
-                explainer,
-                x,
-                prob,
-                sport=sport,
-                market_available=bool(row["has_market_line"]),
-                spread_available=bool(row["has_market_spread"]),
-            )
+            ranks, prev_ranks = ranks_for_week(db, sport, args.season, int(row["week"]), poll_cache)
+            narration = predict_one(db, row, predictor, ranks, prev_ranks)
+            if narration is None:
+                failed.append(row["game_id"])
+            else:
+                sources[narration.source] += 1
 
-            narration = narrate_and_store(db, row, version, prob, factors, ranks, prev_ranks)
-            sources[narration.source] += 1
-            # Commit per game: a full CFB slate is ~100 sequential Claude calls,
-            # and the upsert is idempotent, so partial progress is safe to keep.
-            db.commit()
-            print(f"  {row['game_id']}: home {prob:.1%} (narration: {narration.source})")
-
+        ok = len(target) - len(failed)
+        print(f"predictions: {ok} ok, {len(failed)} failed")
+        if failed:
+            games = "1 game" if len(failed) == 1 else f"{len(failed)} games"
+            print(f"WARNING: prediction failed for {games}: {', '.join(failed)}")
         for line in narration_summary(sources):
             print(line)
+        coverage_status = coverage_report(
+            db, args.season, sport, args.week, now=now, version=predictor.version
+        )
 
+    if failed or coverage_status:
+        sys.exit(1)
     print("prediction batch complete")
 
 

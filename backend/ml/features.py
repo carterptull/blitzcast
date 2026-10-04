@@ -291,6 +291,11 @@ def _team_form(games: pd.DataFrame, stats: pd.DataFrame) -> pd.DataFrame:
 
 def _asof_form(games: pd.DataFrame, form: pd.DataFrame, side: str) -> pd.DataFrame:
     """Most recent post-game form strictly before each game's kickoff."""
+    if form.empty:
+        # No played games yet (early season): every form value is unknown.
+        cols = [c for c in form.columns if c not in ("team_id", "kickoff")]
+        empty = pd.DataFrame(np.nan, index=pd.Index(games["game_id"], name="game_id"), columns=cols)
+        return empty.add_prefix(f"{side}_")
     left = games[["game_id", "kickoff", f"{side}_team_id"]].rename(
         columns={f"{side}_team_id": "team_id"}
     )

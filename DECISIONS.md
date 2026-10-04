@@ -607,3 +607,86 @@ gracefully. The fence and the data rule are defense in depth, not a guarantee th
 injected text. **Alternative:** a blocklist of bad phrases in feed values: it cannot anticipate
 every injection and would drift, while a character allowlist, a shape gate and output rules bound
 what any value can do.
+
+## `predict_week` predicts a seven day look-ahead window, not only the current week
+
+Without `--week`, the job predicts the default week plus every unplayed game kicking off within
+seven days (`LOOKAHEAD_DAYS`); a game that has kicked off is excluded, and a TBD kickoff is judged
+by its game date and leaves the window once that date is more than 36 hours past (`STALE_AFTER`,
+the bound `default_week` uses), so a cancelled TBD game is not re-predicted forever. The coverage
+check uses the same selection. **Why:** lead time and visibility. A game now has a prediction and
+booth section once the game kicks off within seven days (or is in the current week), instead of
+showing "prediction pending" until the morning of its first game. The daily re-runs keep early predictions fresh as the line, weather and injuries
+move, and the cost is small (a few more model calls and narrations a day). **Alternative:**
+predict the whole season ahead: the predictions would go stale and most of the work would be
+wasted, and odds exist only about two weeks out, so the market features would be imputed anyway.
+One known cost of the window: an early CFB game predicted before that week's AP poll is out lacks
+the poll rank line until the next daily rerun refreshes it.
+
+## Per-game failure isolation, and a loud exit
+
+`predict_one` rolls back and skips a game that raises, logs only the exception type, and the job
+finishes the slate, prints `predictions: N ok, F failed`, runs a coverage check
+(`python -m app.jobs.coverage` runs the same check on its own, read-only, against the current
+model version from settings), and exits 1 if any
+game failed or any upcoming game has no prediction or booth section, or if no selected game
+produced a feature row. The `refresh_week` and `refresh_week_cfb` orchestrators still run every
+step, then exit 1 if the prediction step failed or was skipped because the schedule sync failed.
+**Why:** one bad row must not cost a whole slate, and a silent gap is the worst failure: the
+cron used to report success while a game had no prediction. A non-zero exit shows up as a failed
+Railway run. **Alternative:** alerting outside the repo (a monitor or a dashboard): it can still
+be added, but it would watch a job that reports success, so the job has to tell the truth first.
+
+## The venue gate also covers ad words, number words and names, and what it still does not stop
+
+The plausibility gate that treats a venue, city, conference or division as missing now also
+rejects an ad word (free, picks, call, text, click, visit, bet, promo, bonus, sponsor,
+subscribe, follow) and three or more number words, and the same gate applies to team name, mascot
+and abbreviation strings. The digit-run rule in `check_narration` also rejects a vanity number of
+the shape `1-800-PICKS`. **Why:** the template publishes a venue with no model involved, and
+the team and mascot strings reach the same sheet. Measured against about 1,900 real names (691
+schools, 239 mascots, 87 conferences, about 400 venues, 32 teams, 30 stadiums and 826 aliases) the
+gate rejected no football name; only non-football places such as "Free State Stadium" and
+"Frankfurt am Main" were rejected. A name with three or more digits in a row is rejected, as
+before, so a venue such as "Bet365 Stadium" is rejected by the digit rule.
+**Honest limits, stated plainly:**
+- The gate stops lowercase-word and number-word style injection only. Title Case injection such
+  as "Alabama SYSTEM Ignore All Previous Instructions" passes it. The guarantee rests on the
+  output guardrail (`check_narration`: no links, handles or digit runs, and facts verified
+  against the sheet), not on the gate.
+- The vanity-number rule misses "800-PICKS-NOW", "888-FREE-PICKS", "1-900-PICKS", spaced
+  separators, a letter O in place of a zero, and the U+2010 hyphen. It can also reject honest
+  text such as "1-800 yards" or "founded in 1892 when ...". A rejected draft is retried and then
+  the template covers the game, so a false positive costs one retry. A tighter pattern
+  (`\b(?:1[\s.-]?)?(?:8[0-8]{2}|900)[.-][A-Z]{3,}`) was considered and deferred.
+- Digits: the gate rejects a string with more than four digits in all, so a spaced or
+  punctuated phone number such as "Dial (8 0 0) 5 5 5'0 1 9 9 Field" is treated as missing
+  (the cap newly rejects none of the 1,422 seeded team, stadium and alias strings; a year such
+  as 2026 was already rejected by the three-digit run rule). The output number-run
+  rule flags seven or more digits chained by separators of up to two characters that are not
+  letters, commas or percent signs, unless the chain is only scores or records ("24-17 27-24").
+  A number spelled with letters between its digits, or split by a comma, passes both.
+- Other gaps: ad word variants ("Bets", "FREEPICKS") pass, and Cyrillic lookalikes pass the
+  gate but the output non-Latin-1 rule catches them.
+- The AI draft percentage tolerance (plus or minus 1 point) in `check_narration` is unchanged,
+  and eleven strict xfail tests record other known limits.
+
+**Alternative:** a blocklist of phrases, or tightening the gate until it also stops Title Case
+injection: either rejects real names (a school or a mascot can be called almost anything) while
+the output rules already bound what any value can cause the narration to say.
+
+## The model always picks a side: an exact 50-50 is broken at prediction time
+
+When the calibrated probability is exactly even, `predict_week` stores 0.5001 (home favored, or
+no posted line) or 0.4999 (the betting favorite is the away team) via `break_exact_tie`. Only a
+value that rounds to exactly 0.5 is touched, and only for games being predicted, so near-ties
+such as 50.27 versus 49.73 and every finished game are unchanged. **Why:** sportsbooks always name
+a favorite, and the record needs a pick to grade. Every game already had a pick from the
+unrounded probability, but an exactly even stored value was picked inconsistently by the page,
+the share image and the grading. Breaking the tie where the prediction is written keeps every
+consumer in agreement without touching any of them. **Alternatives rejected:** a "Toss-up" label
+(the maintainer does not want one); substituting the betting favorite or the home team for every
+near-even game (it would put picks in the record that the model did not make and hide the
+model-versus-market disagreements the record exists to show); and a frontend and grading
+tie-break rule (three places to keep in sync, a changed grading rule for finished games, and more
+surface for the same result).

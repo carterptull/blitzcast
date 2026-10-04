@@ -127,11 +127,15 @@ def _without_scores(text: str | None) -> str | None:
     return text if any(ch.isalnum() for ch in text) else None
 
 
-def _team_text(value: str | None, max_len: int) -> str | None:
-    return _without_scores(_clean(value, max_len))
-
-
 _LINK_WORD_RE = re.compile(r"\b(?:dot|com|net|org|www|https?|hxxps?)\b", re.IGNORECASE)
+_AD_WORD_RE = re.compile(
+    r"\b(?:free|picks|call|text|click|visit|bet|promo|bonus|sponsor|subscribe|follow)\b",
+    re.IGNORECASE,
+)
+_NUMBER_WORD_RE = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand)\b",
+    re.IGNORECASE,
+)
 _PLACE_WORD_RE = re.compile(r"(?<![\w'])[^\W\d_][\w']*")
 _FUNCTION_WORDS = {
     "of", "at", "the", "and", "in", "de", "la", "del", "on", "du", "von", "van", "le", "y",
@@ -139,17 +143,35 @@ _FUNCTION_WORDS = {
 }
 
 
+def _reads_like_a_name(text: str) -> bool:
+    """False for a link word, an ad word, a run of 3+ digits, more than 4 digits
+    in all (a spaced or punctuated phone number), 3+ number words, or a
+    lowercase word other than a function word ("of", "de"). Real names are
+    Title Case."""
+    if _LINK_WORD_RE.search(text) or _AD_WORD_RE.search(text) or re.search(r"\d{3,}", text):
+        return False
+    if sum(ch.isdigit() for ch in text) > 4:
+        return False
+    if len(_NUMBER_WORD_RE.findall(text)) >= 3:
+        return False
+    words = _PLACE_WORD_RE.findall(text)
+    return not any(w[0].islower() and w not in _FUNCTION_WORDS for w in words)
+
+
 def _place(value: str | None, max_len: int) -> str | None:
     """A cleaned venue, city, conference or division, or None when it does not
-    read like a name: a link word, a run of 3+ digits, or a lowercase word other
-    than a function word ("of", "de"). Real names are Title Case."""
+    read like a name."""
     text = _clean(value, max_len)
-    if text is None or _LINK_WORD_RE.search(text) or re.search(r"\d{3,}", text):
+    return text if text is not None and _reads_like_a_name(text) else None
+
+
+def _team_text(value: str | None, max_len: int) -> str | None:
+    """A cleaned team name, mascot or abbreviation, or None when it does not
+    read like a name. Any score or streak left in it is dropped."""
+    text = _clean(value, max_len)
+    if text is None or not _reads_like_a_name(text):
         return None
-    words = _PLACE_WORD_RE.findall(text)
-    if any(w[0].islower() and w not in _FUNCTION_WORDS for w in words):
-        return None
-    return text
+    return _without_scores(text)
 
 
 def _team_name(team: Team) -> str:

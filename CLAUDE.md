@@ -46,7 +46,10 @@ Backend (from `backend/`, using `.venv\Scripts\python`):
 - Migrations: `python -m alembic upgrade head`
 - Pipeline: `python -m data_pipeline.seed` / `.backfill` /
   `.refresh_week`; model: `python -m ml.train` / `ml.backtest`;
-  predictions: `python -m app.jobs.predict_week`; narration quality:
+  predictions: `python -m app.jobs.predict_week` (default week plus any
+  game kicking off within 7 days; exits 1 on a failed game or a coverage
+  gap); coverage check: `python -m app.jobs.coverage --sport nfl|cfb`;
+  narration quality:
   `python -m app.jobs.narration_eval --sport nfl --week N --stored`
 
 Frontend (from `frontend/`): `npm run dev` / `lint` / `build` (port 3000)

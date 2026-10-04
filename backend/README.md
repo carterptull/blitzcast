@@ -74,7 +74,9 @@ deterministic template.
 | Persist Elo snapshots | `python -m ml.compute_ratings --sport nfl\|cfb` |
 | Train model | `python -m ml.train --sport nfl\|cfb` |
 | Backtest (writes `ml/reports/`) | `python -m ml.backtest --sport nfl\|cfb` |
-| Predict a week | `python -m app.jobs.predict_week --season 2026 --week 1 --sport nfl\|cfb` |
+| Predict the default week plus the next 7 days | `python -m app.jobs.predict_week --season 2026 --sport nfl\|cfb` |
+| Predict one week only | `python -m app.jobs.predict_week --season 2026 --week 1 --sport nfl\|cfb` |
+| Coverage check (read-only; exits 1 on a gap) | `python -m app.jobs.coverage --sport nfl\|cfb [--season 2026]` |
 | Check narration quality | `python -m app.jobs.narration_eval --sport nfl\|cfb --week N [--season 2026] [--limit 20] --stored` |
 | Backfill walk-forward predictions | `python -m app.jobs.backfill_predictions --sport nfl\|cfb` |
 | Run API | `python -m uvicorn app.main:app --reload` |
@@ -144,6 +146,15 @@ migrations.
 422). `/api/predictions/{game_id}` needs no sport: game ids are globally
 unique (CFB ids are prefixed `cfb_`) and the response carries `sport`.
 `predict_week` takes `--sport nfl|cfb` (default `nfl`).
+
+Without `--week`, `predict_week` predicts the default week plus every
+unplayed game kicking off within `LOOKAHEAD_DAYS` (7, a constant in
+`app/jobs/predict_week.py`, not a flag). One failing game is rolled back and
+the slate continues. The run prints `predictions: N ok, F failed`, then a
+coverage line, and exits 1 if any game failed or any selected game has no
+prediction or no booth section. `python -m app.jobs.coverage` runs that same
+coverage check alone and read-only. A dead-even probability is stored as
+0.5001 or 0.4999, toward the betting favorite (home when there is no line).
 
 `narration_eval` only reads the database. `--stored` re-checks each game's
 saved narration against today's guardrail (free, no API calls). Without it,

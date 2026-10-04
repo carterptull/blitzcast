@@ -6,6 +6,53 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-10-03
+
+Prediction coverage patches. The model, its probabilities (other than the
+exact-tie rule below), and `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`) are
+unchanged.
+
+### Changed
+- The daily prediction job now predicts every unplayed game kicking off
+  within seven days (`LOOKAHEAD_DAYS`), plus the current week, so a game has
+  a prediction and booth section once the game kicks off within seven days
+  (or is in the current week). A TBD-kickoff game more than 36 hours past
+  its game date is no longer selected or reported as a gap. Previously
+  next week's games stayed "prediction pending" until the morning of its
+  first game. `--week N` behaves as before.
+- An exactly even (50.0000 percent) prediction is nudged by 0.0001 toward
+  the betting favorite (the home team when there is no posted line) when it
+  is written, so the model always picks a side and the page, the share image
+  and the season record agree. Near-ties such as 50.27 versus 49.73 and all
+  finished games are untouched.
+- The NFL and CFB cron runs now run every step and then exit 1 when the
+  prediction step failed or was skipped because the schedule sync failed.
+
+### Added
+- Per-game failure isolation in `predict_week`: one game that errors is
+  rolled back and logged by exception type, the rest of the slate still
+  runs, and the run prints `predictions: N ok, F failed` and exits non-zero.
+- An end-of-run coverage check, and `python -m app.jobs.coverage
+  [--season] [--sport nfl|cfb]` (read-only, current model version), that
+  lists upcoming games with no prediction or no booth section and exits
+  non-zero when any exist.
+
+### Security
+- Venue, city, conference, division, team name and mascot strings are gated
+  for ad words and number words, in addition to the existing link-word and
+  digit-run rules, so a hostile or vandalized feed value is treated as
+  missing. The gate stops lowercase-word and number-word style injection
+  only; the guarantee remains the output guardrail (`check_narration`).
+- Narration drafts may not contain a vanity phone number such as
+  "1-800-PICKS".
+- A spaced or punctuated phone number is now caught on both sides: the gate
+  rejects a feed string with more than four digits in all, and the output
+  rule counts digits chained by short punctuation such as "(8 0 0) 5 5 5".
+
+### Fixed
+- `build_features` no longer crashes for CFB when the season has no played
+  games.
+
 ## [1.1.1] — 2026-10-03
 
 A hotfix for the 1.1.0 narrator. The model, its probabilities, and

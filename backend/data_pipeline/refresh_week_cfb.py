@@ -14,7 +14,7 @@ Usage: python -m data_pipeline.refresh_week_cfb [--season 2026] [--skip-predict]
 
 import argparse
 
-from data_pipeline.refresh_week import run_step
+from data_pipeline.refresh_week import finish_run, run_step
 
 
 def main() -> None:
@@ -35,14 +35,17 @@ def main() -> None:
     )
     run_step("cfb polls refresh", ["data_pipeline.refresh_polls_cfb", "--season", season])
 
+    predicted = None
     if not args.skip_predict:
         if ok:
-            run_step(
+            predicted = run_step(
                 "cfb prediction batch",
                 ["app.jobs.predict_week", "--season", season, "--sport", "cfb"],
             )
         else:
             print("skipping prediction batch because schedule sync failed")
+            predicted = False
+    finish_run(predicted)
 
 
 if __name__ == "__main__":

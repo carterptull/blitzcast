@@ -547,31 +547,60 @@ class _Identity:
         return raw
 
 
-def _run_main(db, monkeypatch, narrate_fn, capsys, **patches):
+class _FailOnceModel:
+    """Raises on the first call only, so one game fails and the next succeeds."""
+
+    def __init__(self, exc):
+        self.exc = exc
+        self.calls = 0
+
+    def predict_proba(self, x):
+        self.calls += 1
+        if self.calls == 1:
+            raise self.exc
+        return _FakeModel().predict_proba(x)
+
+
+def _run_main(
+    db, monkeypatch, narrate_fn, capsys, model=None, argv=None, clock=None, commits=None,
+    **patches,
+):
+    """Run main against the test session. `clock` stands in for the wall clock:
+    any selection made without an explicit `now` reads it too, so a clock that
+    advances mid-run exposes a second, later reading."""
     from contextlib import contextmanager
 
     @contextmanager
     def scope():
         yield db
 
-    real_unplayed = predict_week.unplayed_game_ids
+    from app.jobs import coverage
+
+    clock = clock or (lambda: datetime(2026, 9, 1, tzinfo=UTC))
+    real_select = predict_week.select_target_ids
+
+    def select(db_, season, sport, **kw):
+        return real_select(db_, season, sport, **{**kw, "now": kw.get("now") or clock()})
+
+    monkeypatch.setattr(coverage, "select_target_ids", select)
+    monkeypatch.setattr(predict_week, "select_target_ids", select)
+    monkeypatch.setattr(predict_week, "_utc_now", clock)
     monkeypatch.setattr(predict_week, "load_latest", lambda sport: {
-        "model": _FakeModel(), "calibrator": _Identity(), "feature_columns": ["elo_diff"],
+        "model": model or _FakeModel(), "calibrator": _Identity(),
+        "feature_columns": ["elo_diff"],
     })
     monkeypatch.setattr(predict_week, "make_explainer", lambda model: None)
     monkeypatch.setattr(predict_week, "top_factors", lambda *a, **kw: [])
     monkeypatch.setattr(predict_week, "session_scope", scope)
-    monkeypatch.setattr(
-        predict_week, "unplayed_game_ids",
-        lambda *a: real_unplayed(*a, now=datetime(2026, 9, 1, tzinfo=UTC)),
-    )
     monkeypatch.setattr(predict_week, "narrate", narrate_fn)
     for name, value in patches.items():
         monkeypatch.setattr(predict_week, name, value)
-    commits = []
+    commits = [] if commits is None else commits
     real_commit = db.commit
     monkeypatch.setattr(db, "commit", lambda: (commits.append(1), real_commit()))
-    monkeypatch.setattr("sys.argv", ["predict_week", "--season", "2026", "--week", "1"])
+    monkeypatch.setattr(
+        "sys.argv", argv or ["predict_week", "--season", "2026", "--week", "1"]
+    )
     predict_week.main()
     return capsys.readouterr().out, commits
 
@@ -588,7 +617,9 @@ def test_main_counts_each_tier_and_commits_every_game(db, monkeypatch, capsys):
         return "A fresh booth draft." if facts.home.abbr == "KC" else None
 
     out, commits = _run_main(db, monkeypatch, draft, capsys)
+    assert "predictions: 2 ok, 0 failed" in out
     assert "narration: 1 written, 0 kept, 1 fallback, 0 minimal, 0 none" in out
+    assert "coverage: 2 upcoming games, 0 missing a prediction, 0 missing a booth section" in out
     assert "WARNING" not in out
     assert len(commits) == 2
     stored = _stored_texts(db)
@@ -604,13 +635,540 @@ def test_main_warns_only_when_a_game_has_no_narration(db, monkeypatch, capsys):
             raise ValueError("no sheet")
         return real_facts(db_, row, *a)
 
-    out, commits = _run_main(
-        db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
-        facts_for_row=facts, minimal_narration=_raise(KeyError("no abbr")),
-    )
+    commits: list = []
+    with pytest.raises(SystemExit) as exit_info:
+        _run_main(
+            db, monkeypatch, lambda f: "A fresh booth draft.", capsys, commits=commits,
+            facts_for_row=facts, minimal_narration=_raise(KeyError("no abbr")),
+        )
+    assert exit_info.value.code == 1
+    assert len(commits) == 2
+    out = capsys.readouterr().out
     assert "narration: 1 written, 0 kept, 0 fallback, 0 minimal, 1 none" in out
     assert "WARNING: 1 game has no booth narration" in out
-    assert len(commits) == 2
+    assert "coverage: 2 upcoming games, 0 missing a prediction, 1 missing a booth section" in out
+    assert "WARNING: no booth section for 2026_01_PHI_DAL" in out
     assert _stored_texts(db) == {
         "2026_01_BUF_KC": "A fresh booth draft.", "2026_01_PHI_DAL": None,
     }
+
+
+NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
+
+
+def _add_game(db, game_id, week, kickoff, game_date=None, home_score=None, away_score=None):
+    teams = {t.abbr: t.team_id for t in db.query(Team).filter_by(sport=SPORT_NFL)}
+    db.add(
+        Game(
+            game_id=game_id, sport=SPORT_NFL, season=2026, week=week,
+            game_date=game_date or kickoff.date(), kickoff_time=kickoff,
+            home_team_id=teams["KC"], away_team_id=teams["PHI"],
+            home_score=home_score, away_score=away_score, status="scheduled",
+        )
+    )
+
+
+def _lookahead_slate(db):
+    """Week 1 is the default week at NOW; week 2 straddles the 7 day horizon."""
+    _add_game(db, "w1_kicked_off", 1, datetime(2026, 9, 12, 0, 0, tzinfo=UTC))
+    _add_game(db, "w1_tbd_late", 1, None, game_date=date(2026, 9, 25))
+    _add_game(db, "w2_thursday", 2, datetime(2026, 9, 18, 0, 20, tzinfo=UTC))
+    _add_game(db, "w2_tbd_in_window", 2, None, game_date=date(2026, 9, 18))
+    _add_game(db, "w2_sunday", 2, datetime(2026, 9, 20, 17, 0, tzinfo=UTC))
+    _add_game(db, "w2_tbd_beyond", 2, None, game_date=date(2026, 9, 21))
+    _add_game(db, "w2_half_scored", 2, datetime(2026, 9, 17, 0, 20, tzinfo=UTC),
+              home_score=7)
+    _add_game(db, "w2_scored", 2, datetime(2026, 9, 17, 0, 20, tzinfo=UTC),
+              home_score=21, away_score=14)
+    db.commit()
+
+
+def test_select_target_ids_adds_games_inside_the_lookahead_window(db):
+    from app.jobs.predict_week import select_target_ids
+
+    _lookahead_slate(db)
+    assert default_week(db, 2026, SPORT_NFL, now=NOW) == 1
+    assert select_target_ids(db, 2026, SPORT_NFL, now=NOW) == {
+        "2026_01_BUF_KC", "2026_01_PHI_DAL", "w1_tbd_late", "w2_thursday", "w2_tbd_in_window",
+    }
+
+
+def test_select_target_ids_window_length_is_a_parameter(db):
+    from app.jobs.predict_week import LOOKAHEAD_DAYS, select_target_ids
+
+    _lookahead_slate(db)
+    assert LOOKAHEAD_DAYS == 7
+    ids = select_target_ids(db, 2026, SPORT_NFL, now=NOW, lookahead_days=9)
+    assert {"w2_sunday", "w2_tbd_beyond"} <= ids
+    assert not {"w1_kicked_off", "w2_half_scored", "w2_scored"} & ids
+
+
+def test_select_target_ids_with_an_explicit_week_keeps_the_old_selection(db):
+    from app.jobs.predict_week import select_target_ids, unplayed_game_ids
+
+    _lookahead_slate(db)
+    for week in (1, 2):
+        assert select_target_ids(db, 2026, SPORT_NFL, now=NOW, week=week) == unplayed_game_ids(
+            db, 2026, week, SPORT_NFL, now=NOW
+        )
+    assert select_target_ids(db, 2026, SPORT_NFL, now=NOW, week=1) == {
+        "2026_01_BUF_KC", "2026_01_PHI_DAL", "w1_tbd_late",
+    }
+
+
+def test_select_target_ids_is_sport_and_season_scoped(db):
+    from app.jobs.predict_week import select_target_ids
+
+    _lookahead_slate(db)
+    assert select_target_ids(db, 2026, SPORT_CFB, now=NOW) == {"cfb_401800002"}
+    assert select_target_ids(db, 2025, SPORT_NFL, now=NOW) == set()
+
+
+def _predictor(model):
+    return predict_week.Predictor(
+        model=model, calibrator=_Identity(), explainer=None,
+        feature_columns=["elo_diff"], sport=SPORT_NFL, version="1.0.0",
+    )
+
+
+def _week1_rows(db):
+    from ml.features import build_features
+
+    features = build_features(db, seasons=[2026], sport=SPORT_NFL)
+    week = features[features["week"] == 1].set_index("game_id", drop=False)
+    return week.loc["2026_01_BUF_KC"], week.loc["2026_01_PHI_DAL"]
+
+
+def _isolation_setup(db, monkeypatch):
+    monkeypatch.setattr(predict_week, "top_factors", lambda *a, **kw: [])
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: "A fresh booth draft.")
+    commits, rollbacks = [], []
+    real_commit, real_rollback = db.commit, db.rollback
+    monkeypatch.setattr(db, "commit", lambda: (commits.append(1), real_commit()))
+    monkeypatch.setattr(db, "rollback", lambda: (rollbacks.append(1), real_rollback()))
+    return commits, rollbacks
+
+
+def test_predict_one_isolates_a_model_failure(db, monkeypatch, caplog):
+    from app.jobs.predict_week import predict_one
+
+    commits, rollbacks = _isolation_setup(db, monkeypatch)
+    first, second = _week1_rows(db)
+    predictor = _predictor(_FailOnceModel(ValueError(SECRET)))
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        results = [predict_one(db, row, predictor, {}, {}) for row in (first, second)]
+    assert results[0] is None
+    assert results[1] == Narration("A fresh booth draft.", "llm")
+    assert "prediction failed for 2026_01_BUF_KC: ValueError" in caplog.text
+    assert SECRET not in caplog.text
+    assert rollbacks == [1] and commits == [1]
+    assert _stored_texts(db)["2026_01_PHI_DAL"] == "A fresh booth draft."
+    assert predict_week._stored_prediction(db, "2026_01_BUF_KC", "1.0.0").home_win_prob == 0.61
+
+
+def test_predict_one_rolls_back_a_storage_failure(db, monkeypatch, caplog):
+    from app.jobs.predict_week import predict_one
+
+    commits, rollbacks = _isolation_setup(db, monkeypatch)
+    first, second = _week1_rows(db)
+    real_upsert = predict_week.upsert_prediction
+    calls = []
+
+    def upsert(*a, **kw):
+        calls.append(1)
+        real_upsert(*a, **kw)
+        if len(calls) == 1:
+            raise SQLAlchemyError(SECRET)
+
+    monkeypatch.setattr(predict_week, "upsert_prediction", upsert)
+    predictor = _predictor(_FakeModel())
+    with caplog.at_level(logging.WARNING, logger="app.jobs.predict_week"):
+        assert predict_one(db, second, predictor, {}, {}) is None
+        assert predict_one(db, first, predictor, {}, {}) is not None
+    assert "prediction failed for 2026_01_PHI_DAL: SQLAlchemyError" in caplog.text
+    assert SECRET not in caplog.text
+    assert rollbacks == [1] and commits == [1]
+    assert predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0") is None
+    assert _stored_texts(db)["2026_01_BUF_KC"] == "A fresh booth draft."
+
+
+def test_main_finishes_the_slate_and_exits_nonzero_on_a_failed_game(db, monkeypatch, capsys):
+    from app.models import Prediction
+
+    db.query(Prediction).filter_by(game_id="2026_01_BUF_KC").delete()
+    db.commit()
+    with pytest.raises(SystemExit) as exit_info:
+        _run_main(
+            db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+            model=_FailOnceModel(RuntimeError(SECRET)),
+        )
+    assert exit_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "predictions: 1 ok, 1 failed" in out
+    assert re.search(r"WARNING: prediction failed for 1 game: 2026_01_\w+", out)
+    assert "coverage: 2 upcoming games, 1 missing a prediction, 0 missing a booth section" in out
+    assert re.search(r"WARNING: no prediction for 2026_01_\w+", out)
+    assert "narration: 1 written, 0 kept, 0 fallback, 0 minimal, 0 none" in out
+    assert SECRET not in out
+    assert sum(text == "A fresh booth draft." for text in _stored_texts(db).values()) == 1
+
+
+def test_main_without_a_week_predicts_the_lookahead_window(db, monkeypatch, capsys):
+    _add_game(db, "w2_early", 2, datetime(2026, 9, 5, 0, 20, tzinfo=UTC))
+    db.commit()
+    out, commits = _run_main(
+        db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+        argv=["predict_week", "--season", "2026"],
+    )
+    assert "predicting 3 NFL games for 2026 weeks 1-2" in out
+    assert "predictions: 3 ok, 0 failed" in out
+    assert len(commits) == 3
+
+
+def test_ranks_for_week_reads_each_game_week_once(db, monkeypatch):
+    from app.jobs.predict_week import ranks_for_week
+    from app.models import PollRank
+
+    ala = db.query(Team).filter_by(sport=SPORT_CFB, abbr="ALA").one()
+    db.add(PollRank(sport=SPORT_CFB, season=2026, week=2, poll="AP Top 25",
+                    team_id=ala.team_id, rank=5))
+    db.commit()
+    real = predict_week.poll_ranks_entering
+    reads = []
+
+    def counting(db_, sport, season, week):
+        reads.append(week)
+        return real(db_, sport, season, week)
+
+    monkeypatch.setattr(predict_week, "poll_ranks_entering", counting)
+    cache: dict = {}
+    week1 = ranks_for_week(db, SPORT_CFB, 2026, 1, cache)
+    week2 = ranks_for_week(db, SPORT_CFB, 2026, 2, cache)
+    week3 = ranks_for_week(db, SPORT_CFB, 2026, 3, cache)
+    assert week1[0][ala.team_id] == 7 and week1[1] == {}
+    assert week2 == ({ala.team_id: 5}, week1[0])
+    assert week3 == ({}, {ala.team_id: 5})
+    assert ranks_for_week(db, SPORT_CFB, 2026, 2, cache) == week2
+    assert sorted(reads) == [1, 2, 3]
+
+
+def test_exit_status_is_one_when_any_game_failed_or_coverage_has_gaps():
+    from app.jobs.coverage import Coverage, Gap, coverage_outcome
+
+    assert coverage_outcome(Coverage(3, []))[1] == 0
+    assert coverage_outcome(Coverage(3, [Gap("g", "narration")]))[1] == 1
+    assert coverage_outcome(Coverage(3, [Gap("g", "prediction")]))[1] == 1
+
+
+def _advancing_clock(start, later):
+    """The wall clock for a long run: `start` on the first reading, `later` after."""
+    readings = []
+
+    def clock():
+        readings.append(1)
+        return start if len(readings) == 1 else later
+
+    return clock
+
+
+def test_main_reads_the_clock_once_so_a_long_run_audits_its_own_window(
+    db, monkeypatch, capsys
+):
+    # Kicks off just past the start-of-run horizon: never selected, so the end
+    # of the run must not count it as a gap even though the clock has moved on.
+    _add_game(db, "w2_past_edge", 2, NOW + timedelta(days=7, minutes=1))
+    db.commit()
+    out, commits = _run_main(
+        db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+        argv=["predict_week", "--season", "2026"],
+        clock=_advancing_clock(NOW, NOW + timedelta(hours=2)),
+    )
+    assert "predicting 2 NFL games for 2026 week 1" in out
+    assert "coverage: 2 upcoming games, 0 missing a prediction, 0 missing a booth section" in out
+    assert "WARNING" not in out
+    assert "prediction batch complete" in out
+    assert len(commits) == 2
+
+
+def test_a_game_that_kicks_off_during_the_run_still_counts_as_covered(db, monkeypatch, capsys):
+    _add_game(db, "w1_mid_run", 1, NOW + timedelta(hours=1))
+    db.commit()
+    out, _ = _run_main(
+        db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+        argv=["predict_week", "--season", "2026"],
+        clock=_advancing_clock(NOW, NOW + timedelta(hours=2)),
+    )
+    assert "predictions: 3 ok, 0 failed" in out
+    assert "coverage: 3 upcoming games, 0 missing a prediction, 0 missing a booth section" in out
+    assert "prediction batch complete" in out
+
+
+def test_main_audits_only_the_current_model_version(db, monkeypatch, capsys):
+    from app.models import Prediction
+
+    db.query(Prediction).filter(Prediction.game_id.like("2026_01_%")).delete()
+    for game_id in ("2026_01_BUF_KC", "2026_01_PHI_DAL"):
+        db.add(Prediction(
+            game_id=game_id, model_version="0.9.0", home_win_prob=0.5,
+            predicted_at=datetime(2026, 8, 30, tzinfo=UTC), shap_top_features=[],
+            llm_narrative="An older model's booth section.",
+        ))
+    db.commit()
+    with pytest.raises(SystemExit) as exit_info:
+        _run_main(
+            db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+            model=_FailOnceModel(RuntimeError("boom")),
+        )
+    assert exit_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "coverage: 2 upcoming games, 1 missing a prediction, 0 missing a booth section" in out
+
+
+def test_main_reports_coverage_when_no_selected_game_has_a_feature_row(
+    db, monkeypatch, capsys
+):
+    from ml.features import build_features
+
+    def no_week1_rows(db_, seasons, sport):
+        features = build_features(db_, seasons=seasons, sport=sport)
+        return features[~features["game_id"].str.startswith("2026_01")]
+
+    commits: list = []
+    with pytest.raises(SystemExit) as exit_info:
+        _run_main(
+            db, monkeypatch, lambda f: "A fresh booth draft.", capsys, commits=commits,
+            build_features=no_week1_rows,
+        )
+    assert exit_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "WARNING: no feature rows for 2 selected NFL games" in out
+    assert "coverage: 2 upcoming games, 1 missing a prediction, 1 missing a booth section" in out
+    assert "prediction batch complete" not in out
+    assert commits == []
+
+
+def test_main_with_nothing_to_predict_exits_quietly(db, monkeypatch, capsys):
+    out, commits = _run_main(
+        db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+        argv=["predict_week", "--season", "2026"],
+        clock=lambda: datetime(2027, 3, 1, tzinfo=UTC),
+    )
+    assert out.strip() == "no unplayed NFL games found for season 2026"
+    assert commits == []
+
+
+def test_main_explicit_week_all_final_prints_the_skipped_line(db, monkeypatch, capsys):
+    db.query(Game).filter(Game.game_id.like("2026_01_%")).update(
+        {"home_score": 24, "away_score": 17}, synchronize_session=False
+    )
+    db.commit()
+    out, commits = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys)
+    assert out.splitlines() == [
+        "skipping 2 already-final NFL games",
+        "no unplayed NFL games found for 2026 week 1",
+    ]
+    assert commits == []
+
+
+def test_select_target_ids_horizon_is_inclusive_to_the_second(db):
+    from app.jobs.predict_week import select_target_ids
+
+    _add_game(db, "at_horizon", 3, NOW + timedelta(days=7))
+    _add_game(db, "past_horizon", 3, NOW + timedelta(days=7, seconds=1))
+    _add_game(db, "tbd_horizon_day", 3, None, game_date=(NOW + timedelta(days=7)).date())
+    db.commit()
+    ids = select_target_ids(db, 2026, SPORT_NFL, now=NOW)
+    assert {"at_horizon", "tbd_horizon_day"} <= ids
+    assert "past_horizon" not in ids
+
+
+def test_select_target_ids_with_no_default_week_uses_only_the_window(db, monkeypatch):
+    from app.jobs.predict_week import select_target_ids
+
+    _add_game(db, "in_window", 3, NOW + timedelta(days=3))
+    _add_game(db, "beyond", 4, NOW + timedelta(days=10))
+    db.commit()
+    window = {"2026_01_BUF_KC", "2026_01_PHI_DAL", "in_window"}
+    monkeypatch.setattr(predict_week, "default_week", lambda *a, **kw: 4)
+    assert select_target_ids(db, 2026, SPORT_NFL, now=NOW) == window | {"beyond"}
+    monkeypatch.setattr(predict_week, "default_week", lambda *a, **kw: None)
+    assert select_target_ids(db, 2026, SPORT_NFL, now=NOW) == window
+
+
+LATE_NOW = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+
+
+def _stale_tbd_slate(db, monkeypatch):
+    """TBD games judged by the window alone (no default week)."""
+    _add_game(db, "tbd_stale", 12, None, game_date=date(2026, 8, 29))
+    _add_game(db, "tbd_today", 13, None, game_date=date(2026, 11, 20))
+    _add_game(db, "tbd_tomorrow", 13, None, game_date=date(2026, 11, 21))
+    db.commit()
+    monkeypatch.setattr(predict_week, "default_week", lambda *a, **kw: None)
+
+
+def test_select_target_ids_drops_a_long_past_tbd_game(db, monkeypatch):
+    from app.jobs.predict_week import select_target_ids
+
+    _stale_tbd_slate(db, monkeypatch)
+    ids = select_target_ids(db, 2026, SPORT_NFL, now=LATE_NOW)
+    assert ids == {"tbd_today", "tbd_tomorrow"}
+
+
+def test_select_target_ids_tbd_lower_bound_is_the_staleness_window(db, monkeypatch):
+    from app.jobs.predict_week import STALE_AFTER, select_target_ids
+
+    _add_game(db, "tbd_edge", 12, None, game_date=date(2026, 11, 19))
+    db.commit()
+    monkeypatch.setattr(predict_week, "default_week", lambda *a, **kw: None)
+    edge = datetime(2026, 11, 19, tzinfo=UTC) + STALE_AFTER
+    assert "tbd_edge" in select_target_ids(
+        db, 2026, SPORT_NFL, now=edge - timedelta(seconds=1)
+    )
+    assert "tbd_edge" not in select_target_ids(db, 2026, SPORT_NFL, now=edge)
+
+
+def test_a_stale_tbd_game_in_the_default_week_keeps_the_week_rule(db):
+    from app.jobs.predict_week import select_target_ids
+
+    _add_game(db, "tbd_old", 9, None, game_date=date(2026, 10, 1))
+    _add_game(db, "w9_next", 9, LATE_NOW + timedelta(days=1))
+    db.commit()
+    assert default_week(db, 2026, SPORT_NFL, now=LATE_NOW) == 9
+    assert {"tbd_old", "w9_next"} <= select_target_ids(db, 2026, SPORT_NFL, now=LATE_NOW)
+
+
+@pytest.mark.parametrize(
+    "prob, spread, expected",
+    [
+        (0.5, 2.5, 0.5001),
+        (0.5, -2.5, 0.4999),
+        (0.5, None, 0.5001),
+        (0.5, 0.0, 0.5001),
+        (0.50004, -1.5, 0.4999),
+        (0.49996, 3.0, 0.5001),
+        (0.49996, -3.0, 0.4999),
+        (0.5027, -7.0, 0.5027),
+        (0.4973, 7.0, 0.4973),
+        (0.5027, None, 0.5027),
+        (0.61, -3.0, 0.61),
+    ],
+)
+def test_break_exact_tie_truth_table(prob, spread, expected):
+    from app.jobs.predict_week import break_exact_tie
+
+    assert break_exact_tie(prob, spread) == expected
+
+
+class _TieCalibrator:
+    def transform(self, raw):
+        import numpy as np
+
+        return np.array([0.5])
+
+
+def _tie_predictor():
+    return predict_week.Predictor(
+        model=_FakeModel(), calibrator=_TieCalibrator(), explainer=None,
+        feature_columns=["elo_diff"], sport=SPORT_NFL, version="1.0.0",
+    )
+
+
+@pytest.mark.parametrize(
+    "spread, posted, expected, side",
+    [
+        (2.5, True, 0.5001, "home"),
+        (-2.5, True, 0.4999, "away"),
+        (0.0, True, 0.5001, "home"),
+        (-2.5, False, 0.5001, "home"),
+    ],
+)
+def test_predict_one_breaks_an_exact_tie_before_anything_reads_it(
+    db, monkeypatch, capsys, spread, posted, expected, side
+):
+    from app.jobs.predict_week import predict_one
+
+    _isolation_setup(db, monkeypatch)
+    seen = {}
+    monkeypatch.setattr(
+        predict_week, "top_factors",
+        lambda explainer, x, prob, **kw: seen.setdefault("factors", prob) and [],
+    )
+
+    def draft(facts):
+        seen["facts"] = facts.home_win_prob
+        return "A fresh booth draft."
+
+    monkeypatch.setattr(predict_week, "narrate", draft)
+    _, row = _week1_rows(db)
+    row = row.copy()
+    row["market_spread_home"], row["has_market_spread"] = spread, posted
+    assert predict_one(db, row, _tie_predictor(), {}, {}) is not None
+    stored = predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0").home_win_prob
+    assert stored == expected != 0.5
+    assert seen["factors"] == seen["facts"] == expected
+    assert f"2026_01_PHI_DAL: exact tie broken toward {side}" in capsys.readouterr().out
+
+
+def test_predict_one_keeps_a_non_tie_probability_and_prints_no_audit_line(
+    db, monkeypatch, capsys
+):
+    from app.jobs.predict_week import predict_one
+
+    _isolation_setup(db, monkeypatch)
+    _, row = _week1_rows(db)
+    assert predict_one(db, row, _predictor(_FakeModel()), {}, {}) is not None
+    assert predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0").home_win_prob == 0.6
+    assert "exact tie" not in capsys.readouterr().out
+
+
+def test_predict_one_logs_no_tie_break_for_a_game_that_fails(db, monkeypatch, capsys):
+    from app.jobs.predict_week import predict_one
+
+    _isolation_setup(db, monkeypatch)
+    monkeypatch.setattr(predict_week, "upsert_prediction", _raise(SQLAlchemyError("boom")))
+    _, row = _week1_rows(db)
+    assert predict_one(db, row, _tie_predictor(), {}, {}) is None
+    assert "exact tie" not in capsys.readouterr().out
+    assert predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0") is None
+
+
+@pytest.mark.parametrize(
+    "spread, posted, expected, side",
+    [(3.0, 1.0, 0.5001, "home"), (-3.0, 1.0, 0.4999, "away"), (-3.0, 0.0, 0.5001, "home")],
+)
+def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(
+    db, monkeypatch, capsys, spread, posted, expected, side
+):
+    from app.models import Prediction
+    from ml.features import build_features
+
+    def with_line(db_, seasons, sport):
+        features = build_features(db_, seasons=seasons, sport=sport)
+        game = features["game_id"] == "2026_01_PHI_DAL"
+        features.loc[game, "market_spread_home"] = spread
+        features.loc[game, "has_market_spread"] = posted
+        return features
+
+    class _TieModel:
+        def predict_proba(self, x):
+            import numpy as np
+
+            return np.array([[0.5, 0.5]])
+
+    final = db.scalar(select(Game).where(Game.game_id == "2026_01_BUF_KC"))
+    final.home_score, final.away_score = 27, 24
+    stored = db.scalar(select(Prediction).where(Prediction.game_id == "2026_01_BUF_KC"))
+    stored.home_win_prob = 0.5
+    stamped = stored.predicted_at
+    db.commit()
+    out, _ = _run_main(
+        db, monkeypatch, lambda f: "A fresh booth draft.", capsys, model=_TieModel(),
+        build_features=with_line,
+    )
+    db.refresh(stored)
+    assert stored.home_win_prob == 0.5 and stored.predicted_at == stamped
+    assert "2026_01_BUF_KC" not in out
+    live = predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0")
+    assert live.home_win_prob == expected
+    assert f"2026_01_PHI_DAL: exact tie broken toward {side}" in out
