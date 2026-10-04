@@ -144,10 +144,13 @@ _FUNCTION_WORDS = {
 
 
 def _reads_like_a_name(text: str) -> bool:
-    """False for a link word, an ad word, a run of 3+ digits, 3+ number words,
-    or a lowercase word other than a function word ("of", "de"). Real names are
+    """False for a link word, an ad word, a run of 3+ digits, more than 4 digits
+    in all (a spaced or punctuated phone number), 3+ number words, or a
+    lowercase word other than a function word ("of", "de"). Real names are
     Title Case."""
     if _LINK_WORD_RE.search(text) or _AD_WORD_RE.search(text) or re.search(r"\d{3,}", text):
+        return False
+    if sum(ch.isdigit() for ch in text) > 4:
         return False
     if len(_NUMBER_WORD_RE.findall(text)) >= 3:
         return False

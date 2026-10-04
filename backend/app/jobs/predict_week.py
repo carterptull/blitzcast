@@ -296,14 +296,15 @@ def select_target_ids(
 ) -> set[str]:
     """Unplayed, not-yet-kicked-off games to predict: an explicit week alone,
     else the default week plus any game kicking off within the look-ahead
-    window. A TBD kickoff is judged by its game date."""
+    window. A TBD kickoff is judged by its game date, and one more than
+    STALE_AFTER in the past has left the window (a cancellation or a lagging
+    score must not be re-predicted forever)."""
     now = now or datetime.now(UTC)
     if week is not None:
         return unplayed_game_ids(db, season, week, sport, now=now)
     base = default_week(db, season, sport, now=now)
-    in_window = func.coalesce(Game.kickoff_time, Game.game_date) <= now + timedelta(
-        days=lookahead_days
-    )
+    when = func.coalesce(Game.kickoff_time, Game.game_date)
+    in_window = (when <= now + timedelta(days=lookahead_days)) & (when > now - STALE_AFTER)
     selected = in_window if base is None else (Game.week == base) | in_window
     rows = db.scalars(
         select(Game.game_id).where(
@@ -371,11 +372,8 @@ def predict_one(
         prob = float(predictor.calibrator.transform(raw)[0])
         spread = float(row["market_spread_home"]) if bool(row["has_market_spread"]) else None
         broken = break_exact_tie(prob, spread)
-        if broken != prob:
-            print(
-                f"  {game_id}: exact tie broken toward {'home' if broken > 0.5 else 'away'}"
-            )
-            prob = broken
+        tie_side = None if broken == prob else ("home" if broken > 0.5 else "away")
+        prob = broken
         factors = top_factors(
             predictor.explainer,
             x,
@@ -394,6 +392,8 @@ def predict_one(
         db.rollback()
         logger.warning("prediction failed for %s: %s", game_id, type(exc).__name__)
         return None
+    if tie_side:
+        print(f"  {game_id}: exact tie broken toward {tie_side}")
     print(f"  {game_id}: home {prob:.1%} (narration: {narration.source})")
     return narration
 

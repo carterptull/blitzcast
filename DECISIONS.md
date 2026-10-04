@@ -612,9 +612,11 @@ what any value can do.
 
 Without `--week`, the job predicts the default week plus every unplayed game kicking off within
 seven days (`LOOKAHEAD_DAYS`); a game that has kicked off is excluded, and a TBD kickoff is judged
-by its game date. **Why:** lead time and visibility. A game now has a prediction and booth section
-as soon as its line exists, instead of showing "prediction pending" until the morning of its
-first game. The daily re-runs keep early predictions fresh as the line, weather and injuries
+by its game date and leaves the window once that date is more than 36 hours past (`STALE_AFTER`,
+the bound `default_week` uses), so a cancelled TBD game is not re-predicted forever. The coverage
+check uses the same selection. **Why:** lead time and visibility. A game now has a prediction and
+booth section once the game kicks off within seven days (or is in the current week), instead of
+showing "prediction pending" until the morning of its first game. The daily re-runs keep early predictions fresh as the line, weather and injuries
 move, and the cost is small (a few more model calls and narrations a day). **Alternative:**
 predict the whole season ahead: the predictions would go stale and most of the work would be
 wasted, and odds exist only about two weeks out, so the market features would be imputed anyway.
@@ -625,7 +627,8 @@ the poll rank line until the next daily rerun refreshes it.
 
 `predict_one` rolls back and skips a game that raises, logs only the exception type, and the job
 finishes the slate, prints `predictions: N ok, F failed`, runs a coverage check
-(`python -m app.jobs.coverage` runs the same check on its own, read-only), and exits 1 if any
+(`python -m app.jobs.coverage` runs the same check on its own, read-only, against the current
+model version from settings), and exits 1 if any
 game failed or any upcoming game has no prediction or booth section, or if no selected game
 produced a feature row. The `refresh_week` and `refresh_week_cfb` orchestrators still run every
 step, then exit 1 if the prediction step failed or was skipped because the schedule sync failed.
@@ -656,9 +659,15 @@ before, so a venue such as "Bet365 Stadium" is rejected by the digit rule.
   text such as "1-800 yards" or "founded in 1892 when ...". A rejected draft is retried and then
   the template covers the game, so a false positive costs one retry. A tighter pattern
   (`\b(?:1[\s.-]?)?(?:8[0-8]{2}|900)[.-][A-Z]{3,}`) was considered and deferred.
-- Other gaps: a spaced digit run passes the gate but the output number-run rule catches it, ad
-  word variants ("Bets", "FREEPICKS") pass, and Cyrillic lookalikes pass the gate but the output
-  non-Latin-1 rule catches them.
+- Digits: the gate rejects a string with more than four digits in all, so a spaced or
+  punctuated phone number such as "Dial (8 0 0) 5 5 5'0 1 9 9 Field" is treated as missing
+  (the cap newly rejects none of the 1,422 seeded team, stadium and alias strings; a year such
+  as 2026 was already rejected by the three-digit run rule). The output number-run
+  rule flags seven or more digits chained by separators of up to two characters that are not
+  letters, commas or percent signs, unless the chain is only scores or records ("24-17 27-24").
+  A number spelled with letters between its digits, or split by a comma, passes both.
+- Other gaps: ad word variants ("Bets", "FREEPICKS") pass, and Cyrillic lookalikes pass the
+  gate but the output non-Latin-1 rule catches them.
 - The AI draft percentage tolerance (plus or minus 1 point) in `check_narration` is unchanged,
   and eleven strict xfail tests record other known limits.
 

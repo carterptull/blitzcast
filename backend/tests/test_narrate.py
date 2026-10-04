@@ -1239,6 +1239,11 @@ LINK_OR_NUMBER = "contains a link, handle, or long number"
     "Call 1 800 PICKS tonight.",
     "Call 1.888.WINNERS tonight.",
     "Call 1866PICKS tonight.",
+    # Digits chained by short punctuation runs.
+    "Dial (8 0 0) 5 5 5'0 1 9 9 Field tonight.",
+    "Text (8 0 0) 5 5 5 0 1 9 9 tonight.",
+    "Text 800 555 0199 tonight.",
+    "Text (80) 05-55/01 99 tonight.",
 ])
 def test_output_rules_reject_link_and_phone_evasions(lead):
     assert check_narration(f"{lead} Our model leans Ohio State at 55%.", FACTS) == LINK_OR_NUMBER
@@ -1260,6 +1265,13 @@ def test_output_rules_reject_link_and_phone_evasions(lead):
     "A 3-point lead, a 100-yard rusher, and the No. 1 defense.",
     "The 4-3 defense held them to 180 yards in an 18-10 win.",
     "From 1-8 a year ago to 8-1 now, with 180 yards a game.",
+    "Texas won 31-28 last week.",
+    "They are 7-3 straight up.",
+    "Kickoff is 8:20 p.m. on Sept. 13, 2026.",
+    "Kickoff is 1:00 p.m. ET, and they are 7-3.",
+    "He rushed for 112 yards on 24 carries.",
+    "They won 24-17, 31-28 and 30-27.",
+    "The Chiefs (7-3) host the Bills (8-2).",
 ])
 def test_output_rules_leave_real_copy_alone(text):
     assert not narrate_mod.unsafe_output(text)

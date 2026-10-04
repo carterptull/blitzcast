@@ -995,6 +995,49 @@ def test_select_target_ids_with_no_default_week_uses_only_the_window(db, monkeyp
     assert select_target_ids(db, 2026, SPORT_NFL, now=NOW) == window
 
 
+LATE_NOW = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+
+
+def _stale_tbd_slate(db, monkeypatch):
+    """TBD games judged by the window alone (no default week)."""
+    _add_game(db, "tbd_stale", 12, None, game_date=date(2026, 8, 29))
+    _add_game(db, "tbd_today", 13, None, game_date=date(2026, 11, 20))
+    _add_game(db, "tbd_tomorrow", 13, None, game_date=date(2026, 11, 21))
+    db.commit()
+    monkeypatch.setattr(predict_week, "default_week", lambda *a, **kw: None)
+
+
+def test_select_target_ids_drops_a_long_past_tbd_game(db, monkeypatch):
+    from app.jobs.predict_week import select_target_ids
+
+    _stale_tbd_slate(db, monkeypatch)
+    ids = select_target_ids(db, 2026, SPORT_NFL, now=LATE_NOW)
+    assert ids == {"tbd_today", "tbd_tomorrow"}
+
+
+def test_select_target_ids_tbd_lower_bound_is_the_staleness_window(db, monkeypatch):
+    from app.jobs.predict_week import STALE_AFTER, select_target_ids
+
+    _add_game(db, "tbd_edge", 12, None, game_date=date(2026, 11, 19))
+    db.commit()
+    monkeypatch.setattr(predict_week, "default_week", lambda *a, **kw: None)
+    edge = datetime(2026, 11, 19, tzinfo=UTC) + STALE_AFTER
+    assert "tbd_edge" in select_target_ids(
+        db, 2026, SPORT_NFL, now=edge - timedelta(seconds=1)
+    )
+    assert "tbd_edge" not in select_target_ids(db, 2026, SPORT_NFL, now=edge)
+
+
+def test_a_stale_tbd_game_in_the_default_week_keeps_the_week_rule(db):
+    from app.jobs.predict_week import select_target_ids
+
+    _add_game(db, "tbd_old", 9, None, game_date=date(2026, 10, 1))
+    _add_game(db, "w9_next", 9, LATE_NOW + timedelta(days=1))
+    db.commit()
+    assert default_week(db, 2026, SPORT_NFL, now=LATE_NOW) == 9
+    assert {"tbd_old", "w9_next"} <= select_target_ids(db, 2026, SPORT_NFL, now=LATE_NOW)
+
+
 @pytest.mark.parametrize(
     "prob, spread, expected",
     [
@@ -1079,8 +1122,33 @@ def test_predict_one_keeps_a_non_tie_probability_and_prints_no_audit_line(
     assert "exact tie" not in capsys.readouterr().out
 
 
-def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(db, monkeypatch, capsys):
+def test_predict_one_logs_no_tie_break_for_a_game_that_fails(db, monkeypatch, capsys):
+    from app.jobs.predict_week import predict_one
+
+    _isolation_setup(db, monkeypatch)
+    monkeypatch.setattr(predict_week, "upsert_prediction", _raise(SQLAlchemyError("boom")))
+    _, row = _week1_rows(db)
+    assert predict_one(db, row, _tie_predictor(), {}, {}) is None
+    assert "exact tie" not in capsys.readouterr().out
+    assert predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0") is None
+
+
+@pytest.mark.parametrize(
+    "spread, posted, expected, side",
+    [(3.0, 1.0, 0.5001, "home"), (-3.0, 1.0, 0.4999, "away"), (-3.0, 0.0, 0.5001, "home")],
+)
+def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(
+    db, monkeypatch, capsys, spread, posted, expected, side
+):
     from app.models import Prediction
+    from ml.features import build_features
+
+    def with_line(db_, seasons, sport):
+        features = build_features(db_, seasons=seasons, sport=sport)
+        game = features["game_id"] == "2026_01_PHI_DAL"
+        features.loc[game, "market_spread_home"] = spread
+        features.loc[game, "has_market_spread"] = posted
+        return features
 
     class _TieModel:
         def predict_proba(self, x):
@@ -1094,9 +1162,13 @@ def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(db, monkeypa
     stored.home_win_prob = 0.5
     stamped = stored.predicted_at
     db.commit()
-    out, _ = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys, model=_TieModel())
+    out, _ = _run_main(
+        db, monkeypatch, lambda f: "A fresh booth draft.", capsys, model=_TieModel(),
+        build_features=with_line,
+    )
     db.refresh(stored)
     assert stored.home_win_prob == 0.5 and stored.predicted_at == stamped
     assert "2026_01_BUF_KC" not in out
     live = predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0")
-    assert live.home_win_prob in (0.5001, 0.4999)
+    assert live.home_win_prob == expected
+    assert f"2026_01_PHI_DAL: exact tie broken toward {side}" in out

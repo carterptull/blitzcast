@@ -10,7 +10,7 @@ stateDiagram-v2
     state "Ungraded" as Ungraded
 
     [*] --> Scheduled: schedule sync inserts the game
-    Scheduled --> Predicted: predict_week writes a live prediction row up to 7 days before kickoff
+    Scheduled --> Predicted: predict_week writes a live prediction row once kickoff is within 7 days or the game is in the current week
     Predicted --> Predicted: next daily run re-predicts while both scores are NULL
     Predicted --> Final: schedule sync writes both scores
     Scheduled --> Final: finished without a live prediction
@@ -49,7 +49,9 @@ with no scores, but treats a week as done 36 hours after the latest kickoff amon
 still-unscored games, so a cancelled game can't pin the daily job to an old week forever.
 Since v1.1.2 the daily job also predicts any unplayed game kicking off within 7 days
 (`LOOKAHEAD_DAYS`), so a game can move from Scheduled to Predicted before its week becomes the
-default week. Grading is unchanged: it starts only once both scores exist.
+default week. Seven days is not a ceiling: every game in the default week is predicted, so a
+game early in a long week (a CFB postseason "week" spans about a month) can be predicted more
+than seven days out. Grading is unchanged: it starts only once both scores exist.
 
 **Kickoff-gated, not just score-gated.** "Unplayed" isn't only "both scores are NULL":
 `unplayed_game_ids()` also excludes a game once its kickoff has passed, even with no score yet.
@@ -57,8 +59,10 @@ Without that, a game already underway (or one whose final score simply hasn't la
 data source yet) would get silently re-predicted on the next cron, with a `predicted_at` that
 lies about when the call was actually made, even though the inputs are unchanged (there's no
 live/in-progress data to leak in). A NULL kickoff is a still-TBD future game and stays eligible
-regardless of `now`, matching how `default_week` already treats it. In the look-ahead selection
-a TBD kickoff is judged by its game date.
+regardless of `now` within its week, matching how `default_week` already treats it. In the
+look-ahead selection a TBD kickoff is judged by its game date, and leaves the window once that
+date is more than 36 hours past (`STALE_AFTER`, the same bound `default_week` uses), so a
+cancelled TBD game is not re-predicted forever; the coverage check shares that selection.
 
 ---
 _Last updated: 2026-10-03 · reflects v1.1.2_

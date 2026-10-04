@@ -15,7 +15,9 @@ unchanged.
 ### Changed
 - The daily prediction job now predicts every unplayed game kicking off
   within seven days (`LOOKAHEAD_DAYS`), plus the current week, so a game has
-  a prediction and booth section as soon as its line exists. Previously
+  a prediction and booth section once the game kicks off within seven days
+  (or is in the current week). A TBD-kickoff game more than 36 hours past
+  its game date is no longer selected or reported as a gap. Previously
   next week's games stayed "prediction pending" until the morning of its
   first game. `--week N` behaves as before.
 - An exactly even (50.0000 percent) prediction is nudged by 0.0001 toward
@@ -31,8 +33,9 @@ unchanged.
   rolled back and logged by exception type, the rest of the slate still
   runs, and the run prints `predictions: N ok, F failed` and exits non-zero.
 - An end-of-run coverage check, and `python -m app.jobs.coverage
-  [--season] [--sport nfl|cfb]` (read-only), that lists upcoming games with
-  no prediction or no booth section and exits non-zero when any exist.
+  [--season] [--sport nfl|cfb]` (read-only, current model version), that
+  lists upcoming games with no prediction or no booth section and exits
+  non-zero when any exist.
 
 ### Security
 - Venue, city, conference, division, team name and mascot strings are gated
@@ -42,6 +45,9 @@ unchanged.
   only; the guarantee remains the output guardrail (`check_narration`).
 - Narration drafts may not contain a vanity phone number such as
   "1-800-PICKS".
+- A spaced or punctuated phone number is now caught on both sides: the gate
+  rejects a feed string with more than four digits in all, and the output
+  rule counts digits chained by short punctuation such as "(8 0 0) 5 5 5".
 
 ### Fixed
 - `build_features` no longer crashes for CFB when the season has no played

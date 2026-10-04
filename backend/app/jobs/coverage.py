@@ -1,6 +1,6 @@
 """Coverage check: upcoming games with no live prediction or no booth section.
-Read-only. Shares its window with predict_week, so it audits exactly the games
-that job is meant to cover; exits 1 when any gap exists.
+Read-only. Shares its window and model version with predict_week, so it audits
+exactly the rows that job is meant to write; exits 1 when any gap exists.
 
 Usage: python -m app.jobs.coverage [--season 2026] [--sport nfl|cfb]
 """
@@ -13,6 +13,7 @@ from typing import NamedTuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import session_scope
 from app.jobs.predict_week import LOOKAHEAD_DAYS, select_target_ids
 from app.models import Prediction
@@ -92,14 +93,27 @@ def coverage_outcome(coverage: Coverage) -> tuple[list[str], int]:
     return lines, int(bool(coverage.gaps))
 
 
+def current_version(sport: str) -> str | None:
+    """The version predict_week stamps for `sport`, read from settings (no model
+    file needed), or None when it cannot be resolved."""
+    try:
+        return get_settings().model_version_for(sport)
+    except Exception:
+        return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--season", type=int, default=2026)
     parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl", type=str.lower)
     args = parser.parse_args()
+    sport = args.sport.upper()
+    version = current_version(sport)
+    if version is None:
+        print(f"coverage: no current model version for {sport}, counting any live prediction")
 
     with session_scope() as db:
-        lines, status = coverage_outcome(check_coverage(db, args.season, args.sport.upper()))
+        lines, status = coverage_outcome(check_coverage(db, args.season, sport, version=version))
     for line in lines:
         print(line)
     if status:

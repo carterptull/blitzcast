@@ -164,9 +164,10 @@ _DIGIT_RUN_RE = re.compile(
     r"\d{5,}|\b\d{3}[\s.-]\d{3}[\s.-]\d{4}\b|\(\d{3}\)|\b\d{3}[\s.-]\d{4}\b"
     r"|\b1[\s.-]?8\d\d[\s.-]?[A-Za-z]{3,}"
 )
-# 7+ digits joined by single spaces, dots or hyphens read as a phone number,
-# unless the run is only scores or records ("24-17 27-24 30-27").
-_NUMBER_RUN_RE = re.compile(r"\d(?:[\s.-]?\d){6,}")
+# 7+ digits joined by up to two non-letter characters other than a comma or
+# percent sign ("(8 0 0) 5 5 5'0 1 9 9") read as a phone number, unless the run
+# is only scores or records ("24-17 27-24 30-27").
+_NUMBER_RUN_RE = re.compile(r"\d(?:[^\w,%]{0,2}\d){6,}")
 _SCORE_LIST_RE = re.compile(r"\d{1,2}-\d{1,2}(?:-\d{1,2})?(?:\s\d{1,2}-\d{1,2}(?:-\d{1,2})?)*")
 _LOWER_WORD_RE = re.compile(r"\b[a-z][a-z'’]*")
 # A trailing period or comma still ends the token ("went 5-0." is checked).

@@ -414,6 +414,7 @@ HOSTILE_VENUES = [
     "Text Free Picks",
     "Call Eight Hundred Five Five Five",
     "Visit Our Sponsor Bet Now",
+    "Dial (8 0 0) 5 5 5'0 1 9 9 Field",
 ]
 HOSTILE_WORDS = {
     "lambeau", "free", "picks", "scam", "dot", "com", "call", "555", "0199", "800", "8005",
@@ -430,6 +431,23 @@ def test_real_places_pass_the_plausibility_gate_unchanged(value):
     from app.services.fact_sheet import _clean, _place
 
     assert _place(value, 80) == _clean(value, 80)
+
+
+@pytest.mark.parametrize(
+    "value, kept",
+    [
+        ("Gate 12 Field 34", True),
+        ("Field 20 26", True),
+        ("Dial (8 0 0) 5 5 5'0 1 9 9 Field", False),
+        ("Field 20 26 1", False),
+        ("Lambeau Field (8 0) 5-5", True),
+        ("Lambeau Field (8 0) 5-5'1", False),
+    ],
+)
+def test_the_gate_caps_total_digits_at_four(value, kept):
+    from app.services.fact_sheet import _reads_like_a_name
+
+    assert _reads_like_a_name(value) is kept
 
 
 @pytest.mark.parametrize("venue", HOSTILE_VENUES)

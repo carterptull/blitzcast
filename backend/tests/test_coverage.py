@@ -105,6 +105,14 @@ def test_a_tbd_kickoff_in_the_default_week_is_included(db):
     assert _by_game(coverage_gaps(db, 2026, SPORT_NFL, now=NOW))["tbd"] == "prediction"
 
 
+def test_a_long_past_tbd_game_is_not_a_gap(db, monkeypatch):
+    from tests.test_predict_week import LATE_NOW, _stale_tbd_slate
+
+    _stale_tbd_slate(db, monkeypatch)
+    got = _by_game(coverage_gaps(db, 2026, SPORT_NFL, now=LATE_NOW))
+    assert got == {"tbd_today": "prediction", "tbd_tomorrow": "prediction"}
+
+
 def test_gaps_are_sport_scoped_and_sorted(db):
     nfl = coverage_gaps(db, 2026, SPORT_NFL, now=NOW)
     assert [g.game_id for g in nfl] == sorted(g.game_id for g in nfl)
@@ -152,6 +160,7 @@ def _patch_session(monkeypatch, db):
 
     real = coverage.select_target_ids
     monkeypatch.setattr(coverage, "session_scope", scope)
+    monkeypatch.setattr(coverage, "get_settings", lambda: _Settings())
     monkeypatch.setattr(
         coverage, "select_target_ids",
         lambda db_, season, sport, **kw: real(db_, season, sport, **{**kw, "now": NOW}),
@@ -178,6 +187,46 @@ def test_cli_returns_cleanly_when_covered(db, monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["coverage", "--season", "2026", "--sport", "nfl"])
     coverage.main()
     assert "0 missing a prediction, 0 missing a booth section" in capsys.readouterr().out
+
+
+class _Settings:
+    def model_version_for(self, sport):
+        return {"NFL": "1.0.0", "CFB": "cfb-1.0.0"}[sport]
+
+
+def _old_version_only(db):
+    db.query(Prediction).filter(Prediction.game_id.like("2026_01_%")).delete()
+    db.commit()
+    for game_id in ("2026_01_BUF_KC", "2026_01_PHI_DAL"):
+        _predict(db, game_id, "An older model's booth section.", version="0.9.0")
+
+
+def test_cli_audits_the_current_model_version(db, monkeypatch, capsys):
+    _patch_session(monkeypatch, db)
+    _old_version_only(db)
+    monkeypatch.setattr("sys.argv", ["coverage", "--season", "2026"])
+    with pytest.raises(SystemExit) as exit_info:
+        coverage.main()
+    assert exit_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "coverage: 2 upcoming games, 2 missing a prediction, 0 missing a booth section" in out
+    assert "model version" not in out
+
+
+def test_cli_without_a_model_version_counts_any_live_row_and_says_so(db, monkeypatch, capsys):
+    def unavailable():
+        raise RuntimeError("no settings")
+
+    _patch_session(monkeypatch, db)
+    _old_version_only(db)
+    monkeypatch.setattr(coverage, "get_settings", unavailable)
+    monkeypatch.setattr("sys.argv", ["coverage", "--season", "2026"])
+    coverage.main()
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "coverage: no current model version for NFL, counting any live prediction",
+        "coverage: 2 upcoming games, 0 missing a prediction, 0 missing a booth section",
+    ]
 
 
 def test_coverage_report_audits_the_given_clock_and_version(db, capsys):

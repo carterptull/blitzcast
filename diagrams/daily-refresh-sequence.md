@@ -80,8 +80,10 @@ the run itself, and only after every other step has run.
 
 **Look-ahead window.** `predict_week` without `--week` predicts the default week plus every
 unplayed game kicking off within `LOOKAHEAD_DAYS` (7) of the run's single clock reading, so a
-game has a prediction and booth section as soon as its line exists, not only on the morning of
-its first game. A game whose kickoff has passed is never selected. Daily reruns refresh the early
+game has a prediction and booth section once the game kicks off within seven days (or is in the
+current week), not only on the morning of its first game. A game whose kickoff has passed is
+never selected, and a TBD-kickoff game leaves the window 36 hours after its game date
+(`STALE_AFTER`). Daily reruns refresh the early
 predictions. `--week N` still predicts only that week. An early CFB game written before the weekly
 AP poll is out lacks the poll rank line until the next daily run.
 
