@@ -860,16 +860,12 @@ FRESH_TRUE = [
      "Peay just 1%.", S3),
     ("An AFC South division game indoors at NRG Stadium, and Vegas calls it a pick'em. "
      "Our model barely leans Houston at 50%.", S4),
-    ("Both teams sit at 2-2, and the market can't separate them. Our model has it a coin "
-     "flip at 50%.", S4),
+    ("Both teams sit at 2-2, and the market can't separate them. Our model leans the "
+     "Texans by a hair at 50%.", S4),
     ("The Jaguars and Texans meet with nothing between them in the market. The total sits "
-     "at 44.5, and our model calls it 50-50.", S4),
-    ("Coin-flip game in Houston. Our model gives the Texans 50% and the Jaguars 50%, and "
-     "the books have it as a pick'em.", S4),
-    ("Houston beat the Colts 20-17 at home, while Jacksonville lost to the Titans 23-16 "
-     "on the road. Our model says 50% either way.", S4),
+     "at 44.5, and our model's pick is Houston, 50-50 as it is.", S4),
     ("Houston and Jacksonville are dead even in the market, and the total is 44.5. Our "
-     "model has the Texans at 50%.", S4),
+     "model likes the Texans at 50%.", S4),
     ("It's a MAC conference game on Tuesday night, and the RedHawks have won 2 straight. "
      "Our model likes Miami (OH) at 61% against a 1-4 Ball State team.", S5),
     ("The Cardinals are 1-4 and need a spark. Our model gives the RedHawks a 61% chance "
@@ -887,6 +883,17 @@ FRESH_TRUE = [
 ]
 
 FRESH_FALSE = [
+    # The model always has a pick: these no longer pass.
+    ("Both teams sit at 2-2, and the market can't separate them. Our model has it a coin "
+     "flip at 50%.", S4),
+    ("The Jaguars and Texans meet with nothing between them in the market. The total sits "
+     "at 44.5, and our model calls it 50-50.", S4),
+    ("Coin-flip game in Houston. Our model gives the Texans 50% and the Jaguars 50%, and "
+     "the books have it as a pick'em.", S4),
+    ("Houston beat the Colts 20-17 at home, while Jacksonville lost to the Titans 23-16 "
+     "on the road. Our model says 50% either way.", S4),
+    ("Houston and Jacksonville are dead even in the market, and the total is 44.5. Our "
+     "model has the Texans at 50%.", S4),
     ("The Bears are favored by 3 at home, and our model agrees at 54%.", S1),
     ("Green Bay is laying 3.5 on the road, but our model likes Chicago at 54%.", S1),
     ("The total sits at 44.5 in the wind. Our model leans the Bears at 54%.", S1),
@@ -1015,7 +1022,7 @@ def test_invented_names_still_fail_at_sentence_start(name):
      "Packers team favored by 3.", S1),
     ("Our model gives the edge to the Bears at 54%.", S1),
     # 50-50 in a toss-up, and fronts and mindsets that are not scores.
-    ("It's a 50-50 game indoors. Our model has the Texans at 50%.", S4),
+    ("It's a 50-50 game indoors. Our model leans the Texans at 50%.", S4),
     ("The Bears run a 4-3 defense. Our model has Chicago at 54%.", S1),
     ("Expect a 3-4 look from Chicago. Our model has the Bears at 54%.", S1),
     ("A 1-0 mindset is all the Seminoles need. Our model has Florida at 57%.", S2),
@@ -1204,6 +1211,8 @@ def test_rejection_logs_carry_only_a_category(settings_with_key, monkeypatch, ca
     ("contains a semicolon or colon", "semicolon or colon"),
     ("names not in the fact sheet: evil\nFORGED", "names not in the fact sheet"),
     ("unheard of\nFORGED", "other"),
+    ("uses no-pick phrase 'toss-up' for the model's view", "no-pick phrase"),
+    ("names no model pick (the percentages are nearly even)", "no model pick named"),
 ])
 def test_reason_category_is_shared_and_fixed(reason, category):
     assert narrate_mod.reason_category(reason) == category
@@ -1324,3 +1333,106 @@ def test_generate_matches_the_real_sdk_signature(settings_with_key, monkeypatch)
     assert result.text == GOOD
     assert result.attempts == 1
     assert {"model", "max_tokens", "system", "messages"} <= set(calls[0])
+
+
+# The model always names a pick, even when the percentages round to 50/50.
+EVEN = replace(S4, home_win_prob=0.5001)
+EVEN_AWAY = replace(S4, home_win_prob=0.4973)
+NEAR_EVEN = replace(S4, home_win_prob=0.51, spread_home=1.0)
+
+
+@pytest.mark.parametrize("phrase", [
+    "a coin flip", "a coin-flip", "a toss-up", "a toss up", "a tossup", "too close to call",
+    "a game with no clear favorite", "a game with no clear lean",
+])
+def test_no_pick_phrase_about_the_model_is_rejected(phrase):
+    text = f"Our model calls it {phrase}, but it leans the Texans at 50%."
+    reason = check_narration(text, EVEN)
+    assert reason is not None and reason.startswith("uses no-pick phrase")
+    assert "Texans" in reason
+    assert narrate_mod.reason_category(reason) == "no-pick phrase"
+
+
+@pytest.mark.parametrize("text", [
+    "This one could go either way. Our model leans the Texans at 50%.",
+    "It can go either way in Houston. Our model leans the Texans at 50%.",
+    "Toss-up in Houston. Our model leans the Texans at 50%.",
+    "Coin flip in Houston, and our model leans the Texans at 50%.",
+])
+def test_no_pick_phrase_outside_a_market_sentence_is_rejected(text):
+    reason = check_narration(text, EVEN)
+    assert reason is not None and reason.startswith("uses no-pick phrase")
+
+
+@pytest.mark.parametrize("text", [
+    "The line is a pick'em in Houston. Our model leans the Texans at 50%.",
+    "Vegas calls it a pick'em, and our model leans the Texans by a hair at 50%.",
+    "The betting market sees a coin flip. Our model leans the Texans by a hair at 50%.",
+])
+def test_market_pickem_wording_still_passes(text):
+    assert check_narration(text, EVEN) is None
+
+
+def test_market_toss_up_with_a_real_line_is_rejected():
+    facts = replace(EVEN, spread_home=1.0)
+    text = "Vegas sees a toss-up. Our model leans the Texans by a hair at 50%."
+    assert check_narration(text, facts) is not None
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("Our model has the Texans at 50%.", EVEN),
+    ("Our model gives each side 50%.", EVEN),
+    ("Houston beat the Colts 20-17 at home. Our model says 50% for each team.", EVEN),
+    ("Our model has the Jaguars at 50%.", EVEN_AWAY),
+    ("Our model has it at 50% for each side.", replace(EVEN, home_win_prob=0.505)),
+])
+def test_near_even_draft_that_names_no_pick_is_rejected(text, facts):
+    reason = check_narration(text, facts)
+    assert reason is not None and reason.startswith("names no model pick"), reason
+    assert narrate_mod.reason_category(reason) == "no model pick named"
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("Our model leans the Texans by a hair at 50%.", EVEN),
+    ("Our model likes Houston at 50%.", EVEN),
+    ("Our model's pick is the Texans, 50% to 50%.", EVEN),
+    ("Our model leans the Jaguars by a hair at 50%.", EVEN_AWAY),
+    ("The edge goes to Jacksonville in our model, 50% to 50%.", EVEN_AWAY),
+    ("Our model gives the Texans 51% and the Jaguars 49%.", NEAR_EVEN),
+    ("Our model gives the Jaguars just 49%.", NEAR_EVEN),
+    ("Our model makes the Texans a 51% pick.", NEAR_EVEN),
+])
+def test_near_even_draft_that_names_the_pick_passes(text, facts):
+    assert check_narration(text, facts) is None
+
+
+def test_near_even_draft_naming_the_wrong_pick_is_rejected():
+    assert check_narration("Our model leans the Jaguars by a hair at 50%.", EVEN) is not None
+    assert check_narration("Our model leans the Texans by a hair at 50%.", EVEN_AWAY) is not None
+
+
+def test_ordinary_game_needs_no_pick_wording():
+    assert check_narration("Our model has the Bears at 54%.", S1) is None
+    assert check_narration("Florida State gets 2.5 at home. Our model says 43%.", S2) is None
+
+
+def test_fact_sheet_always_states_the_model_pick():
+    assert "Model's pick: Texans, by a hair (both round to 50%)" in render_fact_sheet(EVEN)
+    assert "Model's pick: Jaguars, by a hair" in render_fact_sheet(EVEN_AWAY)
+    assert "Model's pick: Bears\n" in render_fact_sheet(S1)
+    assert "by a hair" not in render_fact_sheet(S1)
+
+
+def test_model_pick_follows_the_stored_probability():
+    from app.services.fact_sheet import model_pick
+
+    assert model_pick(EVEN) is EVEN.home
+    assert model_pick(EVEN_AWAY) is EVEN_AWAY.away
+    assert model_pick(replace(S4, home_win_prob=0.5)) is S4.home
+
+
+def test_prompt_says_the_model_always_has_a_pick():
+    prompt = narrate_mod.SYSTEM_PROMPT
+    assert "The model always has a pick" in prompt
+    for phrase in ("toss-up", "coin flip", "pick'em", "too close to call", "no clear favorite"):
+        assert phrase in prompt

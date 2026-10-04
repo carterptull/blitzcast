@@ -30,10 +30,10 @@ from app.services.fallback_narration import (
     fallback_reason,
     minimal_narration,
 )
-from app.services.narrate import check_narration, narrate, reason_category
+from app.services.narrate import check_narration, narrate, no_pick_phrase, reason_category
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
-from ml.features import build_features
+from ml.features import build_features, market_home_prob
 from ml.model_store import load_latest
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,6 @@ _PUNCTUATION_RE = re.compile("[\u2014\u2013;:]")
 _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)", re.IGNORECASE)
 _NUMBER_RE = re.compile(r"\d+(?:[.-]\d+)*")
 _UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(degrees|mph)\b", re.IGNORECASE)
-_COIN_FLIP_RE = re.compile(r"\bcoin\s*flip|\btoss[\s-]?up\b", re.IGNORECASE)
 _PRECIP_RE = re.compile(
     r"\b(?:rain\w*|snow\w*|sleet|showers?|drizzle|wet|soggy)\b", re.IGNORECASE
 )
@@ -146,8 +145,8 @@ def still_true(previous: str, facts: GameFacts) -> bool:
     """A stored narration may be republished only when it is exactly true
     against today's sheet, not merely close: every percentage is today's whole
     number, every other number (scores, records, degrees, lines, ranks, years)
-    is on the trusted part of today's sheet (no venue or injury text), a coin
-    flip is still 50%, weather talk is backed by today's weather, and the
+    is on the trusted part of today's sheet (no venue or injury text), it never
+    says the model has no pick, weather talk is backed by today's weather, and the
     punctuation is plain. It must also pass check_narration, so the link,
     handle and digit-run rules apply too. Stricter than check_narration on
     purpose: a miss only costs a fresh template."""
@@ -157,7 +156,7 @@ def still_true(previous: str, facts: GameFacts) -> bool:
     model_pcts = {round(p * 100), round((1 - p) * 100)}
     if any(float(m.group(1)) not in model_pcts for m in _PCT_RE.finditer(previous)):
         return False
-    if _COIN_FLIP_RE.search(previous) and round(p * 100) != 50:
+    if no_pick_phrase(previous):
         return False
     sheet = " ".join(trusted_numbers_text(facts).split())
     on_sheet = set(_NUMBER_RE.findall(sheet))
@@ -347,13 +346,29 @@ class Predictor(NamedTuple):
     version: str
 
 
-def break_exact_tie(prob: float, spread_home: float | None) -> float:
+def break_exact_tie(
+    prob: float,
+    spread_home: float | None,
+    home_ml: float | None = None,
+    away_ml: float | None = None,
+) -> float:
     """Nudge a dead-even stored probability 0.0001 toward the betting favorite
-    (positive spread_home: home favored), else the home team, so every game has
-    a pick. Anything that does not round to 0.5 is the model's own call."""
+    so every game has a pick: the posted spread (positive: home favored), else
+    the favorite of a plausible moneyline pair, else the home team. Anything
+    that does not round to 0.5 is the model's own call."""
     if round(prob, 4) != 0.5:
         return prob
-    return 0.4999 if spread_home is not None and spread_home < 0 else 0.5001
+    if spread_home:
+        return 0.5001 if spread_home > 0 else 0.4999
+    market = market_home_prob(home_ml, away_ml, None)
+    if market is not None and market != 0.5:
+        return 0.5001 if market > 0.5 else 0.4999
+    return 0.5001
+
+
+def _row_number(row: pd.Series, col: str) -> float | None:
+    value = row.get(col)
+    return None if value is None or pd.isna(value) else float(value)
 
 
 def predict_one(
@@ -371,7 +386,9 @@ def predict_one(
         raw = predictor.model.predict_proba(x)[:, 1]
         prob = float(predictor.calibrator.transform(raw)[0])
         spread = float(row["market_spread_home"]) if bool(row["has_market_spread"]) else None
-        broken = break_exact_tie(prob, spread)
+        broken = break_exact_tie(
+            prob, spread, _row_number(row, "home_moneyline"), _row_number(row, "away_moneyline")
+        )
         tie_side = None if broken == prob else ("home" if broken > 0.5 else "away")
         prob = broken
         factors = top_factors(

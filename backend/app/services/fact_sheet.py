@@ -456,6 +456,16 @@ def build_game_facts(
     )
 
 
+def model_picks_home(home_win_prob: float) -> bool:
+    """The model always has a pick: the side the stored probability favors,
+    the home team on an exact 0.5."""
+    return home_win_prob >= 0.5
+
+
+def model_pick(facts: GameFacts) -> TeamFacts:
+    return facts.home if model_picks_home(facts.home_win_prob) else facts.away
+
+
 def market_favorite(facts: GameFacts) -> tuple[TeamFacts, TeamFacts] | None:
     if facts.spread_home is None or facts.spread_home == 0:
         return None
@@ -505,10 +515,10 @@ def _team_block(t: TeamFacts, sport: str, poll_available: bool, trusted: bool) -
 
 
 def _sheet_lines(facts: GameFacts, trusted: bool) -> list[str]:
-    p_home = facts.home_win_prob
-    model_fav, model_dog, p = (
-        (facts.home, facts.away, p_home) if p_home >= 0.5 else (facts.away, facts.home, 1 - p_home)
-    )
+    model_fav = model_pick(facts)
+    model_dog = facts.away if model_fav is facts.home else facts.home
+    p = facts.home_win_prob if model_fav is facts.home else 1 - facts.home_win_prob
+    hair = ", by a hair (both round to 50%)" if f"{p:.0%}" == f"{1 - p:.0%}" else ""
     lines = [
         f"Sport: {facts.sport}",
         f"Matchup: {facts.away.name} at {facts.home.name}"
@@ -523,6 +533,7 @@ def _sheet_lines(facts: GameFacts, trusted: bool) -> list[str]:
     lines.append(
         f"Model: {model_fav.name} {p:.0%} to win, {model_dog.name} {1 - p:.0%}"
     )
+    lines.append(f"Model's pick: {model_fav.name}{hair}")
     lines.append(_market_line(facts))
     if facts.last_meeting:
         lines.append(f"Last meeting: {facts.last_meeting}")
