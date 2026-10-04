@@ -51,4 +51,4 @@ A routine UI or copy change doesn't need a diagram update.
 - Verify by viewing the rendered file on github.com. Reading the source is not verification.
 
 ---
-_Last updated: 2026-10-03 · reflects v1.1.1_
+_Last updated: 2026-10-03 · reflects v1.1.2_
