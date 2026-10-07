@@ -65,4 +65,4 @@ date is more than 36 hours past (`STALE_AFTER`, the same bound `default_week` us
 cancelled TBD game is not re-predicted forever; the coverage check shares that selection.
 
 ---
-_Last updated: 2026-10-06 · reflects v1.1.3_
+_Last updated: 2026-10-07 · reflects v1.1.3_

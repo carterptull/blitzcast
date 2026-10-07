@@ -77,4 +77,4 @@ ignores. See "Backfilled predictions from walk-forward retraining, not the shipp
 calibrated on a held-out, most-recent season before a "70%" is ever shown to anyone.
 
 ---
-_Last updated: 2026-10-06 · reflects v1.1.3_
+_Last updated: 2026-10-07 · reflects v1.1.3_

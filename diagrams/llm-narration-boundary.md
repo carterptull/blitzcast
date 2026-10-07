@@ -101,10 +101,10 @@ a phrase list could not prove away. The template was swept over the whole window
 stored side. They count as fallback in the summary line, and a line before
 it gives how many were near even by design. When the rounded percentages tie, the template says
 the model leans that team "by a hair" or "by the slimmest of margins", 50% for each side, and the
-minimal line says "by the slimmest of margins". For ordinary games the no-pick rule costs some
-true drafts a retry (0 of 47 became 5 of 47 on the fresh probe corpus, all of them drafts that
-said coin flip or named no pick near 50 percent), and the template covers the game if none
-passes.
+minimal line says "by the slimmest of margins". For ordinary games an honest draft is rarely
+rejected (0 of 42 and 1 of 53 in the review sweeps) and costs a retry at most, and the template
+covers the game if none passes. The 5 of 47 fresh-corpus rejections are near-even drafts that
+production no longer requests.
 See "The booth always names a pick" in [`DECISIONS.md`](../DECISIONS.md).
 
 **Each rule family exists because of a real bug.** Narrations misread the stored spread sign,
@@ -147,4 +147,4 @@ reason. A vandalized value that still looks like a plausible Title Case stadium 
 shown as the venue; the check limits what can be said about it.
 
 ---
-_Last updated: 2026-10-06 · reflects v1.1.3_
+_Last updated: 2026-10-07 · reflects v1.1.3_

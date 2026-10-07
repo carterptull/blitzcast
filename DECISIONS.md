@@ -773,12 +773,21 @@ template check.
 **What remains uncovered** for ordinary games: no-pick wording outside the list (for example
 "even money", "a wash", "basically even"), left out because it has too many unrelated uses, and
 pick wording the parser does not read ("the model calls it for X", "rides with X", "X gets the
-model's nod", "the model thinks X wins"); a market "pick'em" said about a nonzero line; a venue
-alias that masks a team alias. The check is a guardrail, not a proof. **Measured cost:** on the
-fresh probe corpus, true narrations rejected went from 0 of 47 to 5 of 47. All five are drafts
-that said coin flip, 50-50, or named no pick at 50.4 percent, which are false under the new rule
-by design, so they are not false positives in the sense the rule cares about. A false rejection
-costs a retry (the reason is fed back), and if no draft passes the template covers the game, so
-the cost is a retry, never an empty section. The known false-negative rate on the same corpora is
+model's nod", "the model thinks X wins"), "our top pick is X" and "its pick is X", contrast
+forms ("X, not Dallas, is our pick"), an idiom that asserts a pick through a negation ("X isn't
+the model's pick by accident"), a double negative ("never not our pick"), "top" used as a verb
+after a negation, the Saints abbreviation "NO" read as a negator, and the forms of "the model
+has X favored by N" that use a pronoun, a role alias ("the visitors") or a plural subject ("the
+model's numbers have X favored"); a market "pick'em" said about a nonzero line; a venue alias
+that masks a team alias. Each of these needs Claude to name the wrong team in an unusual
+phrasing at an ordinary game, and the stored fact sheet, the percentages and the template remain
+correct. The check is a guardrail, not a proof. **Measured cost:** on the fresh probe corpus,
+true narrations rejected went from 0 of 47 to 5 of 47. All five are near-even drafts that said
+coin flip, 50-50, or named no pick at 50.4 percent, which are false under the new rule by
+design; production no longer asks Claude for near-even games, so the five measure the guardrail,
+not a live cost. For ordinary games the measured rejection of honest drafts was 0 of 42 and 1 of
+53 in the two independent review sweeps (the one miss was "Our model sees X favored by 3, and
+still backs Dallas at 70%"), and a false rejection costs a retry (the reason is fed back); if no
+draft passes the template covers the game, so the cost is a retry, never an empty section. The known false-negative rate on the same corpora is
 unchanged (4 of 48 and 1 of 70). **Alternative:** a prompt-only rule with no guardrail check: the
 guardrail exists because the prompt alone has shipped false claims before.

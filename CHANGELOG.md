@@ -6,7 +6,7 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-## [1.1.3] — 2026-10-06
+## [1.1.3] — 2026-10-07
 
 The booth always names a pick. The model, its probabilities (other than the
 exact-tie rule from 1.1.2, now with a moneyline step), and `MODEL_VERSION`

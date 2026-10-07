@@ -135,7 +135,7 @@ def evaluate(
             ok = "pass" if fallback[game_id] else "FAIL"
             print(f"{game_id} near-even: template only fallback={ok}")
             continue
-        res =_stored_result(pred.llm_narrative, facts) if stored else generate(facts)
+        res = _stored_result(pred.llm_narrative, facts) if stored else generate(facts)
         results.append((game_id, res))
         print(_line(game_id, res, stored, fallback[game_id]))
         if res.text:
