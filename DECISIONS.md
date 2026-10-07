@@ -498,8 +498,8 @@ of 22 model-vs-market disagreement games had no booth section at all (0 of about
 games), and those are the games visitors most want explained. "Still exactly true" is stricter
 than `check_narration`, which allows a 1-point rounding tolerance and does not check weather: a
 kept text must cite today's percentages exactly, every other number in it (scores, records,
-degrees, lines, ranks) must be on today's sheet, it may call a coin flip only at 50%, and weather
-talk needs today's weather. Otherwise a narration written yesterday could restate yesterday's
+degrees, lines, ranks) must be on today's sheet, it may not use any no-pick phrase such as
+"coin flip", and weather talk needs today's weather. Otherwise a narration written yesterday could restate yesterday's
 forecast or a lean the model no longer has, and a stale claim is worse than a fresh template.
 This supersedes the earlier behavior of storing NULL and showing only the factor list. **Known
 limits:** an AI draft that names a Las Vegas venue for a game with no posted line is rejected by
@@ -637,6 +637,11 @@ cron used to report success while a game had no prediction. A non-zero exit show
 Railway run. **Alternative:** alerting outside the repo (a monitor or a dashboard): it can still
 be added, but it would watch a job that reports success, so the job has to tell the truth first.
 
+**Known limit of the standalone check:** `python -m app.jobs.coverage` run between crons can list
+a game that entered the 7-day window after the last cron (for example a game 7 days out at
+23:00 UTC, seen at midday). The next cron predicts it. The in-run check shares the selection's
+clock, so it is not affected.
+
 ## The venue gate also covers ad words, number words and names, and what it still does not stop
 
 The plausibility gate that treats a venue, city, conference or division as missing now also
@@ -677,8 +682,10 @@ the output rules already bound what any value can cause the narration to say.
 
 ## The model always picks a side: an exact 50-50 is broken at prediction time
 
-When the calibrated probability is exactly even, `predict_week` stores 0.5001 (home favored, or
-no posted line) or 0.4999 (the betting favorite is the away team) via `break_exact_tie`. Only a
+When the calibrated probability is exactly even, `predict_week` stores 0.5001 (home favored by the
+spread, or by the moneyline, or the home team when there is no line) or 0.4999 (the betting
+favorite is the away team) via `break_exact_tie`
+(v1.1.3 adds a moneyline step, see below). Only a
 value that rounds to exactly 0.5 is touched, and only for games being predicted, so near-ties
 such as 50.27 versus 49.73 and every finished game are unchanged. **Why:** sportsbooks always name
 a favorite, and the record needs a pick to grade. Every game already had a pick from the
@@ -690,3 +697,97 @@ near-even game (it would put picks in the record that the model did not make and
 model-versus-market disagreements the record exists to show); and a frontend and grading
 tie-break rule (three places to keep in sync, a changed grading rule for finished games, and more
 surface for the same result).
+
+## The booth always names a pick
+
+The booth never calls a game a toss-up, a coin flip or too close to call. It names the side the
+stored probability favors (`model_pick` and `model_picks_home` in `fact_sheet.py`, the one helper
+the fact sheet, the template and the guardrail share). When the rounded percentages tie (49.5 to
+50.5 percent) the template says the model leans that team "by the slimmest of margins" or "by a
+hair", with 50% for each side, and the minimal model-only line does the same. **Why:**
+sportsbooks always name a favorite, and the page, the share image and the season record already
+name the model's side for every game. A booth that says "coin flip" at 50.01 percent contradicts
+all three, and a visitor sees the contradiction on one screen. **Alternative:** a "Toss-up" label
+for near-even games, rejected because the maintainer does not want one.
+
+## The exact-tie break falls through spread, moneyline, then home; the market overrides only an exact tie
+
+`break_exact_tie` (only for an exactly even stored probability, nudged 0.0001) now picks the
+posted spread favorite (positive spread means the home team is favored), then, when the spread is
+0 or absent, the favorite of a plausible moneyline pair via `market_home_prob`, then the home
+team. **Why:** a spread of 0 is a pick'em in the spread market, but the moneyline usually still
+has a real favorite, so using it beats defaulting to home. `build_features` carries
+`home_moneyline` and `away_moneyline` as metadata only (`FEATURE_COLUMNS` and the model artifacts
+are unchanged), and the moneyline goes through the single `plausible_moneylines` rule, so a
+sentinel or a both-favorite pair is ignored. **Honest limit:** with no line at all the home team
+gets the edge, which is a convention, not a signal. **Why the market overrides only an exact
+tie:** a 50.27 percent game keeps the model's own side. Substituting the market's side for every
+near-even game would put picks in the record that the model did not make and hide the
+model-versus-market disagreements the record exists to show, so the booth just says the model
+leans that team by a hair. **Alternative:** override every game within a point of even with the
+betting favorite: rejected for that reason.
+
+## The no-pick guardrail rejects more true-sounding drafts, on purpose
+
+`check_narration` now rejects no-pick wording about the model (coin flip, toss-up, too close to
+call, no clear favorite, no lean, no clear pick, barely has a pick, dead heat, anyone's game, could
+go either way, and "pick'em" or "dead even" in a clause about the model). Market wording about a
+line of exactly 0, such as "the line is a pick'em", stays allowed. Within one point of even, a
+draft that names no model pick, or that puts the other team above 50 percent, is also rejected
+(market "favored by" wording does not count as naming it), and `still_true` rejects any stored
+narration containing a no-pick phrase, so a kept "coin flip" text is replaced by the template.
+The noun form ("Dallas is the model's pick", "our pick", "the model's lean/call", "the model's
+pick here is X", "Our pick: X", "takes the Chiefs' side") is checked against the stored side too,
+so a draft that names the wrong team that way is rejected; a directly negated noun ("Kansas City is
+not our pick", "isn't the model's pick") or a team's own possessive ("Kansas City's call to start a
+backup") is not read as a pick. Only a direct negation counts: the negator must be followed only by
+determiners and adjectives up to the noun, so openers such as "No doubt our pick is X", "No
+question", "It's no secret" or "Not only", and "X is barely our pick", still name X and are
+rejected when X is the wrong team.
+A market "favored by" next to a claim makes it a market claim only outside a clause that names the
+model, so "Our model gives Kansas City the edge, favored by 3" is checked as the model's view, and
+when the model is the subject of has, makes, sees, rates, projects, calls, gives or puts ("Our model
+has Kansas City favored by 3", "Our model makes Kansas City a 3-point favorite"), that favorite is
+the model's claim too, unless the market is named right after it ("favored by 3 in the market").
+
+**Near-even games are written from the template.** When the home percentage rounds to 49, 50 or
+51 (`is_near_even` in `fact_sheet.py`, the same window the guardrail uses), `predict_week` skips
+the Claude call and the "kept" step and stores the deterministic template, which always names the
+pick, so no draft is ever asked to name a near-even pick. **Why:** three reviews in a row each
+found a new near-even phrasing that passed the guardrail without truthfully naming the pick (a
+noun form, market "favored by" wording, "no clear pick, with Dallas favored by 1", a possessive, a
+negated pick noun). A phrase list cannot prove it has them all; the template has been swept over
+the whole near-even window (home percentage 49 to 51, about 0.485 to 0.515): 38,272 texts across
+spreads, moneylines, NFL and CFB, none rejected, each naming the stored side. **Honest limit:** the
+page rounds the stored 4-decimal value with JavaScript `Math.round`, while the backend rounds the
+unrounded value with Python `round()`, so at an exact half (a stored 0.4950 or 0.5050 and similar)
+the booth percentage can differ from the page by one point. This predates the near-even rule and
+is cosmetic.
+**Cost:** those games read as plainer template text, and they count as fallback in the
+`narration: N written, K kept, F fallback, L minimal, J none` line, so a nonzero F is expected; an
+extra line before it (`narration: near-even games written from the template by design: N`) shows
+how many are by design. **Alternative:** keep growing the phrase list, rejected for the reason
+above. The guardrail rules stay in place for ordinary games, for `still_true` and for the
+template check.
+
+**What remains uncovered** for ordinary games: no-pick wording outside the list (for example
+"even money", "a wash", "basically even"), left out because it has too many unrelated uses, and
+pick wording the parser does not read ("the model calls it for X", "rides with X", "X gets the
+model's nod", "the model thinks X wins"), "our top pick is X" and "its pick is X", contrast
+forms ("X, not Dallas, is our pick"), an idiom that asserts a pick through a negation ("X isn't
+the model's pick by accident"), a double negative ("never not our pick"), "top" used as a verb
+after a negation, the Saints abbreviation "NO" read as a negator, and the forms of "the model
+has X favored by N" that use a pronoun, a role alias ("the visitors") or a plural subject ("the
+model's numbers have X favored"); a market "pick'em" said about a nonzero line; a venue alias
+that masks a team alias. Each of these needs Claude to name the wrong team in an unusual
+phrasing at an ordinary game, and the stored fact sheet, the percentages and the template remain
+correct. The check is a guardrail, not a proof. **Measured cost:** on the fresh probe corpus,
+true narrations rejected went from 0 of 47 to 5 of 47. All five are near-even drafts that said
+coin flip, 50-50, or named no pick at 50.4 percent, which are false under the new rule by
+design; production no longer asks Claude for near-even games, so the five measure the guardrail,
+not a live cost. For ordinary games the measured rejection of honest drafts was 0 of 42 and 1 of
+53 in the two independent review sweeps (the one miss was "Our model sees X favored by 3, and
+still backs Dallas at 70%"), and a false rejection costs a retry (the reason is fed back); if no
+draft passes the template covers the game, so the cost is a retry, never an empty section. The known false-negative rate on the same corpora is
+unchanged (4 of 48 and 1 of 70). **Alternative:** a prompt-only rule with no guardrail check: the
+guardrail exists because the prompt alone has shipped false claims before.

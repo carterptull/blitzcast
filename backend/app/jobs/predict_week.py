@@ -24,16 +24,21 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
-from app.services.fact_sheet import GameFacts, build_game_facts, trusted_numbers_text
+from app.services.fact_sheet import (
+    GameFacts,
+    build_game_facts,
+    is_near_even,
+    trusted_numbers_text,
+)
 from app.services.fallback_narration import (
     fallback_narration,
     fallback_reason,
     minimal_narration,
 )
-from app.services.narrate import check_narration, narrate, reason_category
+from app.services.narrate import check_narration, narrate, no_pick_phrase, reason_category
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
-from ml.features import build_features
+from ml.features import build_features, market_home_prob
 from ml.model_store import load_latest
 
 logger = logging.getLogger(__name__)
@@ -131,7 +136,6 @@ _PUNCTUATION_RE = re.compile("[\u2014\u2013;:]")
 _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)", re.IGNORECASE)
 _NUMBER_RE = re.compile(r"\d+(?:[.-]\d+)*")
 _UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(degrees|mph)\b", re.IGNORECASE)
-_COIN_FLIP_RE = re.compile(r"\bcoin\s*flip|\btoss[\s-]?up\b", re.IGNORECASE)
 _PRECIP_RE = re.compile(
     r"\b(?:rain\w*|snow\w*|sleet|showers?|drizzle|wet|soggy)\b", re.IGNORECASE
 )
@@ -146,8 +150,8 @@ def still_true(previous: str, facts: GameFacts) -> bool:
     """A stored narration may be republished only when it is exactly true
     against today's sheet, not merely close: every percentage is today's whole
     number, every other number (scores, records, degrees, lines, ranks, years)
-    is on the trusted part of today's sheet (no venue or injury text), a coin
-    flip is still 50%, weather talk is backed by today's weather, and the
+    is on the trusted part of today's sheet (no venue or injury text), it never
+    says the model has no pick, weather talk is backed by today's weather, and the
     punctuation is plain. It must also pass check_narration, so the link,
     handle and digit-run rules apply too. Stricter than check_narration on
     purpose: a miss only costs a fresh template."""
@@ -157,7 +161,7 @@ def still_true(previous: str, facts: GameFacts) -> bool:
     model_pcts = {round(p * 100), round((1 - p) * 100)}
     if any(float(m.group(1)) not in model_pcts for m in _PCT_RE.finditer(previous)):
         return False
-    if _COIN_FLIP_RE.search(previous) and round(p * 100) != 50:
+    if no_pick_phrase(previous):
         return False
     sheet = " ".join(trusted_numbers_text(facts).split())
     on_sheet = set(_NUMBER_RE.findall(sheet))
@@ -175,6 +179,7 @@ def still_true(previous: str, facts: GameFacts) -> bool:
 class Narration(NamedTuple):
     text: str | None
     source: str  # "llm", "kept", "fallback", "minimal" or "none"
+    near_even: bool = False  # a fallback written from the template by design
 
 
 def _minimal(db: Session, row: pd.Series, prob: float) -> Narration:
@@ -198,27 +203,31 @@ def narrate_safely(
     that game, or the rest of the slate, its prediction. The chain: a fresh AI
     draft, else the previous narration only if it is still exactly true today,
     else the deterministic fallback from the fact sheet, else (no fact sheet, or
-    a fallback that fails its check) a model-only line from the row. Rolling
-    back is safe: since the last per-game commit the loop has only read."""
+    a fallback that fails its check) a model-only line from the row. A near-even
+    game skips the AI draft and the previous narration: the template always
+    names the pick. Rolling back is safe: since the last per-game commit the
+    loop has only read."""
     game_id = row["game_id"]
     try:
         facts = facts_for_row(db, row, prob, factors, ranks, prev_ranks)
     except Exception as exc:
         _failed(db, game_id, "fact sheet", exc)
         return _minimal(db, row, prob)
-    try:
-        text = narrate(facts)
-    except Exception as exc:
-        _failed(db, game_id, "narration draft", exc)
-        text = None
-    if text:
-        return Narration(text, "llm")
-    if previous:
+    near_even = is_near_even(facts)
+    if not near_even:
         try:
-            if still_true(previous, facts):
-                return Narration(previous, "kept")
+            text = narrate(facts)
         except Exception as exc:
-            _failed(db, game_id, "previous narration check", exc)
+            _failed(db, game_id, "narration draft", exc)
+            text = None
+        if text:
+            return Narration(text, "llm")
+        if previous:
+            try:
+                if still_true(previous, facts):
+                    return Narration(previous, "kept")
+            except Exception as exc:
+                _failed(db, game_id, "previous narration check", exc)
     try:
         text = fallback_narration(facts)
         reason = fallback_reason(text, facts)
@@ -230,7 +239,7 @@ def narrate_safely(
             "fallback narration rejected for %s: %s", game_id, reason_category(reason)
         )
         return _minimal(db, row, prob)
-    return Narration(text, "fallback")
+    return Narration(text, "fallback", near_even)
 
 
 def narrate_and_store(
@@ -249,10 +258,16 @@ def narrate_and_store(
 
 
 def narration_summary(sources: Counter) -> list[str]:
-    lines = [
+    lines = []
+    if sources["near_even"]:
+        lines.append(
+            "narration: near-even games written from the template by design: "
+            f"{sources['near_even']}"
+        )
+    lines.append(
         f"narration: {sources['llm']} written, {sources['kept']} kept, "
         f"{sources['fallback']} fallback, {sources['minimal']} minimal, {sources['none']} none"
-    ]
+    )
     none = sources["none"]
     if none:
         games = "1 game has" if none == 1 else f"{none} games have"
@@ -347,13 +362,29 @@ class Predictor(NamedTuple):
     version: str
 
 
-def break_exact_tie(prob: float, spread_home: float | None) -> float:
+def break_exact_tie(
+    prob: float,
+    spread_home: float | None,
+    home_ml: float | None = None,
+    away_ml: float | None = None,
+) -> float:
     """Nudge a dead-even stored probability 0.0001 toward the betting favorite
-    (positive spread_home: home favored), else the home team, so every game has
-    a pick. Anything that does not round to 0.5 is the model's own call."""
+    so every game has a pick: the posted spread (positive: home favored), else
+    the favorite of a plausible moneyline pair, else the home team. Anything
+    that does not round to 0.5 is the model's own call."""
     if round(prob, 4) != 0.5:
         return prob
-    return 0.4999 if spread_home is not None and spread_home < 0 else 0.5001
+    if spread_home:
+        return 0.5001 if spread_home > 0 else 0.4999
+    market = market_home_prob(home_ml, away_ml, None)
+    if market is not None and market != 0.5:
+        return 0.5001 if market > 0.5 else 0.4999
+    return 0.5001
+
+
+def _row_number(row: pd.Series, col: str) -> float | None:
+    value = row.get(col)
+    return None if value is None or pd.isna(value) else float(value)
 
 
 def predict_one(
@@ -371,7 +402,9 @@ def predict_one(
         raw = predictor.model.predict_proba(x)[:, 1]
         prob = float(predictor.calibrator.transform(raw)[0])
         spread = float(row["market_spread_home"]) if bool(row["has_market_spread"]) else None
-        broken = break_exact_tie(prob, spread)
+        broken = break_exact_tie(
+            prob, spread, _row_number(row, "home_moneyline"), _row_number(row, "away_moneyline")
+        )
         tie_side = None if broken == prob else ("home" if broken > 0.5 else "away")
         prob = broken
         factors = top_factors(
@@ -481,6 +514,7 @@ def main() -> None:
                 failed.append(row["game_id"])
             else:
                 sources[narration.source] += 1
+                sources["near_even"] += narration.near_even
 
         ok = len(target) - len(failed)
         print(f"predictions: {ok} ok, {len(failed)} failed")

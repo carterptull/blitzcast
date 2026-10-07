@@ -6,6 +6,50 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.3] — 2026-10-07
+
+The booth always names a pick. The model, its probabilities (other than the
+exact-tie rule from 1.1.2, now with a moneyline step), and `MODEL_VERSION`
+(`1.0.0` / `cfb-1.0.0`) are unchanged.
+
+### Changed
+- The booth narration always names the model's pick, the side the stored
+  probability favors. When the rounded percentages tie (49.5 to 50.5
+  percent) the template says "Our model leans X by the slimmest of margins"
+  (or "by a hair"), "50% for each side", and the minimal model-only line does
+  the same. The fact sheet always states the model's pick, the prompt forbids
+  toss-up, coin flip, too close to call and no-clear-favorite wording for the
+  model's view, `check_narration` rejects common forms of that wording (market
+  wording about a line of 0, such as "the line is a pick'em", is still
+  allowed) and, within one point of even, a draft that names no model pick,
+  and `still_true` rejects any stored narration containing a no-pick phrase,
+  so a kept "coin flip" text is replaced by the template.
+- Near-even games (the home percentage rounds to 49, 50 or 51) are narrated
+  from the deterministic template, which always names the pick: no Claude
+  call and no kept narration for them. They count as fallback in the
+  narration summary, and a line before it says how many were written from the
+  template by design.
+- For ordinary games, a draft that names the wrong team as "the model's
+  pick", "our pick", "the model's lean/call" or "the model's pick here is X"
+  is rejected, as is "no clear pick" wording; market "favored by" wording does
+  not count as naming the model's pick. Some pick phrasings are still not
+  read (see DECISIONS.md).
+- The exact-tie break in `predict_week` now falls through the posted spread
+  (positive means the home team is favored), then a plausible moneyline pair
+  (the single `plausible_moneylines` rule), then the home team. Previously a
+  spread of 0 or no spread went straight to home.
+- Mock fixture text in `frontend/src/lib/mock.ts` no longer says "coin flip";
+  no UI behavior change.
+
+### Added
+- `home_moneyline` and `away_moneyline` metadata columns on the feature
+  frame, read only by the exact-tie break. `FEATURE_COLUMNS` and the model
+  artifacts are unchanged.
+
+### Fixed
+- A game at 50.01 percent no longer reads "coin flip" in the booth while the
+  page names a pick.
+
 ## [1.1.2] — 2026-10-03
 
 Prediction coverage patches. The model, its probabilities (other than the

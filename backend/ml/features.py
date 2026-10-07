@@ -506,7 +506,7 @@ def build_features(
     meta = [
         "game_id", "season", "week", "kickoff", "home_abbr", "away_abbr",
         "home_tier", "away_tier", "home_win", "has_market_line",
-        "has_market_spread",
+        "has_market_spread", "home_moneyline", "away_moneyline",
     ]
     return df[meta + FEATURE_COLUMNS].reset_index(drop=True)
 

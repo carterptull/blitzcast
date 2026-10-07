@@ -148,7 +148,7 @@ const WEEK1: Week1Spec[] = [
       f("Win percentage, last 5 games", 0.02, "home"),
     ],
     narrative:
-      "Under the roof at Lucas Oil this one is a genuine coin flip with a home-field thumb on the scale: Indianapolis at 52 percent, laying a single point. Jacksonville actually grades out a hair better by rating, so if you like road divisional dogs, the model says this is the least you'll ever pay for one.",
+      "Under the roof at Lucas Oil the model narrowly leans Indianapolis, with a home-field thumb on the scale: the Colts at 52 percent, laying a single point. Jacksonville actually grades out a hair better by rating, so if you like road divisional dogs, the model says this is the least you'll ever pay for one.",
   },
   {
     away: "MIN",
@@ -315,7 +315,7 @@ const WEEK1: Week1Spec[] = [
       f("Point differential, last 5 games", 0.03, "away"),
     ],
     narrative:
-      "Sunday night in Ford Field, a 51.5 total, and two of the loudest offenses in football. Somebody pinch the booth! Detroit takes 54 percent on the strength of its recent offensive efficiency and a primetime home crowd that registers on seismographs. Baltimore still owns the better overall rating, which is exactly why the model calls this the most watchable coin-weighted flip of the week.",
+      "Sunday night in Ford Field, a 51.5 total, and two of the loudest offenses in football. Somebody pinch the booth! Detroit takes 54 percent on the strength of its recent offensive efficiency and a primetime home crowd that registers on seismographs. Baltimore still owns the better overall rating, which is exactly why the model's pick of the Lions is the most watchable slim lean of the week.",
   },
   {
     away: "SEA",

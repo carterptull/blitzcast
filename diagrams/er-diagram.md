@@ -152,4 +152,4 @@ CFB has no rows in `injuries` (there is no standardized CFB injury report), and 
 `poll_ranks`.
 
 ---
-_Last updated: 2026-10-03 · reflects v1.1.2_
+_Last updated: 2026-10-07 · reflects v1.1.3_

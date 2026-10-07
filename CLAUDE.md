@@ -84,8 +84,11 @@ Full setup + env vars: [README.md](./README.md) and
   feature builder's played-game checks, the stats refresh, and the NFL
   loader's status).
 - **LLM boundary:** Claude narrates model output only; it never predicts,
-  never alters probabilities. It writes from the fact sheet built in
-  `fact_sheet.py` (pre-kickoff data only; every feed string is cleaned by
+  never alters probabilities, and the booth always names the model's pick
+  (the side the stored probability favors; never toss-up or coin-flip
+  wording for the model's view; a near-even game, `is_near_even`, skips
+  Claude and the kept step and gets the template). It writes from the
+  fact sheet built in `fact_sheet.py` (pre-kickoff data only; every feed string is cleaned by
   `_clean()`, and the prompt marks the sheet as data, never instructions),
   and every draft must pass `check_narration` in `narrate.py` (no links,
   handles or digit runs, percentages and team attribution, market

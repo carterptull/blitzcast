@@ -134,7 +134,10 @@ def test_build_features_carries_the_columns_predict_week_reads(db):
     features = build_features(db, seasons=[2026], sport=SPORT_NFL)
     week = features[features["week"] == 1]
     assert not week.empty
-    for col in ("game_id", "has_market_line", "has_market_spread", "market_spread_home"):
+    for col in (
+        "game_id", "has_market_line", "has_market_spread", "market_spread_home",
+        "home_moneyline", "away_moneyline",
+    ):
         assert col in week.columns
     row = week.iloc[0]
     assert bool(row["has_market_spread"]) and bool(row["has_market_line"])
@@ -292,12 +295,16 @@ def test_minimal_line_holds_only_abbreviations_and_percentages(prob):
     text = minimal_narration("KC", "BUF", prob)
     home, away = round(prob * 100), round((1 - prob) * 100)
     if home == 50:
-        assert text == "Our model sees a coin flip between KC and BUF."
+        pick, other = ("BUF", "KC") if prob < 0.5 else ("KC", "BUF")
+        assert text == (
+            f"Our model leans {pick} over {other} by the slimmest of margins, 50% for each side."
+        )
     else:
         assert text == f"Our model gives KC {home}% and BUF {away}%."
+    assert not re.search(r"coin|toss|either way|close to call|no clear", text, re.IGNORECASE)
     words = re.sub(r"\b(?:KC|BUF|\d{1,3}%)", "", text)
-    assert set(words.split()) <= {"Our", "model", "gives", "and", ".", "sees", "a", "coin",
-                                  "flip", "between"}
+    assert set(words.split()) <= {"Our", "model", "gives", "and", ".", "leans", "over", "by",
+                                  "the", "slimmest", "of", "margins,", "for", "each", "side."}
 
 
 def test_minimal_line_when_the_fallback_raises(db, monkeypatch, caplog):
@@ -419,6 +426,104 @@ def test_narration_summary_counts_each_source():
     assert narration_summary(sources)[1] == "WARNING: 2 games have no booth narration"
 
 
+def test_narration_summary_names_the_near_even_games_first():
+    sources = Counter({"llm": 3, "fallback": 2, "near_even": 2})
+    assert narration_summary(sources) == [
+        "narration: near-even games written from the template by design: 2",
+        "narration: 3 written, 0 kept, 2 fallback, 0 minimal, 0 none",
+    ]
+
+
+def _recording_narrator(text="A fresh booth draft."):
+    calls = []
+
+    def fake(facts):
+        calls.append(facts)
+        return text
+
+    return fake, calls
+
+
+@pytest.mark.parametrize("prob, pick", [
+    (0.4999, "Bills"), (0.5001, "Chiefs"), (0.504, "Chiefs"), (0.4949, "Bills"),
+])
+def test_near_even_game_is_written_from_the_template_without_an_api_call(
+    db, monkeypatch, prob, pick
+):
+    fake, calls = _recording_narrator()
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    db, row, _, factors, ranks, prev_ranks = _narrate_args(db)
+    result = narrate_safely(db, row, prob, factors, ranks, prev_ranks)
+    assert calls == []
+    assert result.source == "fallback" and result.near_even
+    assert re.search(rf"Our model (?:leans|gives|has) the {pick}\b", result.text), result.text
+
+
+@pytest.mark.parametrize("prob", [0.52, 0.48])
+def test_a_game_outside_the_near_even_window_still_calls_the_narrator(db, monkeypatch, prob):
+    fake, calls = _recording_narrator()
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    db, row, _, factors, ranks, prev_ranks = _narrate_args(db)
+    result = narrate_safely(db, row, prob, factors, ranks, prev_ranks)
+    assert len(calls) == 1
+    assert result == Narration("A fresh booth draft.", "llm")
+    assert not result.near_even
+
+
+@pytest.mark.parametrize("previous", [
+    "Our model sees a coin flip, with 50% for each side.",
+    "Our model leans the Chiefs by a hair, with 50% for each side.",
+])
+def test_near_even_game_replaces_any_stored_ai_text_with_the_template(db, monkeypatch, previous):
+    fake, calls = _recording_narrator()
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    db, row, _, factors, ranks, prev_ranks = _narrate_args(db)
+    result = narrate_safely(db, row, 0.5001, factors, ranks, prev_ranks, previous=previous)
+    assert calls == []
+    assert result.source == "fallback" and result.near_even
+    assert result.text != previous and "coin flip" not in result.text
+    assert "Our model leans the Chiefs" in result.text
+
+
+class _NearEvenModel:
+    def predict_proba(self, x):
+        import numpy as np
+
+        return np.array([[0.496, 0.504]])
+
+
+def test_main_writes_near_even_games_from_the_template_and_says_so(db, monkeypatch, capsys):
+    fake, calls = _recording_narrator()
+    out, commits = _run_main(db, monkeypatch, fake, capsys, model=_NearEvenModel())
+    assert calls == []
+    lines = out.splitlines()
+    summary = lines.index("narration: 0 written, 0 kept, 2 fallback, 0 minimal, 0 none")
+    assert lines[summary - 1] == "narration: near-even games written from the template by design: 2"
+    assert "coverage: 2 upcoming games, 0 missing a prediction, 0 missing a booth section" in out
+    assert "WARNING" not in out
+    assert len(commits) == 2
+    assert all("Our model" in text for text in _stored_texts(db).values())
+
+
+def test_a_near_even_game_that_falls_to_the_minimal_line_counts_as_minimal(
+    db, monkeypatch, capsys
+):
+    fake, calls = _recording_narrator()
+    out, _ = _run_main(
+        db, monkeypatch, fake, capsys, model=_NearEvenModel(),
+        fallback_narration=lambda facts: "Chiefs by 77%.",
+    )
+    assert calls == []
+    assert "narration: 0 written, 0 kept, 0 fallback, 2 minimal, 0 none" in out
+    assert "near-even" not in out
+
+
+def test_main_prints_no_near_even_line_for_ordinary_games(db, monkeypatch, capsys):
+    out, _ = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys)
+    assert "near-even" not in out
+    assert "narration: 2 written, 0 kept, 0 fallback, 0 minimal, 0 none" in out
+
+
 def _bills_chiefs(p: float, weather: str | None):
     return _game(
         "NFL", _team(**BILLS, record="3-1"), _team(**CHIEFS, record="2-2"), p, 3.0,
@@ -442,16 +547,36 @@ def test_still_true_drops_yesterdays_weather_and_percentage(weather):
 def test_still_true_drops_a_lean_that_flipped():
     facts = _game("CFB", _team(**UNLV, record="3-1"), _team(**CAL, record="2-2"), 0.497, None)
     text = "Our model gives UNLV 51% and California 49%."
-    assert check_narration(text, facts) is None
+    # Within the +-1 tolerance, but it puts the wrong team above 50.
+    assert check_narration(text, facts).startswith("gives UNLV 51%")
     assert not still_true(text, facts)
 
 
-def test_still_true_drops_a_coin_flip_that_is_no_longer_one():
+@pytest.mark.parametrize("p", [0.514, 0.5, 0.5001, 0.4999])
+def test_still_true_never_keeps_a_coin_flip(p):
     text = "Our model sees a coin flip, with 50% for each side."
-    facts = _game("CFB", _team(**UNLV), _team(**CAL), 0.514, None)
+    assert not still_true(text, _game("CFB", _team(**UNLV), _team(**CAL), p, None))
+
+
+@pytest.mark.parametrize("text", [
+    "Vegas calls it a toss-up. Our model leans UNLV by a hair, with 50% for each side.",
+    "The betting market sees a coin flip. Our model leans UNLV by a hair, with 50% for each side.",
+])
+def test_still_true_drops_any_no_pick_phrase_even_about_the_market(text):
+    facts = _game("CFB", _team(**UNLV), _team(**CAL), 0.5001, 0.0)
     assert check_narration(text, facts) is None
     assert not still_true(text, facts)
-    assert still_true(text, _game("CFB", _team(**UNLV), _team(**CAL), 0.5, None))
+    assert still_true("Our model leans UNLV by a hair, with 50% for each side.", facts)
+
+
+def test_narrate_safely_replaces_a_stored_coin_flip_with_a_named_pick(db, monkeypatch):
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: None)
+    previous = "Our model sees a coin flip, with 50% for each side."
+    db, row, _, factors, ranks, prev_ranks = _narrate_args(db)
+    result = narrate_safely(db, row, 0.5001, factors, ranks, prev_ranks, previous=previous)
+    assert result.source == "fallback"
+    assert "Our model leans the Chiefs" in result.text
+    assert "coin flip" not in result.text
 
 
 def test_still_true_drops_a_weather_claim_with_no_weather_today():
@@ -1060,6 +1185,34 @@ def test_break_exact_tie_truth_table(prob, spread, expected):
     assert break_exact_tie(prob, spread) == expected
 
 
+@pytest.mark.parametrize(
+    "prob, spread, home_ml, away_ml, expected",
+    [
+        (0.5, 0.0, 150, -170, 0.4999),
+        (0.5, 0.0, -170, 150, 0.5001),
+        (0.5, None, 150, -170, 0.4999),
+        (0.5, None, -170, 150, 0.5001),
+        (0.5, 2.5, 150, -170, 0.5001),
+        (0.5, -2.5, -170, 150, 0.4999),
+        (0.5, 0.0, -300, -300, 0.5001),
+        (0.5, 0.0, -110, -110, 0.5001),
+        (0.5, 0.0, 150, None, 0.5001),
+        (0.5, None, None, None, 0.5001),
+        (0.5, 0.0, 100000, -100000, 0.5001),
+        (0.5, None, -100000, 2000, 0.5001),
+        (0.5, 0.0, float("nan"), float("nan"), 0.5001),
+        (0.5027, 0.0, 150, -170, 0.5027),
+        (0.4973, None, -170, 150, 0.4973),
+    ],
+)
+def test_break_exact_tie_falls_back_to_the_moneyline_favorite(
+    prob, spread, home_ml, away_ml, expected
+):
+    from app.jobs.predict_week import break_exact_tie
+
+    assert break_exact_tie(prob, spread, home_ml, away_ml) == expected
+
+
 class _TieCalibrator:
     def transform(self, raw):
         import numpy as np
@@ -1075,16 +1228,19 @@ def _tie_predictor():
 
 
 @pytest.mark.parametrize(
-    "spread, posted, expected, side",
+    "spread, posted, moneyline, expected, side",
     [
-        (2.5, True, 0.5001, "home"),
-        (-2.5, True, 0.4999, "away"),
-        (0.0, True, 0.5001, "home"),
-        (-2.5, False, 0.5001, "home"),
+        (2.5, True, True, 0.5001, "home"),
+        (-2.5, True, True, 0.4999, "away"),
+        # The fixture's moneyline favors the visiting Eagles (150 / -170).
+        (0.0, True, True, 0.4999, "away"),
+        (-2.5, False, True, 0.4999, "away"),
+        (0.0, True, False, 0.5001, "home"),
+        (-2.5, False, False, 0.5001, "home"),
     ],
 )
 def test_predict_one_breaks_an_exact_tie_before_anything_reads_it(
-    db, monkeypatch, capsys, spread, posted, expected, side
+    db, monkeypatch, capsys, spread, posted, moneyline, expected, side
 ):
     from app.jobs.predict_week import predict_one
 
@@ -1095,14 +1251,19 @@ def test_predict_one_breaks_an_exact_tie_before_anything_reads_it(
         lambda explainer, x, prob, **kw: seen.setdefault("factors", prob) and [],
     )
 
-    def draft(facts):
-        seen["facts"] = facts.home_win_prob
-        return "A fresh booth draft."
+    real_facts = predict_week.facts_for_row
 
-    monkeypatch.setattr(predict_week, "narrate", draft)
+    def facts_for_row(db_, row_, prob, *a):
+        seen["facts"] = prob
+        return real_facts(db_, row_, prob, *a)
+
+    monkeypatch.setattr(predict_week, "facts_for_row", facts_for_row)
     _, row = _week1_rows(db)
     row = row.copy()
     row["market_spread_home"], row["has_market_spread"] = spread, posted
+    assert (row["home_moneyline"], row["away_moneyline"]) == (150, -170)
+    if not moneyline:
+        row["home_moneyline"] = row["away_moneyline"] = float("nan")
     assert predict_one(db, row, _tie_predictor(), {}, {}) is not None
     stored = predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0").home_win_prob
     assert stored == expected != 0.5
@@ -1134,11 +1295,16 @@ def test_predict_one_logs_no_tie_break_for_a_game_that_fails(db, monkeypatch, ca
 
 
 @pytest.mark.parametrize(
-    "spread, posted, expected, side",
-    [(3.0, 1.0, 0.5001, "home"), (-3.0, 1.0, 0.4999, "away"), (-3.0, 0.0, 0.5001, "home")],
+    "spread, posted, moneyline, expected, side",
+    [
+        (3.0, 1.0, True, 0.5001, "home"),
+        (-3.0, 1.0, True, 0.4999, "away"),
+        (-3.0, 0.0, True, 0.4999, "away"),
+        (-3.0, 0.0, False, 0.5001, "home"),
+    ],
 )
 def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(
-    db, monkeypatch, capsys, spread, posted, expected, side
+    db, monkeypatch, capsys, spread, posted, moneyline, expected, side
 ):
     from app.models import Prediction
     from ml.features import build_features
@@ -1148,6 +1314,8 @@ def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(
         game = features["game_id"] == "2026_01_PHI_DAL"
         features.loc[game, "market_spread_home"] = spread
         features.loc[game, "has_market_spread"] = posted
+        if not moneyline:
+            features.loc[game, ["home_moneyline", "away_moneyline"]] = float("nan")
         return features
 
     class _TieModel:

@@ -188,9 +188,12 @@ def test_fallback_says_when_model_and_market_disagree():
     assert "The betting market leans the other way, with UNLV favored by 2.5 points." in text
 
 
-def test_fallback_coin_flip_and_pickem_wording():
-    assert "coin flip, with 50% for each side" in fallback_narration(SCENARIOS["cfb-exact-50"])
-    assert "pick'em" in fallback_narration(SCENARIOS["nfl-pickem"])
+def test_fallback_pickem_wording_still_names_the_model_pick():
+    text = fallback_narration(SCENARIOS["cfb-exact-50"])
+    assert re.search(r"Our model leans Florida by .*50% for each side\.", text)
+    pickem = fallback_narration(SCENARIOS["nfl-pickem"])
+    assert "The betting market calls it a pick'em." in pickem
+    assert "Our model gives the Giants 53%" in pickem or "the Giants at 53%" in pickem
 
 
 def test_fallback_uses_sheet_phrases_and_current_ranks_only():
@@ -325,3 +328,34 @@ def test_fallback_from_a_hostile_venue_drops_it_and_passes():
     text = fallback_narration(facts)
     _assert_plain(text, facts)
     assert "scam" not in text and "Lambeau" not in text
+
+
+NO_PICK_RE = re.compile(
+    r"coin[\s-]?flip|toss[\s-]?up|tossup|too close to call|no clear|either way", re.IGNORECASE
+)
+
+
+@pytest.mark.parametrize("sport, pair", [("NFL", p) for p in NFL_PAIRS[:2]] + [
+    ("CFB", p) for p in CFB_PAIRS[:3]
+])
+@pytest.mark.parametrize("p", [0.495, 0.4999, 0.4973, 0.5, 0.5001, 0.5027, 0.505])
+@pytest.mark.parametrize("spread", [None, 0.0, -2.5, 3.0])
+def test_fallback_always_names_the_pick_when_the_percentages_round_even(sport, pair, p, spread):
+    home, away = pair
+    facts = _game(sport, _team(**home), _team(**away), p, spread)
+    pick = facts.away if p < 0.5 else facts.home
+    ref = f"the {pick.name}" if sport == "NFL" else pick.name
+    for text in [fallback_narration(facts), *_drafts(facts)]:
+        assert not NO_PICK_RE.search(text), text
+        assert f"Our model leans {ref} by " in text, text
+        assert "50% for each side" in text
+    _assert_plain(fallback_narration(facts), facts)
+
+
+def test_both_even_wordings_name_the_pick():
+    seen = set()
+    for home, away in NFL_PAIRS + CFB_PAIRS:
+        sport = "NFL" if (home, away) in NFL_PAIRS else "CFB"
+        facts = _game(sport, _team(**home), _team(**away), 0.5001, None)
+        seen.add(_drafts(facts)[-1].split(" by ")[1].split(",")[0])
+    assert seen == {"a hair", "the slimmest of margins"}

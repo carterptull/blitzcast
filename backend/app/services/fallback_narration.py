@@ -6,7 +6,13 @@ not even the fact sheet can be built."""
 
 import re
 
-from app.services.fact_sheet import GameFacts, TeamFacts, market_favorite
+from app.services.fact_sheet import (
+    GameFacts,
+    TeamFacts,
+    market_favorite,
+    model_pick,
+    model_picks_home,
+)
 from app.services.narrate import (
     check_narration,
     mentions_market,
@@ -71,21 +77,16 @@ def _model_pcts(facts: GameFacts) -> tuple[int, int]:
     return round(facts.home_win_prob * 100), round((1 - facts.home_win_prob) * 100)
 
 
-def _model_favorite(facts: GameFacts) -> TeamFacts | None:
-    home_pct, away_pct = _model_pcts(facts)
-    if home_pct == away_pct:
-        return None
-    return facts.home if home_pct > away_pct else facts.away
-
-
 def _model(facts: GameFacts) -> str:
-    fav = _model_favorite(facts)
-    if fav is None:
-        return "Our model sees a coin flip, with 50% for each side."
+    fav = model_pick(facts)
     dog = facts.away if fav is facts.home else facts.home
     home_pct, away_pct = _model_pcts(facts)
     fav_pct, dog_pct = (home_pct, away_pct) if fav is facts.home else (away_pct, home_pct)
     fav_ref, dog_ref = _ref(fav, facts, rank=False), _ref(dog, facts, rank=False)
+    if fav_pct == dog_pct:
+        if _variant(facts, 1):
+            return f"Our model leans {fav_ref} by a hair, with {fav_pct}% for each side."
+        return f"Our model leans {fav_ref} by the slimmest of margins, {fav_pct}% for each side."
     if _variant(facts, 1):
         return f"Our model has {fav_ref} at {fav_pct}%, with {dog_ref} at {dog_pct}%."
     return f"Our model gives {fav_ref} {fav_pct}% and {dog_ref} {dog_pct}%."
@@ -101,10 +102,9 @@ def _market(facts: GameFacts) -> str | None:
     line = abs(facts.spread_home)
     favored = f"favored by {line:g} {'point' if line == 1 else 'points'}"
     fav_ref = _ref(fav, facts, rank=False)
-    model_fav = _model_favorite(facts)
-    if model_fav is not None and model_fav is not fav:
+    if model_pick(facts) is not fav:
         return f"The betting market leans the other way, with {fav_ref} {favored}."
-    if model_fav is not None and _variant(facts, 2):
+    if _variant(facts, 2):
         return f"The betting market agrees, with {fav_ref} {favored}."
     is_are = _verb(facts, "are", "is")
     return f"{_cap(fav_ref)} {is_are} {favored} in the betting market."
@@ -133,7 +133,7 @@ def _team_form(
 def _form(facts: GameFacts, detail: bool) -> str:
     if facts.home.games_this_season == 0 and facts.away.games_this_season == 0:
         return "It is the season opener for both teams."
-    first = _model_favorite(facts) or facts.home
+    first = model_pick(facts)
     second = facts.away if first is facts.home else facts.home
     lead = _team_form(first, second, facts, detail, "last time out")
     last_game = _verb(facts, "in their last game", "in its last game")
@@ -182,8 +182,14 @@ def minimal_narration(home_abbr: str, away_abbr: str, home_win_prob: float) -> s
         if not isinstance(abbr, str) or not _ABBR_RE.fullmatch(abbr):
             raise ValueError("unusable team abbreviation")
     home_pct, away_pct = round(home_win_prob * 100), round((1 - home_win_prob) * 100)
-    if home_pct == 50:
-        text = f"Our model sees a coin flip between {home_abbr} and {away_abbr}."
+    if home_pct == away_pct:
+        pick, other = (
+            (home_abbr, away_abbr) if model_picks_home(home_win_prob) else (away_abbr, home_abbr)
+        )
+        text = (
+            f"Our model leans {pick} over {other} by the slimmest of margins, "
+            f"{home_pct}% for each side."
+        )
     else:
         text = f"Our model gives {home_abbr} {home_pct}% and {away_abbr} {away_pct}%."
     if unsafe_output(text):

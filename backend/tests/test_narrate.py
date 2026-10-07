@@ -1,6 +1,7 @@
 """Narration tests: the real Anthropic API is never called."""
 
 import inspect
+import time
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -291,6 +292,41 @@ D = _facts(
     _team("Michigan State", "Michigan State Spartans", "MSU", "Spartans", "2-2"),
     0.88, 14.5, 52.5, venue="Ohio Stadium in Columbus", matchup_note="Big Ten conference game",
 )
+# DK: Chiefs at Cowboys at several model probabilities, Dallas home.
+DAL = _team("Cowboys", "Dallas Cowboys", "DAL", "Cowboys")
+KC = _team("Chiefs", "Kansas City Chiefs", "KC", "Chiefs")
+DK70 = _facts(DAL, KC, 0.70, 3.0, sport="NFL", when="Sunday afternoon")
+DK62 = _facts(DAL, KC, 0.62, 3.0, sport="NFL", when="Sunday afternoon")
+DK35 = _facts(DAL, KC, 0.35, -3.0, sport="NFL", when="Sunday afternoon")
+DK51 = _facts(DAL, KC, 0.51, 1.0, sport="NFL", when="Sunday afternoon")
+DK_TIE = replace(DK51, home_win_prob=0.5001)
+# Dallas is the model's pick at 70%, and the market favors Kansas City by 3.
+DK70_KC = replace(DK70, spread_home=-3.0)
+
+# Openers that contain "no" or "not" but do not negate the pick noun after them.
+NEGATION_OPENERS = (
+    "No doubt", "No question", "No surprise", "Not surprisingly", "Without question",
+    "It's no secret", "Not only",
+)
+PICK_NOUNS = (
+    "our pick", "our lean", "the model's pick", "the model's call", "our call",
+    "the model's top pick", "our selection",
+)
+# (facts, wrong team names, right team names)
+OPENER_GAMES = (
+    (DK70, ("Kansas City", "the Chiefs"), ("Dallas", "the Cowboys")),
+    (DK35, ("Dallas", "the Cowboys"), ("Kansas City", "the Chiefs")),
+)
+
+
+def _opener_drafts(right: bool) -> list[tuple[str, GameFacts]]:
+    return [
+        (f"{opener} {noun} is {team}.", facts)
+        for facts, wrong_names, right_names in OPENER_GAMES
+        for team in (right_names if right else wrong_names)
+        for opener in NEGATION_OPENERS
+        for noun in PICK_NOUNS
+    ]
 
 
 def _known_limit(text, facts, why):
@@ -420,6 +456,36 @@ CORPUS_TRUE = [
     ("Michigan State visits Ohio State, and the Spartans are getting 14.5. Our model has the "
      "Buckeyes at 88%.", D),
     ("Ohio State is laying 14.5 against Michigan State. Our model has the Buckeyes at 88%.", D),
+    # The pick noun names the right team.
+    ("The Cowboys are the model's pick this week.", DK70),
+    ("Dallas is the model's pick at 70%.", DK70),
+    ("The Cowboys are our model's pick, with the Chiefs at 49%.", DK51),
+    ("The pick from our model is the Cowboys, even with Kansas City at 49%.", DK51),
+    ("Dallas is our pick at 70%.", DK70),
+    ("Our model would pick the Cowboys this week.", DK70),
+    # Phrasal "takes" / "picks up" are not picks.
+    ("The model takes the Cowboys' pass rush seriously but still gives the Chiefs 65%.", DK35),
+    ("Our model picks up on the Cowboys' red zone defense, yet gives the Chiefs 65%.", DK35),
+    ("The model takes into account the Chiefs' short week and gives the Cowboys 62%.", DK62),
+    # Market "favored by" next to a model pick that is named.
+    ("Our model leans Dallas by a hair, and the market has Dallas favored by 1.", DK_TIE),
+    ("Our model leans Dallas by a hair. The Cowboys are favored by 1 in the market.", DK_TIE),
+    # Lean, call and colon forms that name the right team.
+    ("The model's lean is the Cowboys this week.", DK70),
+    ("The model's call is Dallas.", DK70),
+    ("Our pick: Dallas.", DK70),
+    ("The model takes the Cowboys' side this week.", DK70),
+    ("The all-time series is dead even, and our model leans the Cowboys by a hair at 50%.",
+     DK_TIE),
+    # The market's favorite named honestly next to the model's pick.
+    ("Our model likes Dallas at 70%, with Kansas City favored by 3.", DK70_KC),
+    ("The market has Kansas City favored by 3, but our model likes Dallas.", DK70_KC),
+    ("Dallas is the model's pick even though Kansas City is favored by 3.", DK70_KC),
+    # A directly negated pick noun names no pick.
+    ("Kansas City is not our pick this week.", DK70),
+    ("Kansas City isn't the model's pick.", DK70),
+    ("Kansas City is not the model's top pick this week, and our model likes Dallas at 70%.",
+     DK70),
 ]
 
 
@@ -541,7 +607,55 @@ CORPUS_FALSE = [
     ("The Spartans are laying 14.5 in Columbus. Our model has Ohio State at 88%.", D),
     ("Ohio State hosts Michigan State and the Spartans are 14.5-point favorites. Our model has "
      "the Buckeyes at 88%.", D),
+    # The pick noun names the wrong team.
+    ("The Chiefs are the model's pick this week.", DK70),
+    ("Kansas City is the model's pick at 30%.", DK70),
+    ("The Chiefs are our model's pick, with the Cowboys at 51%.", DK51),
+    ("The pick from our model is the Chiefs, even with Dallas at 51%.", DK51),
+    ("Kansas City is our pick at 30%.", DK70),
+    ("Our model would pick the Chiefs this week.", DK70),
+    # A real "takes" / "picks" names the wrong team.
+    ("The model takes the Cowboys at 35%.", DK35),
+    ("Our model picks Dallas to win at home.", DK35),
+    ("The model takes Kansas City on the road.", DK62),
+    # Market "favored by" is not the model's pick.
+    ("Our model sees a 50-50 game, with Dallas favored by 1 in the market.", DK_TIE),
+    ("Our model calls it dead even at 50% apiece, with the Cowboys favored by 1.", DK_TIE),
+    ("Our model sees a 50-50 game. Dallas is favored by 1 in the market.", DK_TIE),
+    # A possessive pick word names the wrong team.
+    ("The model takes the Chiefs' side this week.", DK70),
+    ("Our model goes with the Chiefs' side.", DK70),
+    # Lean, call and colon forms name the wrong team.
+    ("The model's lean is the Chiefs this week.", DK70),
+    ("The model's call is Kansas City.", DK70),
+    ("Our lean is Kansas City this week.", DK70),
+    ("Our pick: Kansas City.", DK70),
+    # No-pick wording about the model at an ordinary game.
+    ("The model has no favorite here, and Dallas sits at 70%.", DK70),
+    ("Our model has no lean in this one, with Dallas at 70%.", DK70),
+    # An opener with "no" or "not" does not negate the pick noun after it.
+    ("No doubt our pick is Kansas City.", DK70),
+    ("No question our model's call is the Chiefs this week.", DK70),
+    ("Kansas City is barely our pick.", DK70),
+    ("Kansas City is without a doubt our pick.", DK70),
+    ("Kansas City is not only our pick.", DK70),
+    ("Kansas City can't miss as our pick.", DK70),
+    *_opener_drafts(right=False),
+    # The model is the subject, and the team it "has" favored is the wrong one.
+    ("Our model has Kansas City favored by 3.", DK70_KC),
+    ("Our model makes Kansas City a 3-point favorite.", DK70_KC),
 ]
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("The Chiefs are the model's pick this week.", DK70),
+    ("Kansas City is the model's pick at 30%.", DK70),
+    ("The Chiefs are our model's pick, with the Cowboys at 51%.", DK51),
+    ("The pick from our model is the Chiefs, even with Dallas at 51%.", DK51),
+])
+def test_wrong_pick_noun_reads_as_a_wrong_model_favorite(text, facts):
+    reason = check_narration(text, facts)
+    assert reason is not None and "model's favorite" in reason, reason
 
 
 @pytest.mark.parametrize("text, facts", CORPUS_FALSE)
@@ -860,16 +974,12 @@ FRESH_TRUE = [
      "Peay just 1%.", S3),
     ("An AFC South division game indoors at NRG Stadium, and Vegas calls it a pick'em. "
      "Our model barely leans Houston at 50%.", S4),
-    ("Both teams sit at 2-2, and the market can't separate them. Our model has it a coin "
-     "flip at 50%.", S4),
+    ("Both teams sit at 2-2, and the market can't separate them. Our model leans the "
+     "Texans by a hair at 50%.", S4),
     ("The Jaguars and Texans meet with nothing between them in the market. The total sits "
-     "at 44.5, and our model calls it 50-50.", S4),
-    ("Coin-flip game in Houston. Our model gives the Texans 50% and the Jaguars 50%, and "
-     "the books have it as a pick'em.", S4),
-    ("Houston beat the Colts 20-17 at home, while Jacksonville lost to the Titans 23-16 "
-     "on the road. Our model says 50% either way.", S4),
+     "at 44.5, and our model's pick is Houston, 50-50 as it is.", S4),
     ("Houston and Jacksonville are dead even in the market, and the total is 44.5. Our "
-     "model has the Texans at 50%.", S4),
+     "model likes the Texans at 50%.", S4),
     ("It's a MAC conference game on Tuesday night, and the RedHawks have won 2 straight. "
      "Our model likes Miami (OH) at 61% against a 1-4 Ball State team.", S5),
     ("The Cardinals are 1-4 and need a spark. Our model gives the RedHawks a 61% chance "
@@ -887,6 +997,17 @@ FRESH_TRUE = [
 ]
 
 FRESH_FALSE = [
+    # The model always has a pick: these no longer pass.
+    ("Both teams sit at 2-2, and the market can't separate them. Our model has it a coin "
+     "flip at 50%.", S4),
+    ("The Jaguars and Texans meet with nothing between them in the market. The total sits "
+     "at 44.5, and our model calls it 50-50.", S4),
+    ("Coin-flip game in Houston. Our model gives the Texans 50% and the Jaguars 50%, and "
+     "the books have it as a pick'em.", S4),
+    ("Houston beat the Colts 20-17 at home, while Jacksonville lost to the Titans 23-16 "
+     "on the road. Our model says 50% either way.", S4),
+    ("Houston and Jacksonville are dead even in the market, and the total is 44.5. Our "
+     "model has the Texans at 50%.", S4),
     ("The Bears are favored by 3 at home, and our model agrees at 54%.", S1),
     ("Green Bay is laying 3.5 on the road, but our model likes Chicago at 54%.", S1),
     ("The total sits at 44.5 in the wind. Our model leans the Bears at 54%.", S1),
@@ -1015,7 +1136,7 @@ def test_invented_names_still_fail_at_sentence_start(name):
      "Packers team favored by 3.", S1),
     ("Our model gives the edge to the Bears at 54%.", S1),
     # 50-50 in a toss-up, and fronts and mindsets that are not scores.
-    ("It's a 50-50 game indoors. Our model has the Texans at 50%.", S4),
+    ("It's a 50-50 game indoors. Our model leans the Texans at 50%.", S4),
     ("The Bears run a 4-3 defense. Our model has Chicago at 54%.", S1),
     ("Expect a 3-4 look from Chicago. Our model has the Bears at 54%.", S1),
     ("A 1-0 mindset is all the Seminoles need. Our model has Florida at 57%.", S2),
@@ -1204,6 +1325,8 @@ def test_rejection_logs_carry_only_a_category(settings_with_key, monkeypatch, ca
     ("contains a semicolon or colon", "semicolon or colon"),
     ("names not in the fact sheet: evil\nFORGED", "names not in the fact sheet"),
     ("unheard of\nFORGED", "other"),
+    ("uses no-pick phrase 'toss-up' for the model's view", "no-pick phrase"),
+    ("names no model pick (the percentages are nearly even)", "no model pick named"),
 ])
 def test_reason_category_is_shared_and_fixed(reason, category):
     assert narrate_mod.reason_category(reason) == category
@@ -1324,3 +1447,276 @@ def test_generate_matches_the_real_sdk_signature(settings_with_key, monkeypatch)
     assert result.text == GOOD
     assert result.attempts == 1
     assert {"model", "max_tokens", "system", "messages"} <= set(calls[0])
+
+
+# The model always names a pick, even when the percentages round to 50/50.
+EVEN = replace(S4, home_win_prob=0.5001)
+EVEN_AWAY = replace(S4, home_win_prob=0.4973)
+NEAR_EVEN = replace(S4, home_win_prob=0.51, spread_home=1.0)
+
+
+@pytest.mark.parametrize("phrase", [
+    "a coin flip", "a coin-flip", "a toss-up", "a toss up", "a tossup", "too close to call",
+    "a game with no clear favorite", "a game with no clear lean",
+    "a pick'em", "a pickem", "a pick em", "dead even", "a dead heat", "anyone's game",
+    "a game with no lean", "a game with no favorite",
+])
+def test_no_pick_phrase_about_the_model_is_rejected(phrase):
+    text = f"Our model calls it {phrase}, but it leans the Texans at 50%."
+    reason = check_narration(text, EVEN)
+    assert reason is not None and reason.startswith("uses no-pick phrase")
+    assert "Texans" in reason
+    assert narrate_mod.reason_category(reason) == "no-pick phrase"
+
+
+@pytest.mark.parametrize("text", [
+    "This one could go either way. Our model leans the Texans at 50%.",
+    "It can go either way in Houston. Our model leans the Texans at 50%.",
+    "Toss-up in Houston. Our model leans the Texans at 50%.",
+    "Coin flip in Houston, and our model leans the Texans at 50%.",
+])
+def test_no_pick_phrase_outside_a_market_sentence_is_rejected(text):
+    reason = check_narration(text, EVEN)
+    assert reason is not None and reason.startswith("uses no-pick phrase")
+
+
+@pytest.mark.parametrize("text", [
+    "The line is a pick'em in Houston. Our model leans the Texans at 50%.",
+    "Vegas calls it a pick'em, and our model leans the Texans by a hair at 50%.",
+    "The betting market sees a coin flip. Our model leans the Texans by a hair at 50%.",
+    "The market sees a pick'em. Our model leans the Texans by a hair at 50%.",
+    "The market has no favorite in Houston. Our model leans the Texans by a hair at 50%.",
+])
+def test_market_pickem_wording_still_passes(text):
+    assert check_narration(text, EVEN) is None
+
+
+def test_market_toss_up_with_a_real_line_is_rejected():
+    facts = replace(EVEN, spread_home=1.0)
+    text = "Vegas sees a toss-up. Our model leans the Texans by a hair at 50%."
+    assert check_narration(text, facts) is not None
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("Our model has the Texans at 50%.", EVEN),
+    ("Our model gives each side 50%.", EVEN),
+    ("Houston beat the Colts 20-17 at home. Our model says 50% for each team.", EVEN),
+    ("Our model has the Jaguars at 50%.", EVEN_AWAY),
+    ("Our model has it at 50% for each side.", replace(EVEN, home_win_prob=0.505)),
+])
+def test_near_even_draft_that_names_no_pick_is_rejected(text, facts):
+    reason = check_narration(text, facts)
+    assert reason is not None and reason.startswith("names no model pick"), reason
+    assert narrate_mod.reason_category(reason) == "no model pick named"
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("Our model leans the Texans by a hair at 50%.", EVEN),
+    ("Our model likes Houston at 50%.", EVEN),
+    ("Our model's pick is the Texans, 50% to 50%.", EVEN),
+    ("Our model leans the Jaguars by a hair at 50%.", EVEN_AWAY),
+    ("The edge goes to Jacksonville in our model, 50% to 50%.", EVEN_AWAY),
+    ("Our model gives the Texans 51% and the Jaguars 49%.", NEAR_EVEN),
+    ("Our model gives the Jaguars just 49%.", NEAR_EVEN),
+    ("Our model makes the Texans a 51% pick.", NEAR_EVEN),
+])
+def test_near_even_draft_that_names_the_pick_passes(text, facts):
+    assert check_narration(text, facts) is None
+
+
+def test_near_even_draft_naming_the_wrong_pick_is_rejected():
+    assert check_narration("Our model leans the Jaguars by a hair at 50%.", EVEN) is not None
+    assert check_narration("Our model leans the Texans by a hair at 50%.", EVEN_AWAY) is not None
+
+
+DK_EVEN = replace(DK51, home_win_prob=0.5001)
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but it leans Dallas.",
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but they lean Dallas.",
+])
+def test_near_even_pick_named_after_a_pronoun_passes(text):
+    assert check_narration(text, DK_EVEN) is None
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but it leans Kansas City.",
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but it leans one way.",
+])
+def test_near_even_pronoun_without_the_right_pick_is_rejected(text):
+    assert check_narration(text, DK_EVEN) is not None
+
+
+def test_near_even_wrong_side_percentage_gets_a_clear_reason():
+    reason = check_narration("Our model has the Chiefs at 51%.", replace(DK51, home_win_prob=0.504))
+    assert reason is not None and reason.startswith("gives Chiefs 51%"), reason
+    assert "leans Cowboys" in reason
+    assert narrate_mod.reason_category(reason) == "wrong percentage for a team"
+
+
+def test_word_limit_rejects_a_long_draft_before_parsing(monkeypatch):
+    def parse(*args, **kwargs):
+        raise AssertionError("parsed a draft over the word limit")
+
+    monkeypatch.setattr(narrate_mod._Sentence, "parse", parse)
+    text = ("Our model's pick is the Chiefs, and the model takes the Chiefs' side. " * 80)[:5000]
+    start = time.perf_counter()
+    reason = check_narration(text, DK70)
+    elapsed = time.perf_counter() - start
+    assert reason is not None and reason.startswith("too long"), reason
+    assert elapsed < 0.1
+
+
+def test_ordinary_game_needs_no_pick_wording():
+    assert check_narration("Our model has the Bears at 54%.", S1) is None
+    assert check_narration("Florida State gets 2.5 at home. Our model says 43%.", S2) is None
+
+
+def test_fact_sheet_always_states_the_model_pick():
+    assert "Model's pick: Texans, by a hair (both round to 50%)" in render_fact_sheet(EVEN)
+    assert "Model's pick: Jaguars, by a hair" in render_fact_sheet(EVEN_AWAY)
+    assert "Model's pick: Bears\n" in render_fact_sheet(S1)
+    assert "by a hair" not in render_fact_sheet(S1)
+
+
+def test_model_pick_follows_the_stored_probability():
+    from app.services.fact_sheet import model_pick
+
+    assert model_pick(EVEN) is EVEN.home
+    assert model_pick(EVEN_AWAY) is EVEN_AWAY.away
+    assert model_pick(replace(S4, home_win_prob=0.5)) is S4.home
+
+
+def test_prompt_says_the_model_always_has_a_pick():
+    prompt = narrate_mod.SYSTEM_PROMPT
+    assert "The model always has a pick" in prompt
+    for phrase in ("toss-up", "coin flip", "pick'em", "too close to call", "no clear favorite"):
+        assert phrase in prompt
+
+
+@pytest.mark.parametrize("p, expected", [
+    (0.4949, True), (0.4999, True), (0.5, True), (0.5001, True), (0.504, True),
+    (0.514, True), (0.486, True), (0.516, False), (0.484, False), (0.52, False), (0.48, False),
+])
+def test_is_near_even_is_the_one_window(p, expected):
+    from app.services.fact_sheet import is_near_even
+
+    assert is_near_even(replace(DK51, home_win_prob=p)) is expected
+
+
+DK_TIE_AWAY = replace(DK51, home_win_prob=0.4999, spread_home=-1.0)
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("Our model has no clear pick, with Dallas favored by 1 in the market.", DK_TIE),
+    ("Our model has no clear pick, with Kansas City favored by 1 in the market.", DK_TIE_AWAY),
+    ("Our model has no clear pick, with Dallas favored by 1 in the market.", DK51),
+    ("The model has no strong pick, Dallas or Kansas City.", DK_TIE),
+    ("The model has no strong pick, Dallas or Kansas City.", replace(DK_TIE, spread_home=None)),
+    ("The model has no strong pick, Dallas or Kansas City.", replace(DK_TIE, spread_home=0.0)),
+    ("Our model barely has a pick, with Dallas favored by 1.", DK_TIE),
+    ("Our model has no clear pick in this one.", DK70),
+    ("Our model has no real pick here, and Dallas sits at 70%.", DK70),
+])
+def test_no_pick_noun_wording_is_rejected_and_never_kept(text, facts):
+    from app.jobs.predict_week import still_true
+
+    assert check_narration(text, facts) is not None
+    assert not still_true(text, facts)
+
+
+@pytest.mark.parametrize("text", [
+    "Dallas threw no picks last week, and our model likes the Cowboys at 70%.",
+    "A pick-six decided the last meeting, and our model likes Dallas at 70%.",
+    "Kansas City is not our pick this week. Our model likes Dallas at 70%.",
+    "Kansas City isn't the model's pick. Our model likes Dallas at 70%.",
+])
+def test_plural_picks_pick_six_and_a_negated_pick_noun_pass(text):
+    assert check_narration(text, DK70) is None
+
+
+@pytest.mark.parametrize("text", [
+    "Our model leans Dallas at 70%, wary of Kansas City's call to start a backup.",
+    "The model weighs Kansas City's choice to start a backup and still leans Dallas at 70%.",
+    "Kansas City's lean roster worries our model, which likes Dallas at 70%.",
+])
+def test_a_team_possessive_is_not_the_models_pick(text):
+    assert check_narration(text, DK70) is None
+
+
+@pytest.mark.parametrize("wrong, right", [
+    ("The model's pick here is Kansas City.", "The model's pick here is Dallas."),
+    ("Our model's top pick this week is Kansas City.",
+     "Our model's top pick this week is Dallas."),
+    ("The model's selection here is Kansas City.", "The model's selection here is Dallas."),
+    ("Our model's top choice today is Kansas City.", "Our model's top choice today is Dallas."),
+])
+def test_a_pick_noun_with_a_short_adverb_is_read(wrong, right):
+    reason = check_narration(wrong, DK70)
+    assert reason is not None and "model's favorite" in reason, reason
+    assert check_narration(right, DK70) is None
+
+
+def test_near_even_pick_credit_needs_a_model_pick_noun():
+    text = "Dallas is the pick of the pundits. Our model has the Chiefs at 50%."
+    reason = check_narration(text, DK_TIE)
+    assert reason is not None and reason.startswith("names no model pick"), reason
+
+
+def test_near_even_wrong_side_percentage_is_rejected_even_with_a_named_pick():
+    text = "Our model leans Dallas by a hair, and the Chiefs are at 51%."
+    reason = check_narration(text, DK_TIE)
+    assert reason is not None and reason.startswith("gives Chiefs 51%"), reason
+
+
+DK70_KC_LINE = replace(DK70, spread_home=-3.0)
+
+
+def test_market_window_does_not_override_an_explicit_model_clause():
+    reason = check_narration("Our model gives Kansas City the edge, favored by 3.", DK70_KC_LINE)
+    assert reason is not None and "model's favorite" in reason, reason
+
+
+@pytest.mark.parametrize("text", [
+    "Our model likes Dallas at 70%, with Kansas City favored by 3.",
+    "Our model gives Dallas the edge at 70%, with Kansas City favored by 3 in the market.",
+    "Our model backs Dallas at 70% even with Kansas City a 3-point favorite.",
+])
+def test_market_favorite_inside_a_model_clause_still_reads_as_the_market(text):
+    assert check_narration(text, DK70_KC_LINE) is None
+
+
+@pytest.mark.parametrize("text, facts", _opener_drafts(right=False))
+def test_an_opener_with_no_or_not_still_reads_the_wrong_pick(text, facts):
+    reason = check_narration(text, facts)
+    assert reason is not None and "model's favorite" in reason, reason
+
+
+@pytest.mark.parametrize("text, facts", _opener_drafts(right=True))
+def test_an_opener_with_no_or_not_and_the_right_pick_passes(text, facts):
+    assert check_narration(text, facts) is None
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has Kansas City favored by 3.",
+    "Our model makes Kansas City a 3-point favorite.",
+    "The model sees the Chiefs as a 3-point favorite.",
+])
+def test_a_favorite_the_model_has_is_the_models_claim(text):
+    reason = check_narration(text, DK70_KC)
+    assert reason is not None and "model's favorite" in reason, reason
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has Dallas favored by 3.",
+    "Our model makes Dallas a 3-point favorite.",
+])
+def test_a_favorite_the_model_has_passes_for_the_right_team(text):
+    assert check_narration(text, replace(DK70, spread_home=3.0)) is None
+
+
+def test_a_very_long_draft_is_rejected_by_characters():
+    text = "Our model likes Dallas at 70%. " + "x" * 1000
+    reason = check_narration(text, DK70)
+    assert reason is not None and reason.startswith("too long"), reason

@@ -15,7 +15,9 @@ from app.config import get_settings
 from app.services.fact_sheet import (
     GameFacts,
     TeamFacts,
+    is_near_even,
     market_favorite,
+    model_pick,
     render_fact_sheet,
     trusted_numbers_text,
 )
@@ -24,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 MAX_WORDS = 90
+MAX_CHARS = 1000
 API_TIMEOUT_S = 30.0
 
 SYSTEM_PROMPT = """You write the "From the booth" preview for one football game on Blitzcast, \
@@ -47,6 +50,9 @@ ranking, record, score, streak, or history that is not written there.
 - The betting market: the favored team is "favored by" or "laying" the points, the underdog is \
 "getting" them. Use the exact line from the fact sheet. If it says no betting line is posted, \
 do not mention Vegas, the line, the spread, or the market at all.
+- The model always has a pick, the team on the fact sheet's "Model's pick" line. Name it, even \
+when both percentages are 50% (say the model leans that team by a hair). Never describe the \
+model's view as a toss-up, coin flip, pick'em, too close to call, no clear favorite, or no lean.
 - The model and the market can disagree. Say so plainly when they do.
 - If a factor says its window still includes last season's games, do not call it recent form.
 - Never say Elo, EPA, SHAP, folks, locked, not even close, wire-to-wire, and company, or sitting \
@@ -209,11 +215,58 @@ _DOG_RE = re.compile(
     r"\bunderdogs?\b|\b(?:the|a|an)\s+(?:road\s+|home\s+)?dogs?\b", re.IGNORECASE
 )
 # "Vegas likes X" / "our model leans X": the team is the object after the verb.
+# "takes into account" and "picks up on" are not picks.
 _AGENT_RE = re.compile(
     r"\b(model|vegas|market|books|oddsmakers|sportsbooks?|line)(?:['’]s)?\s+(?:\w+\s+)?"
-    r"(?:likes|leans|backs|favors|favours|prefers|loves|trusts|sides\s+with|is\s+on)\b",
+    r"(likes|leans|backs|favors|favours|prefers|loves|trusts|sides\s+with|is\s+on"
+    r"|picks(?!\s+up\b)|takes(?!\s+(?:into|in|on|note|a\s+look|issue|seriously)\b)"
+    r"|goes\s+with|pick\s+is)\b",
     re.IGNORECASE,
 )
+# "it leans Dallas" after "Our model has ...": a pick named after a pronoun.
+_PRONOUN_PICK_RE = re.compile(
+    r"\b(?:it|he|she|they|the\s+numbers)\s+(?:still\s+|just\s+|slightly\s+)?"
+    r"(?:leans?|likes?|favou?rs?|edges?|gives?\s+the\s+edge\s+to|sides?\s+with)\b",
+    re.IGNORECASE,
+)
+# Wording that says the model has no pick. Only a market clause about a 0 line may use it.
+_NO_PICK_RE = re.compile(
+    r"\bcoin[\s-]?flips?\b|\btoss[\s-]?ups?\b|\btoo\s+close\s+to\s+call\b"
+    r"|\bno\s+(?:clear\s+)?(?:favou?rite|lean)\b|\b(?:could|can)\s+go\s+either\s+way\b"
+    r"|\bdead\s+heat\b|\banyone['’]s\s+game\b"
+    r"|\bno\s+(?:clear\s+|real\s+|strong\s+|obvious\s+)?pick\b(?![\s-]six)"
+    r"|\bbarely\s+(?:has|have|had)\s+a\s+pick\b",
+    re.IGNORECASE,
+)
+# No-pick wording that also has other uses ("the series is dead even", "the
+# line is a pick'em"): only a clause about the model counts.
+_MODEL_NO_PICK_RE = re.compile(r"\bpick\s?['’]?\s?em\b|\bdead\s+even\b", re.IGNORECASE)
+_PICK_NOUN_RE = re.compile(
+    r"\bpick\b(?!\s?['’]?\s?em)(?![\s-]six\b)"
+    r"|(?:(?<=\bmodel['’]s )|(?<=\bour )|(?<=\bits )|(?<=\bmodel['’]s top )|(?<=\bour top ))"
+    r"(?:lean|call|choice|selection)\b",
+    re.IGNORECASE,
+)
+_PICK_COLON_RE = re.compile(r"\s*:\s*(?:the\s+)?")
+# "The model's pick here is X": a short adverb may sit between the noun and the verb.
+_PICK_ADVERB_RE = re.compile(r"\s+(?:here|this\s+week|today)\b", re.IGNORECASE)
+# "Kansas City is not our pick", "no clear pick": a negated pick noun names no pick.
+# Only a direct negation counts: "No doubt our pick is X" still names X.
+_NEGATED_RE = re.compile(
+    r"(?:\bno|\bnot|\bnever|n['’]t)\s+"
+    r"(?:(?:a|an|the|our|its|model['’]s|clear|real|strong|obvious|top)\s+){0,3}$",
+    re.IGNORECASE,
+)
+# "takes the Chiefs' side": a possessive pick word is a pick of that team.
+_POSSESSIVE_PICK_RE = re.compile(
+    r"['’]s?\s+(?:side|corner|way|team|camp|pick|lean)\b", re.IGNORECASE
+)
+# "The pick from our model is the Chiefs": the team comes after "is".
+_PICK_IS_RE = re.compile(
+    r"pick\s+(?:from|of)\s+(?:our\s+|the\s+)?model\s+(?:is|goes\s+to)\s+(?:the\s+)?",
+    re.IGNORECASE,
+)
+_OUR_RE = re.compile(r"\bour\s+$", re.IGNORECASE)
 _LINE_NUM_RE = re.compile(
     rf"\bfavou?red\s+by\s+(?:just\s+|only\s+)?({_NUM})"
     rf"|\b(?:laying|lays|giving|gives|getting|gets|plus|minus)\s+(?:just\s+|only\s+)?"
@@ -228,6 +281,20 @@ _TOTAL_NUM_RE = re.compile(
     re.IGNORECASE,
 )
 _MARKET_ONLY_FAV_RE = re.compile(rf"{_FAVORED_BY}|{_N_POINT}", re.IGNORECASE)
+# "Our model has Kansas City favored by 3": the model is the subject, so the
+# favorite is the model's claim even in market wording. "in the market" after
+# it gives the claim back to the market.
+_MODEL_HAS_RE = re.compile(
+    r"\bmodel(?:['’]s)?\s+(?:\w+\s+)?(?:has|makes|sees|rates|projects|calls|gives|puts)\s+"
+    r"(?:the\s+)?",
+    re.IGNORECASE,
+)
+_MODEL_HAS_FAV_RE = re.compile(
+    rf"\s+(?:as\s+)?(?:(?:a|an|the)\s+)?(?:{_NUM}[\s-]+points?\s+)?favou?r(?:ed|ites?)\b"
+    rf"(?!(?:\s+by\s+(?:just\s+|only\s+)?{_NUM}(?:\s+points?)?)?\s+(?:in|by|with|at|on)\s+"
+    r"(?:the\s+)?(?:market|vegas|books|sportsbooks?|oddsmakers?|betting))",
+    re.IGNORECASE,
+)
 _PAIRED_PCT_RE = re.compile(r"\s*(?:to|vs\.?|versus|over|against|-)\s*", re.IGNORECASE)
 _AS_ROLE_RE = re.compile(r"\bas\s+(?:an?\s+|the\s+)?(?:[\w.'’-]+\s+){0,2}$", re.IGNORECASE)
 _FOR_RE = re.compile(r"\s+for\s+(?:the\s+)?", re.IGNORECASE)
@@ -426,6 +493,8 @@ _CATEGORIES: tuple[tuple[str, str], ...] = (
     (r"^puts .* on the wrong team", "player on the wrong team"),
     (r"betting favorite|favorite is getting points|wrong team is the", "market favorite wrong"),
     (r"model's favorite", "model favorite wrong"),
+    (r"^uses no-pick phrase", "no-pick phrase"),
+    (r"^names no model pick", "no model pick named"),
 )
 _COMPILED_CATEGORIES = tuple((re.compile(p), label) for p, label in _CATEGORIES)
 
@@ -611,11 +680,11 @@ class _Sentence:
         return next((m[2] for m in self.mentions if m[0] == pos), None)
 
 
-def _percentage_reason(s: _Sentence, facts: GameFacts) -> str | None:
+def _percentage_sides(s: _Sentence) -> list[tuple[re.Match, str]]:
     """Each percentage belongs to the team named nearest before it in its
     clause (else after it). "55% to 45%" gives the second number to the other
     team, and "55% for Ohio State" to the team after "for"."""
-    prev: tuple[int, str] | None = None
+    found, prev = [], None
     for m in _PCT_RE.finditer(s.text):
         side = None
         if prev and _PAIRED_PCT_RE.fullmatch(s.text[prev[0]:m.start()]):
@@ -624,8 +693,13 @@ def _percentage_reason(s: _Sentence, facts: GameFacts) -> str | None:
             follow = _FOR_RE.match(s.text, m.end())
             side = (follow and s.side_starting_at(follow.end())) or s.side_at(m.start(), m.end())
         prev = (m.end(), side) if side else None
-        if side is None:
-            continue
+        if side is not None:
+            found.append((m, side))
+    return found
+
+
+def _percentage_reason(s: _Sentence, facts: GameFacts) -> str | None:
+    for m, side in _percentage_sides(s):
         team = _team(facts, side)
         p = facts.home_win_prob if side == "home" else 1 - facts.home_win_prob
         expected = round(p * 100)
@@ -690,8 +764,7 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
         side = s.side_at(m.start(), m.end())
         if side is None:
             continue
-        window = s.text[max(0, m.start() - 25):m.end() + 15]
-        market_only = market_only or bool(_MARKET_ONLY_FAV_RE.search(window))
+        market_only = market_only or _market_only_claim(s, m)
         as_market = market or _contrasted_with_model(s, m.start())
         if market_only or (as_market and not s.in_model_clause(m.start())):
             reason = _market_claim_reason(side, role, facts)
@@ -699,8 +772,14 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
             reason = _model_claim_reason(side, role, facts)
         if reason:
             return reason
+    for m in _MODEL_HAS_RE.finditer(s.text):
+        team = next((x for x in s.mentions if x[0] == m.end()), None)
+        if team and _MODEL_HAS_FAV_RE.match(s.text, team[1]):
+            reason = _model_claim_reason(team[2], "favorite", facts)
+            if reason:
+                return reason
     for m in _AGENT_RE.finditer(s.text):
-        side = s.side_at(m.start(), m.end(), prefer_after=True)
+        side = _agent_side(s, m)
         if side is None:
             continue
         if m.group(1).lower() == "model":
@@ -709,6 +788,133 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
             reason = _market_claim_reason(side, "favorite", facts)
         if reason:
             return reason
+    for m in _PICK_NOUN_RE.finditer(s.text):
+        if not _is_model_pick_noun(s, m.start()):
+            continue
+        side = _pick_noun_side(s, m)
+        reason = side and _model_claim_reason(side, "favorite", facts)
+        if reason:
+            return reason
+    return None
+
+
+def _market_only_claim(s: _Sentence, m: re.Match) -> bool:
+    """"favored by 3" and "a 3-point favorite" are market wording. A claim next
+    to one is already read as the market's, since the sentence is a market one."""
+    return any(x.start() <= m.start() < x.end() for x in _MARKET_ONLY_FAV_RE.finditer(s.text))
+
+
+def _agent_side(s: _Sentence, m: re.Match) -> str | None:
+    """The team an agent verb names. "takes the Cowboys' pass rush seriously"
+    is about something of the team's, not a pick of it; "takes the Chiefs'
+    side" is a pick."""
+    if m.group(2).lower() in ("takes", "picks"):
+        follow = next((x for x in s.mentions if x[0] >= m.end()), None)
+        if follow and s.text[follow[1]:follow[1] + 1] in ("'", "’"):
+            return follow[2] if _POSSESSIVE_PICK_RE.match(s.text, follow[1]) else None
+    return s.side_at(m.start(), m.end(), prefer_after=True)
+
+
+def _is_model_pick_noun(s: _Sentence, pos: int) -> bool:
+    cs, _ = s.clause(pos)
+    if _NEGATED_RE.search(s.text, cs, pos):
+        return False
+    return s.in_model_clause(pos) or bool(_OUR_RE.search(s.text, 0, pos))
+
+
+def _pick_noun_side(s: _Sentence, m: re.Match) -> str | None:
+    """A team before "pick" in its clause, else one named right after it ("the
+    model's pick is Houston", "the pick from our model is the Chiefs"), else
+    a pronoun's antecedent."""
+    cs, ce = s.clause(m.start())
+    if not any(x[0] >= cs and x[1] <= m.start() for x in s.mentions):
+        after = next((x for x in s.mentions if x[0] >= m.end() and x[1] <= ce), None)
+        adverb = _PICK_ADVERB_RE.match(s.text, m.end())
+        gap = adverb.end() if adverb else m.end()
+        if after and (
+            _AFTER_GAP_RE.fullmatch(s.text, gap, after[0])
+            or _PICK_COLON_RE.fullmatch(s.text, gap, after[0])
+        ):
+            return after[2]
+        follow = _PICK_IS_RE.match(s.text, m.start())
+        if follow and s.side_starting_at(follow.end()):
+            return s.side_starting_at(follow.end())
+    return s.side_at(m.start(), m.end())
+
+
+def no_pick_phrase(text: str) -> str | None:
+    """The first wording that says the model has no pick, or None."""
+    m = _NO_PICK_RE.search(text)
+    return m.group(0).lower() if m else None
+
+
+def _no_pick_reason(s: _Sentence, is_market: bool, facts: GameFacts) -> str | None:
+    """The model always has a pick. Only a market clause about a 0 line ("Vegas
+    calls it a toss-up") may use no-pick wording, and "pick'em" / "dead even"
+    count only in a clause about the model."""
+    for m in _NO_PICK_RE.finditer(s.text):
+        if is_market and facts.spread_home == 0 and not s.in_model_clause(m.start()):
+            continue
+        return (
+            f"uses no-pick phrase '{m.group(0).lower()}' for the model's view "
+            f"(the model always has a pick, here {model_pick(facts).name})"
+        )
+    for m in _MODEL_NO_PICK_RE.finditer(s.text):
+        if s.in_model_clause(m.start()):
+            return (
+                f"uses no-pick phrase '{m.group(0).lower()}' for the model's view "
+                f"(the model always has a pick, here {model_pick(facts).name})"
+            )
+    return None
+
+
+def _names_model_pick(parsed: list[_Sentence], market: list[bool], facts: GameFacts) -> bool:
+    """True when some sentence says which team the model picks: "the model
+    leans X" (or "it leans X" in a sentence about the model), an edge or pick
+    given to X outside a market clause, or a percentage that puts X above 50
+    (or the other team below)."""
+    pick = "home" if model_pick(facts) is facts.home else "away"
+    for s, is_market in zip(parsed, market, strict=True):
+        for m in _AGENT_RE.finditer(s.text):
+            if m.group(1).lower() == "model" and _agent_side(s, m) == pick:
+                return True
+        if _MODEL_RE.search(s.text):
+            for m in _PRONOUN_PICK_RE.finditer(s.text):
+                after = next((x for x in s.mentions if x[0] >= m.end()), None)
+                if after and after[2] == pick and _AFTER_GAP_RE.fullmatch(
+                    s.text, m.end(), after[0]
+                ):
+                    return True
+        for m in _FAV_RE.finditer(s.text):
+            if _MARKET_ONLY_FAV_RE.search(s.text[max(0, m.start() - 25):m.end() + 15]):
+                continue
+            in_model = not is_market or s.in_model_clause(m.start())
+            if in_model and s.side_at(m.start(), m.end()) == pick:
+                return True
+        for m in _PICK_NOUN_RE.finditer(s.text):
+            if _is_model_pick_noun(s, m.start()) and _pick_noun_side(s, m) == pick:
+                return True
+        for m, side in _percentage_sides(s):
+            pct = float(m.group(1))
+            if (side == pick and pct > 50) or (side != pick and pct < 50):
+                return True
+    return False
+
+
+def _wrong_side_percentage_reason(parsed: list[_Sentence], facts: GameFacts) -> str | None:
+    """Near even, a percentage within the tolerance can still put the wrong team ahead."""
+    pick = model_pick(facts)
+    pick_side = "home" if pick is facts.home else "away"
+    for s in parsed:
+        for m, side in _percentage_sides(s):
+            pct = float(m.group(1))
+            if (side != pick_side and pct > 50) or (side == pick_side and pct < 50):
+                team = _team(facts, side)
+                p = facts.home_win_prob if side == "home" else 1 - facts.home_win_prob
+                return (
+                    f"gives {team.name} {m.group(1)}% but the model has {team.name} at "
+                    f"{round(p * 100)}% and leans {pick.name}"
+                )
     return None
 
 
@@ -765,7 +971,7 @@ def _surname(name: str) -> str | None:
     return words[-1] if len(words) > 1 else None
 
 
-def _is_toss_up(facts: GameFacts) -> bool:
+def _allows_fifty_fifty(facts: GameFacts) -> bool:
     return 48 <= round(facts.home_win_prob * 100) <= 52 or facts.spread_home == 0
 
 
@@ -789,14 +995,14 @@ def _numeric_facts_reason(text: str, sheet: str, facts: GameFacts | None = None)
     (No. 3, #3) must be a team's current rank, or its previous one after "up
     from" / "down from". Lines and
     totals are checked by the market logic; years and Week N are never matched.
-    "50-50" is fine in a toss-up, and "4-3 defense" / "1-0 mindset" are not
+    "50-50" is fine in a near-even game, and "4-3 defense" / "1-0 mindset" are not
     scores. Invented history with no number ("haven't lost at home all season")
     is not checked."""
     sheet = " ".join(sheet.split())
     for m in _SCORE_RE.finditer(text):
         if _NOT_A_SCORE_RE.match(text, m.start()):
             continue
-        if m.group(0) == "50-50" and facts is not None and _is_toss_up(facts):
+        if m.group(0) == "50-50" and facts is not None and _allows_fifty_fifty(facts):
             continue
         if not re.search(rf"(?<![\w.-]){re.escape(m.group(0))}(?![\w-]|\.\d)", sheet):
             return f"cites {m.group(0)} but the fact sheet has no such score or record"
@@ -879,6 +1085,8 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
     words = len(text.split())
     if words > MAX_WORDS:
         return f"too long ({words} words, limit {MAX_WORDS})"
+    if len(text) > MAX_CHARS:
+        return f"too long ({len(text)} characters, limit {MAX_CHARS})"
     sentences = _sentences(text)
     if len(sentences) > 4:
         return "more than 4 sentences"
@@ -923,9 +1131,18 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
         reason = _claims_reason(s, facts, is_market)
         if not reason and is_market:
             reason = _market_numbers_reason(s, facts)
-        reason = reason or _injury_team_reason(s, facts)
+        reason = reason or _injury_team_reason(s, facts) or _no_pick_reason(s, is_market, facts)
         if reason:
             return reason
+    if is_near_even(facts):
+        reason = _wrong_side_percentage_reason(parsed, facts)
+        if reason:
+            return reason
+        if not _names_model_pick(parsed, market, facts):
+            return (
+                "names no model pick (the percentages are nearly even, so say the model leans "
+                f"{model_pick(facts).name})"
+            )
     return None
 
 

@@ -154,7 +154,8 @@ the slate continues. The run prints `predictions: N ok, F failed`, then a
 coverage line, and exits 1 if any game failed or any selected game has no
 prediction or no booth section. `python -m app.jobs.coverage` runs that same
 coverage check alone and read-only. A dead-even probability is stored as
-0.5001 or 0.4999, toward the betting favorite (home when there is no line).
+0.5001 or 0.4999, toward the spread favorite, else the moneyline favorite,
+else home.
 
 `narration_eval` only reads the database. `--stored` re-checks each game's
 saved narration against today's guardrail (free, no API calls). Without it,
@@ -162,8 +163,9 @@ fresh narrations are generated, which **spends Anthropic tokens** (up to 3
 calls per game) and refuses to run unless you also pass `--spend-tokens`.
 Every mode also verifies the deterministic fallback passes the guardrail and
 exits 1 if it does not. Each `predict_week` run ends with
-`narration: N written, K kept, F fallback, L minimal, J none` and a `WARNING:`
-line when any game has no narration.
+`narration: N written, K kept, F fallback, L minimal, J none` (preceded by
+`narration: near-even games written from the template by design: N` when
+nonzero) and a `WARNING:` line when any game has no narration.
 
 `/api/games` and `/api/schedule` also take `status=all|final|upcoming`
 (default `all`), filtering on whether both scores are present, not on the
@@ -207,7 +209,10 @@ serve fixture data so the frontend can develop without a database.
   or long digit runs. If no draft passes, the stored narration is kept only
   when it is still exactly true today (`still_true`), else a deterministic
   template is used, else a minimal model-only line when even the fact sheet
-  cannot be built.
+  cannot be built. The booth always names the model's pick, and a draft or
+  stored text that calls it a toss-up or coin flip is rejected. A near-even
+  game (the home percentage rounds to 49, 50 or 51) makes no API call and
+  gets the template.
 
 ## Model
 

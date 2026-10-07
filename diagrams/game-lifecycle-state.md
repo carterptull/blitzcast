@@ -35,7 +35,7 @@ verdict grading, and the season record.
 returns nothing to grade when there's no prediction, either score is missing, the game tied, or
 the probability is exactly 0.5; otherwise it compares the side the model favored with the side
 that won. Newly written predictions are never exactly 0.5, because `predict_week` nudges an
-exact tie 0.0001 toward the betting favorite, so the exact 0.5 rule only matters for finished
+exact tie 0.0001 toward the spread favorite, else the moneyline favorite, else home, so the exact 0.5 rule only matters for finished
 games stored before v1.1.2. The same function drives the "Called it" / "Missed" badge on the slate and matchup page.
 
 **The season record is stricter than the badge.** `/api/record` only counts a game when the
@@ -65,4 +65,4 @@ date is more than 36 hours past (`STALE_AFTER`, the same bound `default_week` us
 cancelled TBD game is not re-predicted forever; the coverage check shares that selection.
 
 ---
-_Last updated: 2026-10-03 · reflects v1.1.2_
+_Last updated: 2026-10-07 · reflects v1.1.3_

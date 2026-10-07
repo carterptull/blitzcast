@@ -47,4 +47,4 @@ injuries endpoint (falling back to nflverse if it fails), and team logos load fr
 That includes CFB: the logo URLs are seeded from CollegeFootballData, but they point at ESPN.
 
 ---
-_Last updated: 2026-10-03 · reflects v1.1.2_
+_Last updated: 2026-10-07 · reflects v1.1.3_
