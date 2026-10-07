@@ -37,6 +37,6 @@
     "eslint": {
       "brace-expansion": "^1.1.16"
     },
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.5"
   }
 }
