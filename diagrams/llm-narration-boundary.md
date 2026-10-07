@@ -96,7 +96,9 @@ line of exactly 0, such as "the line is a pick'em", is still allowed). Within on
 draft that names no model pick is rejected too. Near-even games never reach Claude at all: when
 the home percentage rounds to 49, 50 or 51 (`is_near_even`), `predict_week` skips the API call
 and the kept step and stores the template, because three reviews kept finding near-even phrasings
-a phrase list could not prove away. They count as fallback in the summary line, and a line before
+a phrase list could not prove away. The template was swept over the whole window (about 0.485 to
+0.515): 38,272 texts across spreads, moneylines, NFL and CFB, none rejected, each naming the
+stored side. They count as fallback in the summary line, and a line before
 it gives how many were near even by design. When the rounded percentages tie, the template says
 the model leans that team "by a hair" or "by the slimmest of margins", 50% for each side, and the
 minimal line says "by the slimmest of margins". For ordinary games the no-pick rule costs some

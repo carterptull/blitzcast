@@ -199,6 +199,32 @@ def test_fresh_mode_with_flag_uses_generate_and_hides_raw_errors(eval_db, capsys
     assert "api error" in out
 
 
+def test_fresh_mode_skips_near_even_games_like_production(eval_db, capsys, monkeypatch):
+    eval_db.query(Prediction).filter_by(game_id="2026_01_PHI_DAL").one().home_win_prob = 0.503
+    eval_db.commit()
+    calls = []
+
+    def fake_generate(facts):
+        calls.append(facts.home.abbr)
+        return NarrationResult(text=None, attempts=1, rejections=["empty response"])
+
+    monkeypatch.setattr(narration_eval, "generate", fake_generate)
+    code = narration_eval.main(["--sport", "nfl", "--week", "1", "--spend-tokens"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert calls == ["KC"]
+    assert "2026_01_PHI_DAL near-even: template only fallback=pass" in out
+    assert "fallback_passed=2/2" in out
+
+
+def test_fallback_ok_uses_the_production_fallback_check(eval_db, monkeypatch):
+    facts = _facts(eval_db, "2026_01_PHI_DAL", 0.55)
+    text = fallback_narration(facts).replace("Our model", "Our model:", 1)
+    assert "Our model:" in text and check_narration(text, facts) is None
+    monkeypatch.setattr(narration_eval, "fallback_narration", lambda f: text)
+    assert not narration_eval._fallback_ok(facts)
+
+
 def test_evaluate_rolls_back_after_a_database_error(eval_db, capsys, monkeypatch):
     from sqlalchemy.exc import SQLAlchemyError
 

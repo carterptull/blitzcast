@@ -251,8 +251,10 @@ _PICK_COLON_RE = re.compile(r"\s*:\s*(?:the\s+)?")
 # "The model's pick here is X": a short adverb may sit between the noun and the verb.
 _PICK_ADVERB_RE = re.compile(r"\s+(?:here|this\s+week|today)\b", re.IGNORECASE)
 # "Kansas City is not our pick", "no clear pick": a negated pick noun names no pick.
+# Only a direct negation counts: "No doubt our pick is X" still names X.
 _NEGATED_RE = re.compile(
-    r"(?:\b(?:no|not|never|without|barely)|n['’]t)\b(?:\s+[\w'’]+){0,3}\s+$",
+    r"(?:\bno|\bnot|\bnever|n['’]t)\s+"
+    r"(?:(?:a|an|the|our|its|model['’]s|clear|real|strong|obvious|top)\s+){0,3}$",
     re.IGNORECASE,
 )
 # "takes the Chiefs' side": a possessive pick word is a pick of that team.
@@ -279,6 +281,20 @@ _TOTAL_NUM_RE = re.compile(
     re.IGNORECASE,
 )
 _MARKET_ONLY_FAV_RE = re.compile(rf"{_FAVORED_BY}|{_N_POINT}", re.IGNORECASE)
+# "Our model has Kansas City favored by 3": the model is the subject, so the
+# favorite is the model's claim even in market wording. "in the market" after
+# it gives the claim back to the market.
+_MODEL_HAS_RE = re.compile(
+    r"\bmodel(?:['’]s)?\s+(?:\w+\s+)?(?:has|makes|sees|rates|projects|calls|gives|puts)\s+"
+    r"(?:the\s+)?",
+    re.IGNORECASE,
+)
+_MODEL_HAS_FAV_RE = re.compile(
+    rf"\s+(?:as\s+)?(?:(?:a|an|the)\s+)?(?:{_NUM}[\s-]+points?\s+)?favou?r(?:ed|ites?)\b"
+    rf"(?!(?:\s+by\s+(?:just\s+|only\s+)?{_NUM}(?:\s+points?)?)?\s+(?:in|by|with|at|on)\s+"
+    r"(?:the\s+)?(?:market|vegas|books|sportsbooks?|oddsmakers?|betting))",
+    re.IGNORECASE,
+)
 _PAIRED_PCT_RE = re.compile(r"\s*(?:to|vs\.?|versus|over|against|-)\s*", re.IGNORECASE)
 _AS_ROLE_RE = re.compile(r"\bas\s+(?:an?\s+|the\s+)?(?:[\w.'’-]+\s+){0,2}$", re.IGNORECASE)
 _FOR_RE = re.compile(r"\s+for\s+(?:the\s+)?", re.IGNORECASE)
@@ -756,6 +772,12 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
             reason = _model_claim_reason(side, role, facts)
         if reason:
             return reason
+    for m in _MODEL_HAS_RE.finditer(s.text):
+        team = next((x for x in s.mentions if x[0] == m.end()), None)
+        if team and _MODEL_HAS_FAV_RE.match(s.text, team[1]):
+            reason = _model_claim_reason(team[2], "favorite", facts)
+            if reason:
+                return reason
     for m in _AGENT_RE.finditer(s.text):
         side = _agent_side(s, m)
         if side is None:
@@ -777,13 +799,9 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
 
 
 def _market_only_claim(s: _Sentence, m: re.Match) -> bool:
-    """"favored by 3" and "a 3-point favorite" are market wording. A claim
-    next to one ("the edge, favored by 3") is the market's too, unless its
-    clause names the model."""
-    if any(x.start() <= m.start() < x.end() for x in _MARKET_ONLY_FAV_RE.finditer(s.text)):
-        return True
-    window = s.text[max(0, m.start() - 25):m.end() + 15]
-    return bool(_MARKET_ONLY_FAV_RE.search(window)) and not s.in_model_clause(m.start())
+    """"favored by 3" and "a 3-point favorite" are market wording. A claim next
+    to one is already read as the market's, since the sentence is a market one."""
+    return any(x.start() <= m.start() < x.end() for x in _MARKET_ONLY_FAV_RE.finditer(s.text))
 
 
 def _agent_side(s: _Sentence, m: re.Match) -> str | None:

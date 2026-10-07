@@ -505,6 +505,19 @@ def test_main_writes_near_even_games_from_the_template_and_says_so(db, monkeypat
     assert all("Our model" in text for text in _stored_texts(db).values())
 
 
+def test_a_near_even_game_that_falls_to_the_minimal_line_counts_as_minimal(
+    db, monkeypatch, capsys
+):
+    fake, calls = _recording_narrator()
+    out, _ = _run_main(
+        db, monkeypatch, fake, capsys, model=_NearEvenModel(),
+        fallback_narration=lambda facts: "Chiefs by 77%.",
+    )
+    assert calls == []
+    assert "narration: 0 written, 0 kept, 0 fallback, 2 minimal, 0 none" in out
+    assert "near-even" not in out
+
+
 def test_main_prints_no_near_even_line_for_ordinary_games(db, monkeypatch, capsys):
     out, _ = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys)
     assert "near-even" not in out

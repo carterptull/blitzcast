@@ -5,8 +5,11 @@ Usage: python -m app.jobs.narration_eval --sport nfl --week 4
 
 --stored re-checks each game's saved narration against today's guardrail
 (free, no API calls). Without it, fresh narrations are generated, which
-spends Anthropic tokens and needs --spend-tokens. Every mode also checks that
-the deterministic fallback passes the guardrail, and exits 1 if it does not.
+spends Anthropic tokens and needs --spend-tokens. Like production, fresh mode
+never sends a near-even game to Claude: it is reported as "near-even: template
+only" and left out of the pass counts. Every mode also checks that the
+deterministic fallback passes production's fallback check, and exits 1 if it
+does not.
 The DB is only read: the session is rolled back and never committed.
 """
 
@@ -23,8 +26,8 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.jobs.predict_week import facts_for_row
 from app.models import Prediction
-from app.services.fact_sheet import GameFacts
-from app.services.fallback_narration import fallback_narration
+from app.services.fact_sheet import GameFacts, is_near_even
+from app.services.fallback_narration import fallback_narration, fallback_reason
 from app.services.narrate import NarrationResult, check_narration, generate
 from app.services.narrate import reason_category as narration_reason_category
 from app.services.predictions import poll_ranks_entering
@@ -64,7 +67,7 @@ def _read_session() -> Iterator[Session]:
 
 def _fallback_ok(facts: GameFacts) -> bool:
     try:
-        return check_narration(fallback_narration(facts), facts) is None
+        return fallback_reason(fallback_narration(facts), facts) is None
     except Exception:
         return False
 
@@ -128,7 +131,11 @@ def evaluate(
             results.append((game_id, NarrationResult(None, 0, [FACTS_ERROR])))
             continue
         fallback[game_id] = _fallback_ok(facts)
-        res = _stored_result(pred.llm_narrative, facts) if stored else generate(facts)
+        if not stored and is_near_even(facts):
+            ok = "pass" if fallback[game_id] else "FAIL"
+            print(f"{game_id} near-even: template only fallback={ok}")
+            continue
+        res =_stored_result(pred.llm_narrative, facts) if stored else generate(facts)
         results.append((game_id, res))
         print(_line(game_id, res, stored, fallback[game_id]))
         if res.text:

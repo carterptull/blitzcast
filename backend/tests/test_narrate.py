@@ -300,6 +300,33 @@ DK62 = _facts(DAL, KC, 0.62, 3.0, sport="NFL", when="Sunday afternoon")
 DK35 = _facts(DAL, KC, 0.35, -3.0, sport="NFL", when="Sunday afternoon")
 DK51 = _facts(DAL, KC, 0.51, 1.0, sport="NFL", when="Sunday afternoon")
 DK_TIE = replace(DK51, home_win_prob=0.5001)
+# Dallas is the model's pick at 70%, and the market favors Kansas City by 3.
+DK70_KC = replace(DK70, spread_home=-3.0)
+
+# Openers that contain "no" or "not" but do not negate the pick noun after them.
+NEGATION_OPENERS = (
+    "No doubt", "No question", "No surprise", "Not surprisingly", "Without question",
+    "It's no secret", "Not only",
+)
+PICK_NOUNS = (
+    "our pick", "our lean", "the model's pick", "the model's call", "our call",
+    "the model's top pick", "our selection",
+)
+# (facts, wrong team names, right team names)
+OPENER_GAMES = (
+    (DK70, ("Kansas City", "the Chiefs"), ("Dallas", "the Cowboys")),
+    (DK35, ("Dallas", "the Cowboys"), ("Kansas City", "the Chiefs")),
+)
+
+
+def _opener_drafts(right: bool) -> list[tuple[str, GameFacts]]:
+    return [
+        (f"{opener} {noun} is {team}.", facts)
+        for facts, wrong_names, right_names in OPENER_GAMES
+        for team in (right_names if right else wrong_names)
+        for opener in NEGATION_OPENERS
+        for noun in PICK_NOUNS
+    ]
 
 
 def _known_limit(text, facts, why):
@@ -450,6 +477,15 @@ CORPUS_TRUE = [
     ("The model takes the Cowboys' side this week.", DK70),
     ("The all-time series is dead even, and our model leans the Cowboys by a hair at 50%.",
      DK_TIE),
+    # The market's favorite named honestly next to the model's pick.
+    ("Our model likes Dallas at 70%, with Kansas City favored by 3.", DK70_KC),
+    ("The market has Kansas City favored by 3, but our model likes Dallas.", DK70_KC),
+    ("Dallas is the model's pick even though Kansas City is favored by 3.", DK70_KC),
+    # A directly negated pick noun names no pick.
+    ("Kansas City is not our pick this week.", DK70),
+    ("Kansas City isn't the model's pick.", DK70),
+    ("Kansas City is not the model's top pick this week, and our model likes Dallas at 70%.",
+     DK70),
 ]
 
 
@@ -597,6 +633,17 @@ CORPUS_FALSE = [
     # No-pick wording about the model at an ordinary game.
     ("The model has no favorite here, and Dallas sits at 70%.", DK70),
     ("Our model has no lean in this one, with Dallas at 70%.", DK70),
+    # An opener with "no" or "not" does not negate the pick noun after it.
+    ("No doubt our pick is Kansas City.", DK70),
+    ("No question our model's call is the Chiefs this week.", DK70),
+    ("Kansas City is barely our pick.", DK70),
+    ("Kansas City is without a doubt our pick.", DK70),
+    ("Kansas City is not only our pick.", DK70),
+    ("Kansas City can't miss as our pick.", DK70),
+    *_opener_drafts(right=False),
+    # The model is the subject, and the team it "has" favored is the wrong one.
+    ("Our model has Kansas City favored by 3.", DK70_KC),
+    ("Our model makes Kansas City a 3-point favorite.", DK70_KC),
 ]
 
 
@@ -1583,6 +1630,7 @@ def test_no_pick_noun_wording_is_rejected_and_never_kept(text, facts):
     "Dallas threw no picks last week, and our model likes the Cowboys at 70%.",
     "A pick-six decided the last meeting, and our model likes Dallas at 70%.",
     "Kansas City is not our pick this week. Our model likes Dallas at 70%.",
+    "Kansas City isn't the model's pick. Our model likes Dallas at 70%.",
 ])
 def test_plural_picks_pick_six_and_a_negated_pick_noun_pass(text):
     assert check_narration(text, DK70) is None
@@ -1637,6 +1685,35 @@ def test_market_window_does_not_override_an_explicit_model_clause():
 ])
 def test_market_favorite_inside_a_model_clause_still_reads_as_the_market(text):
     assert check_narration(text, DK70_KC_LINE) is None
+
+
+@pytest.mark.parametrize("text, facts", _opener_drafts(right=False))
+def test_an_opener_with_no_or_not_still_reads_the_wrong_pick(text, facts):
+    reason = check_narration(text, facts)
+    assert reason is not None and "model's favorite" in reason, reason
+
+
+@pytest.mark.parametrize("text, facts", _opener_drafts(right=True))
+def test_an_opener_with_no_or_not_and_the_right_pick_passes(text, facts):
+    assert check_narration(text, facts) is None
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has Kansas City favored by 3.",
+    "Our model makes Kansas City a 3-point favorite.",
+    "The model sees the Chiefs as a 3-point favorite.",
+])
+def test_a_favorite_the_model_has_is_the_models_claim(text):
+    reason = check_narration(text, DK70_KC)
+    assert reason is not None and "model's favorite" in reason, reason
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has Dallas favored by 3.",
+    "Our model makes Dallas a 3-point favorite.",
+])
+def test_a_favorite_the_model_has_passes_for_the_right_team(text):
+    assert check_narration(text, replace(DK70, spread_home=3.0)) is None
 
 
 def test_a_very_long_draft_is_rejected_by_characters():

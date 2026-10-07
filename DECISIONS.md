@@ -738,10 +738,17 @@ draft that names no model pick, or that puts the other team above 50 percent, is
 narration containing a no-pick phrase, so a kept "coin flip" text is replaced by the template.
 The noun form ("Dallas is the model's pick", "our pick", "the model's lean/call", "the model's
 pick here is X", "Our pick: X", "takes the Chiefs' side") is checked against the stored side too,
-so a draft that names the wrong team that way is rejected; a negated noun ("Kansas City is not our
-pick") or a team's own possessive ("Kansas City's call to start a backup") is not read as a pick.
+so a draft that names the wrong team that way is rejected; a directly negated noun ("Kansas City is
+not our pick", "isn't the model's pick") or a team's own possessive ("Kansas City's call to start a
+backup") is not read as a pick. Only a direct negation counts: the negator must be followed only by
+determiners and adjectives up to the noun, so openers such as "No doubt our pick is X", "No
+question", "It's no secret" or "Not only", and "X is barely our pick", still name X and are
+rejected when X is the wrong team.
 A market "favored by" next to a claim makes it a market claim only outside a clause that names the
-model, so "Our model gives Kansas City the edge, favored by 3" is checked as the model's view.
+model, so "Our model gives Kansas City the edge, favored by 3" is checked as the model's view, and
+when the model is the subject of has, makes, sees, rates, projects, calls, gives or puts ("Our model
+has Kansas City favored by 3", "Our model makes Kansas City a 3-point favorite"), that favorite is
+the model's claim too, unless the market is named right after it ("favored by 3 in the market").
 
 **Near-even games are written from the template.** When the home percentage rounds to 49, 50 or
 51 (`is_near_even` in `fact_sheet.py`, the same window the guardrail uses), `predict_week` skips
@@ -750,7 +757,12 @@ pick, so no draft is ever asked to name a near-even pick. **Why:** three reviews
 found a new near-even phrasing that passed the guardrail without truthfully naming the pick (a
 noun form, market "favored by" wording, "no clear pick, with Dallas favored by 1", a possessive, a
 negated pick noun). A phrase list cannot prove it has them all; the template has been swept over
-0.4990 to 0.5010 with every spread and moneyline combination and always names the stored pick.
+the whole near-even window (home percentage 49 to 51, about 0.485 to 0.515): 38,272 texts across
+spreads, moneylines, NFL and CFB, none rejected, each naming the stored side. **Honest limit:** the
+page rounds the stored 4-decimal value with JavaScript `Math.round`, while the backend rounds the
+unrounded value with Python `round()`, so at an exact half (a stored 0.4950 or 0.5050 and similar)
+the booth percentage can differ from the page by one point. This predates the near-even rule and
+is cosmetic.
 **Cost:** those games read as plainer template text, and they count as fallback in the
 `narration: N written, K kept, F fallback, L minimal, J none` line, so a nonzero F is expected; an
 extra line before it (`narration: near-even games written from the template by design: N`) shows

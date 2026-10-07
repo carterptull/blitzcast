@@ -22,9 +22,8 @@ exact-tie rule from 1.1.2, now with a moneyline step), and `MODEL_VERSION`
   model's view, `check_narration` rejects common forms of that wording (market
   wording about a line of 0, such as "the line is a pick'em", is still
   allowed) and, within one point of even, a draft that names no model pick,
-  and `still_true`
-  rejects any stored narration containing a no-pick phrase, so a kept "coin
-  flip" text is replaced by the template.
+  and `still_true` rejects any stored narration containing a no-pick phrase,
+  so a kept "coin flip" text is replaced by the template.
 - Near-even games (the home percentage rounds to 49, 50 or 51) are narrated
   from the deterministic template, which always names the pick: no Claude
   call and no kept narration for them. They count as fallback in the
