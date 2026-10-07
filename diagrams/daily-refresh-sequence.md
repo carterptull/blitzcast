@@ -58,7 +58,7 @@ sequenceDiagram
         Note over J,DB: Selected = the default week (earliest week with an unplayed game) plus any game kicking off within 7 days. A TBD kickoff uses its game date.
         J->>DB: build_features() for the season, each row as of its kickoff
         loop each selected game
-            J->>J: predict_proba, Platt calibration, an exact 50-50 nudged 0.0001 toward the betting favorite, top_factors via SHAP
+            J->>J: predict_proba, Platt calibration, an exact 50-50 nudged 0.0001 toward the spread favorite, else the moneyline favorite, else home, top_factors via SHAP
             J->>L: build the fact sheet, then narrate(fact sheet)
             L-->>J: draft that passed check_narration, or None after 3 attempts
             J->>J: None keeps the stored narration only if still exactly true, else the template, else a minimal line
@@ -128,4 +128,4 @@ records a day even with CFB's 8-day window. See "Odds API: one batch call per da
 into January. Outside those months the jobs simply don't fire.
 
 ---
-_Last updated: 2026-10-03 · reflects v1.1.2_
+_Last updated: 2026-10-06 · reflects v1.1.3_

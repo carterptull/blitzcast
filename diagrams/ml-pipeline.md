@@ -28,7 +28,7 @@ flowchart LR
 
     subgraph serve["Serve: daily, app/jobs/predict_week.py"]
         load["load_latest(sport)"]
-        proba["predict_proba, then calibrator.transform<br/><small>an exactly even result is nudged 0.0001<br/>toward the betting favorite, home if no line</small>"]
+        proba["predict_proba, then calibrator.transform<br/><small>an exactly even result is nudged 0.0001 toward<br/>the spread favorite, else the moneyline favorite, else home</small>"]
         shap["SHAP TreeExplainer<br/><small>top_factors, n=4</small>"]
         live[("predictions rows<br/><small>1.0.0, cfb-1.0.0</small>")]
     end
@@ -77,4 +77,4 @@ ignores. See "Backfilled predictions from walk-forward retraining, not the shipp
 calibrated on a held-out, most-recent season before a "70%" is ever shown to anyone.
 
 ---
-_Last updated: 2026-10-03 · reflects v1.1.2_
+_Last updated: 2026-10-06 · reflects v1.1.3_
