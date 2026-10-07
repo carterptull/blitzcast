@@ -24,6 +24,9 @@ exact-tie rule from 1.1.2, now with a moneyline step), and `MODEL_VERSION`
   one point of even, a draft that names no model pick, and `still_true`
   rejects any stored narration containing a no-pick phrase, so a kept "coin
   flip" text is replaced by the template.
+- A draft that names the wrong team as "the model's pick", "our pick" or
+  "the model's lean/call" is now rejected, and market "favored by" wording no
+  longer counts as naming the model's pick.
 - The exact-tie break in `predict_week` now falls through the posted spread
   (positive means the home team is favored), then a plausible moneyline pair
   (the single `plausible_moneylines` rule), then the home team. Previously a

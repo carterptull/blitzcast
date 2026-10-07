@@ -1,6 +1,7 @@
 """Narration tests: the real Anthropic API is never called."""
 
 import inspect
+import time
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -298,6 +299,7 @@ DK70 = _facts(DAL, KC, 0.70, 3.0, sport="NFL", when="Sunday afternoon")
 DK62 = _facts(DAL, KC, 0.62, 3.0, sport="NFL", when="Sunday afternoon")
 DK35 = _facts(DAL, KC, 0.35, -3.0, sport="NFL", when="Sunday afternoon")
 DK51 = _facts(DAL, KC, 0.51, 1.0, sport="NFL", when="Sunday afternoon")
+DK_TIE = replace(DK51, home_win_prob=0.5001)
 
 
 def _known_limit(text, facts, why):
@@ -438,6 +440,16 @@ CORPUS_TRUE = [
     ("The model takes the Cowboys' pass rush seriously but still gives the Chiefs 65%.", DK35),
     ("Our model picks up on the Cowboys' red zone defense, yet gives the Chiefs 65%.", DK35),
     ("The model takes into account the Chiefs' short week and gives the Cowboys 62%.", DK62),
+    # Market "favored by" next to a model pick that is named.
+    ("Our model leans Dallas by a hair, and the market has Dallas favored by 1.", DK_TIE),
+    ("Our model leans Dallas by a hair. The Cowboys are favored by 1 in the market.", DK_TIE),
+    # Lean, call and colon forms that name the right team.
+    ("The model's lean is the Cowboys this week.", DK70),
+    ("The model's call is Dallas.", DK70),
+    ("Our pick: Dallas.", DK70),
+    ("The model takes the Cowboys' side this week.", DK70),
+    ("The all-time series is dead even, and our model leans the Cowboys by a hair at 50%.",
+     DK_TIE),
 ]
 
 
@@ -570,6 +582,21 @@ CORPUS_FALSE = [
     ("The model takes the Cowboys at 35%.", DK35),
     ("Our model picks Dallas to win at home.", DK35),
     ("The model takes Kansas City on the road.", DK62),
+    # Market "favored by" is not the model's pick.
+    ("Our model sees a 50-50 game, with Dallas favored by 1 in the market.", DK_TIE),
+    ("Our model calls it dead even at 50% apiece, with the Cowboys favored by 1.", DK_TIE),
+    ("Our model sees a 50-50 game. Dallas is favored by 1 in the market.", DK_TIE),
+    # A possessive pick word names the wrong team.
+    ("The model takes the Chiefs' side this week.", DK70),
+    ("Our model goes with the Chiefs' side.", DK70),
+    # Lean, call and colon forms name the wrong team.
+    ("The model's lean is the Chiefs this week.", DK70),
+    ("The model's call is Kansas City.", DK70),
+    ("Our lean is Kansas City this week.", DK70),
+    ("Our pick: Kansas City.", DK70),
+    # No-pick wording about the model at an ordinary game.
+    ("The model has no favorite here, and Dallas sits at 70%.", DK70),
+    ("Our model has no lean in this one, with Dallas at 70%.", DK70),
 ]
 
 
@@ -1384,6 +1411,8 @@ NEAR_EVEN = replace(S4, home_win_prob=0.51, spread_home=1.0)
 @pytest.mark.parametrize("phrase", [
     "a coin flip", "a coin-flip", "a toss-up", "a toss up", "a tossup", "too close to call",
     "a game with no clear favorite", "a game with no clear lean",
+    "a pick'em", "a pickem", "a pick em", "dead even", "a dead heat", "anyone's game",
+    "a game with no lean", "a game with no favorite",
 ])
 def test_no_pick_phrase_about_the_model_is_rejected(phrase):
     text = f"Our model calls it {phrase}, but it leans the Texans at 50%."
@@ -1408,6 +1437,8 @@ def test_no_pick_phrase_outside_a_market_sentence_is_rejected(text):
     "The line is a pick'em in Houston. Our model leans the Texans at 50%.",
     "Vegas calls it a pick'em, and our model leans the Texans by a hair at 50%.",
     "The betting market sees a coin flip. Our model leans the Texans by a hair at 50%.",
+    "The market sees a pick'em. Our model leans the Texans by a hair at 50%.",
+    "The market has no favorite in Houston. Our model leans the Texans by a hair at 50%.",
 ])
 def test_market_pickem_wording_still_passes(text):
     assert check_narration(text, EVEN) is None
@@ -1475,6 +1506,19 @@ def test_near_even_wrong_side_percentage_gets_a_clear_reason():
     assert reason is not None and reason.startswith("gives Chiefs 51%"), reason
     assert "leans Cowboys" in reason
     assert narrate_mod.reason_category(reason) == "wrong percentage for a team"
+
+
+def test_word_limit_rejects_a_long_draft_before_parsing(monkeypatch):
+    def parse(*args, **kwargs):
+        raise AssertionError("parsed a draft over the word limit")
+
+    monkeypatch.setattr(narrate_mod._Sentence, "parse", parse)
+    text = ("Our model's pick is the Chiefs, and the model takes the Chiefs' side. " * 80)[:5000]
+    start = time.perf_counter()
+    reason = check_narration(text, DK70)
+    elapsed = time.perf_counter() - start
+    assert reason is not None and reason.startswith("too long"), reason
+    assert elapsed < 0.1
 
 
 def test_ordinary_game_needs_no_pick_wording():

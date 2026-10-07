@@ -682,8 +682,9 @@ the output rules already bound what any value can cause the narration to say.
 
 ## The model always picks a side: an exact 50-50 is broken at prediction time
 
-When the calibrated probability is exactly even, `predict_week` stores 0.5001 (home favored, or
-no posted line) or 0.4999 (the betting favorite is the away team) via `break_exact_tie`
+When the calibrated probability is exactly even, `predict_week` stores 0.5001 (home favored by the
+spread, or by the moneyline, or the home team when there is no line) or 0.4999 (the betting
+favorite is the away team) via `break_exact_tie`
 (v1.1.3 adds a moneyline step, see below). Only a
 value that rounds to exactly 0.5 is touched, and only for games being predicted, so near-ties
 such as 50.27 versus 49.73 and every finished game are unchanged. **Why:** sportsbooks always name
@@ -729,12 +730,17 @@ betting favorite: rejected for that reason.
 ## The no-pick guardrail rejects more true-sounding drafts, on purpose
 
 `check_narration` now rejects no-pick wording about the model (coin flip, toss-up, too close to
-call, no clear favorite, could go either way). Market wording about a line of exactly 0, such as
+call, no clear favorite, no lean, dead heat, anyone's game, could go either way, and "pick'em" or
+"dead even" in a clause about the model). Market wording about a line of exactly 0, such as
 "the line is a pick'em", stays allowed. Within one point of even, a draft that names no model
-pick is also rejected, and `still_true` rejects any stored narration containing a no-pick phrase,
+pick is also rejected (market "favored by" wording does not count as naming it), and `still_true` rejects any stored narration containing a no-pick phrase,
 so a kept "coin flip" text is replaced by the template. The noun form ("Dallas is the model's
-pick", "our pick") is now checked against the stored side too, so a draft that names the wrong
-team that way is rejected. **Measured cost:** on the fresh probe
+pick", "our pick", "the model's lean/call", "Our pick: X", "takes the Chiefs' side") is now
+checked against the stored side too, so a draft that names the wrong team that way is rejected.
+**What remains uncovered:** no-pick wording outside the list (for example "even money", "a
+wash", "basically even"), which is left out because it has too many unrelated uses, and pick
+wording the parser does not read ("Our model thinks the Longhorns win"); the check is a
+guardrail, not a proof. **Measured cost:** on the fresh probe
 corpus, true narrations rejected went from 0 of 47 to 5 of 47. All five are drafts that said coin
 flip, 50-50, or named no pick at 50.4 percent, which are false under the new rule by design, so
 they are not false positives in the sense the rule cares about. A false rejection costs a retry

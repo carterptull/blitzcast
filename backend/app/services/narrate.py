@@ -230,10 +230,23 @@ _PRONOUN_PICK_RE = re.compile(
 # Wording that says the model has no pick. Only a market clause about a 0 line may use it.
 _NO_PICK_RE = re.compile(
     r"\bcoin[\s-]?flips?\b|\btoss[\s-]?ups?\b|\btoo\s+close\s+to\s+call\b"
-    r"|\bno\s+clear\s+(?:favou?rite|lean)\b|\b(?:could|can)\s+go\s+either\s+way\b",
+    r"|\bno\s+(?:clear\s+)?(?:favou?rite|lean)\b|\b(?:could|can)\s+go\s+either\s+way\b"
+    r"|\bdead\s+heat\b|\banyone['’]s\s+game\b",
     re.IGNORECASE,
 )
-_PICK_NOUN_RE = re.compile(r"\bpick\b(?!\s?['’]?\s?em)(?![\s-]six\b)", re.IGNORECASE)
+# No-pick wording that also has other uses ("the series is dead even", "the
+# line is a pick'em"): only a clause about the model counts.
+_MODEL_NO_PICK_RE = re.compile(r"\bpick\s?['’]?\s?em\b|\bdead\s+even\b", re.IGNORECASE)
+_PICK_NOUN_RE = re.compile(
+    r"\bpick\b(?!\s?['’]?\s?em)(?![\s-]six\b)"
+    r"|(?:(?<=['’]s )|(?<=\bour )|(?<=\bits ))(?:lean|call|choice|selection)\b",
+    re.IGNORECASE,
+)
+_PICK_COLON_RE = re.compile(r"\s*:\s*(?:the\s+)?")
+# "takes the Chiefs' side": a possessive pick word is a pick of that team.
+_POSSESSIVE_PICK_RE = re.compile(
+    r"['’]s?\s+(?:side|corner|way|team|camp|pick|lean)\b", re.IGNORECASE
+)
 # "The pick from our model is the Chiefs": the team comes after "is".
 _PICK_IS_RE = re.compile(
     r"pick\s+(?:from|of)\s+(?:our\s+|the\s+)?model\s+(?:is|goes\s+to)\s+(?:the\s+)?",
@@ -754,11 +767,12 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
 
 def _agent_side(s: _Sentence, m: re.Match) -> str | None:
     """The team an agent verb names. "takes the Cowboys' pass rush seriously"
-    is about something of the team's, not a pick of it."""
+    is about something of the team's, not a pick of it; "takes the Chiefs'
+    side" is a pick."""
     if m.group(2).lower() in ("takes", "picks"):
         follow = next((x for x in s.mentions if x[0] >= m.end()), None)
         if follow and s.text[follow[1]:follow[1] + 1] in ("'", "’"):
-            return None
+            return follow[2] if _POSSESSIVE_PICK_RE.match(s.text, follow[1]) else None
     return s.side_at(m.start(), m.end(), prefer_after=True)
 
 
@@ -773,7 +787,10 @@ def _pick_noun_side(s: _Sentence, m: re.Match) -> str | None:
     cs, ce = s.clause(m.start())
     if not any(x[0] >= cs and x[1] <= m.start() for x in s.mentions):
         after = next((x for x in s.mentions if x[0] >= m.end() and x[1] <= ce), None)
-        if after and _AFTER_GAP_RE.fullmatch(s.text, m.end(), after[0]):
+        if after and (
+            _AFTER_GAP_RE.fullmatch(s.text, m.end(), after[0])
+            or _PICK_COLON_RE.fullmatch(s.text, m.end(), after[0])
+        ):
             return after[2]
         follow = _PICK_IS_RE.match(s.text, m.start())
         if follow and s.side_starting_at(follow.end()):
@@ -789,7 +806,8 @@ def no_pick_phrase(text: str) -> str | None:
 
 def _no_pick_reason(s: _Sentence, is_market: bool, facts: GameFacts) -> str | None:
     """The model always has a pick. Only a market clause about a 0 line ("Vegas
-    calls it a toss-up") may use no-pick wording."""
+    calls it a toss-up") may use no-pick wording, and "pick'em" / "dead even"
+    count only in a clause about the model."""
     for m in _NO_PICK_RE.finditer(s.text):
         if is_market and facts.spread_home == 0 and not s.in_model_clause(m.start()):
             continue
@@ -797,6 +815,12 @@ def _no_pick_reason(s: _Sentence, is_market: bool, facts: GameFacts) -> str | No
             f"uses no-pick phrase '{m.group(0).lower()}' for the model's view "
             f"(the model always has a pick, here {model_pick(facts).name})"
         )
+    for m in _MODEL_NO_PICK_RE.finditer(s.text):
+        if s.in_model_clause(m.start()):
+            return (
+                f"uses no-pick phrase '{m.group(0).lower()}' for the model's view "
+                f"(the model always has a pick, here {model_pick(facts).name})"
+            )
     return None
 
 
@@ -818,6 +842,8 @@ def _names_model_pick(parsed: list[_Sentence], market: list[bool], facts: GameFa
                 ):
                     return True
         for m in _FAV_RE.finditer(s.text):
+            if _MARKET_ONLY_FAV_RE.search(s.text[max(0, m.start() - 25):m.end() + 15]):
+                continue
             in_model = not is_market or s.in_model_clause(m.start())
             if in_model and s.side_at(m.start(), m.end()) == pick:
                 return True
