@@ -730,21 +730,43 @@ betting favorite: rejected for that reason.
 ## The no-pick guardrail rejects more true-sounding drafts, on purpose
 
 `check_narration` now rejects no-pick wording about the model (coin flip, toss-up, too close to
-call, no clear favorite, no lean, dead heat, anyone's game, could go either way, and "pick'em" or
-"dead even" in a clause about the model). Market wording about a line of exactly 0, such as
-"the line is a pick'em", stays allowed. Within one point of even, a draft that names no model
-pick is also rejected (market "favored by" wording does not count as naming it), and `still_true` rejects any stored narration containing a no-pick phrase,
-so a kept "coin flip" text is replaced by the template. The noun form ("Dallas is the model's
-pick", "our pick", "the model's lean/call", "Our pick: X", "takes the Chiefs' side") is now
-checked against the stored side too, so a draft that names the wrong team that way is rejected.
-**What remains uncovered:** no-pick wording outside the list (for example "even money", "a
-wash", "basically even"), which is left out because it has too many unrelated uses, and pick
-wording the parser does not read ("Our model thinks the Longhorns win"); the check is a
-guardrail, not a proof. **Measured cost:** on the fresh probe
-corpus, true narrations rejected went from 0 of 47 to 5 of 47. All five are drafts that said coin
-flip, 50-50, or named no pick at 50.4 percent, which are false under the new rule by design, so
-they are not false positives in the sense the rule cares about. A false rejection costs a retry
-(the reason is fed back), and if no draft passes the template covers the game, so the cost is a
-retry, never an empty section. The known false-negative rate on the same corpora is unchanged
-(4 of 48 and 1 of 70). **Alternative:** a prompt-only rule with no guardrail check: the
+call, no clear favorite, no lean, no clear pick, barely has a pick, dead heat, anyone's game, could
+go either way, and "pick'em" or "dead even" in a clause about the model). Market wording about a
+line of exactly 0, such as "the line is a pick'em", stays allowed. Within one point of even, a
+draft that names no model pick, or that puts the other team above 50 percent, is also rejected
+(market "favored by" wording does not count as naming it), and `still_true` rejects any stored
+narration containing a no-pick phrase, so a kept "coin flip" text is replaced by the template.
+The noun form ("Dallas is the model's pick", "our pick", "the model's lean/call", "the model's
+pick here is X", "Our pick: X", "takes the Chiefs' side") is checked against the stored side too,
+so a draft that names the wrong team that way is rejected; a negated noun ("Kansas City is not our
+pick") or a team's own possessive ("Kansas City's call to start a backup") is not read as a pick.
+A market "favored by" next to a claim makes it a market claim only outside a clause that names the
+model, so "Our model gives Kansas City the edge, favored by 3" is checked as the model's view.
+
+**Near-even games are written from the template.** When the home percentage rounds to 49, 50 or
+51 (`is_near_even` in `fact_sheet.py`, the same window the guardrail uses), `predict_week` skips
+the Claude call and the "kept" step and stores the deterministic template, which always names the
+pick, so no draft is ever asked to name a near-even pick. **Why:** three reviews in a row each
+found a new near-even phrasing that passed the guardrail without truthfully naming the pick (a
+noun form, market "favored by" wording, "no clear pick, with Dallas favored by 1", a possessive, a
+negated pick noun). A phrase list cannot prove it has them all; the template has been swept over
+0.4990 to 0.5010 with every spread and moneyline combination and always names the stored pick.
+**Cost:** those games read as plainer template text, and they count as fallback in the
+`narration: N written, K kept, F fallback, L minimal, J none` line, so a nonzero F is expected; an
+extra line before it (`narration: near-even games written from the template by design: N`) shows
+how many are by design. **Alternative:** keep growing the phrase list, rejected for the reason
+above. The guardrail rules stay in place for ordinary games, for `still_true` and for the
+template check.
+
+**What remains uncovered** for ordinary games: no-pick wording outside the list (for example
+"even money", "a wash", "basically even"), left out because it has too many unrelated uses, and
+pick wording the parser does not read ("the model calls it for X", "rides with X", "X gets the
+model's nod", "the model thinks X wins"); a market "pick'em" said about a nonzero line; a venue
+alias that masks a team alias. The check is a guardrail, not a proof. **Measured cost:** on the
+fresh probe corpus, true narrations rejected went from 0 of 47 to 5 of 47. All five are drafts
+that said coin flip, 50-50, or named no pick at 50.4 percent, which are false under the new rule
+by design, so they are not false positives in the sense the rule cares about. A false rejection
+costs a retry (the reason is fed back), and if no draft passes the template covers the game, so
+the cost is a retry, never an empty section. The known false-negative rate on the same corpora is
+unchanged (4 of 48 and 1 of 70). **Alternative:** a prompt-only rule with no guardrail check: the
 guardrail exists because the prompt alone has shipped false claims before.

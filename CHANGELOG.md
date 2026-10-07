@@ -19,14 +19,22 @@ exact-tie rule from 1.1.2, now with a moneyline step), and `MODEL_VERSION`
   (or "by a hair"), "50% for each side", and the minimal model-only line does
   the same. The fact sheet always states the model's pick, the prompt forbids
   toss-up, coin flip, too close to call and no-clear-favorite wording for the
-  model's view, `check_narration` rejects that wording (market wording about
-  a line of 0, such as "the line is a pick'em", is still allowed) and, within
-  one point of even, a draft that names no model pick, and `still_true`
+  model's view, `check_narration` rejects common forms of that wording (market
+  wording about a line of 0, such as "the line is a pick'em", is still
+  allowed) and, within one point of even, a draft that names no model pick,
+  and `still_true`
   rejects any stored narration containing a no-pick phrase, so a kept "coin
   flip" text is replaced by the template.
-- A draft that names the wrong team as "the model's pick", "our pick" or
-  "the model's lean/call" is now rejected, and market "favored by" wording no
-  longer counts as naming the model's pick.
+- Near-even games (the home percentage rounds to 49, 50 or 51) are narrated
+  from the deterministic template, which always names the pick: no Claude
+  call and no kept narration for them. They count as fallback in the
+  narration summary, and a line before it says how many were written from the
+  template by design.
+- For ordinary games, a draft that names the wrong team as "the model's
+  pick", "our pick", "the model's lean/call" or "the model's pick here is X"
+  is rejected, as is "no clear pick" wording; market "favored by" wording does
+  not count as naming the model's pick. Some pick phrasings are still not
+  read (see DECISIONS.md).
 - The exact-tie break in `predict_week` now falls through the posted spread
   (positive means the home team is favored), then a plausible moneyline pair
   (the single `plausible_moneylines` rule), then the home team. Previously a

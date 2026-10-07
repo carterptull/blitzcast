@@ -59,13 +59,14 @@ sequenceDiagram
         J->>DB: build_features() for the season, each row as of its kickoff
         loop each selected game
             J->>J: predict_proba, Platt calibration, an exact 50-50 nudged 0.0001 toward the spread favorite, else the moneyline favorite, else home, top_factors via SHAP
-            J->>L: build the fact sheet, then narrate(fact sheet)
+            J->>L: build the fact sheet, then narrate(fact sheet) unless the game is near even
             L-->>J: draft that passed check_narration, or None after 3 attempts
             J->>J: None keeps the stored narration only if still exactly true, else the template, else a minimal line
+            Note over J: A near-even game (home percentage rounds to 49, 50 or 51) makes no API call and goes straight to the template
             J->>DB: upsert prediction on (game_id, model_version) and commit
             Note over J: Any error in this game rolls back, logs the exception type, and moves on to the next game
         end
-        J->>J: print predictions N ok, F failed, then the narration summary line
+        J->>J: print predictions N ok, F failed, the near-even template count when nonzero, then the narration summary line
         J->>DB: coverage check over the same window and the same clock reading
         J-->>O: exit 1 if any game failed or any selected game has no prediction or no booth section
         O-->>R: exit 1 if the prediction batch failed, else complete
@@ -108,9 +109,12 @@ until the season has a final game. CFB turnovers and yards stay NULL, since CFBD
 **A narration never costs a prediction.** Each game's fact sheet and narration are built inside a
 guard, so an error there still writes the prediction. The chain is a fresh AI draft, then the
 stored narration only if it is still exactly true today (`still_true`), then the deterministic
-template, then a minimal model-only line when even the fact sheet cannot be built. The run ends
-with `narration: N written, K kept, F fallback, L minimal, J none`, plus a `WARNING:` line when
-any game has none. See [`llm-narration-boundary.md`](llm-narration-boundary.md).
+template, then a minimal model-only line when even the fact sheet cannot be built. A near-even
+game (`is_near_even`: the home percentage rounds to 49, 50 or 51) skips the AI draft and the kept
+step and goes straight to the template, which always names the pick. The run ends with
+`narration: N written, K kept, F fallback, L minimal, J none`, preceded by
+`narration: near-even games written from the template by design: N` when any were, plus a
+`WARNING:` line when any game has none. See [`llm-narration-boundary.md`](llm-narration-boundary.md).
 
 **Idempotent and resumable.** Every loader upserts on a natural key, and `predict_week` commits
 after each game, so a crash halfway through a ~100-game CFB slate keeps what finished and a

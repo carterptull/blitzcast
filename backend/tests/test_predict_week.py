@@ -426,6 +426,91 @@ def test_narration_summary_counts_each_source():
     assert narration_summary(sources)[1] == "WARNING: 2 games have no booth narration"
 
 
+def test_narration_summary_names_the_near_even_games_first():
+    sources = Counter({"llm": 3, "fallback": 2, "near_even": 2})
+    assert narration_summary(sources) == [
+        "narration: near-even games written from the template by design: 2",
+        "narration: 3 written, 0 kept, 2 fallback, 0 minimal, 0 none",
+    ]
+
+
+def _recording_narrator(text="A fresh booth draft."):
+    calls = []
+
+    def fake(facts):
+        calls.append(facts)
+        return text
+
+    return fake, calls
+
+
+@pytest.mark.parametrize("prob, pick", [
+    (0.4999, "Bills"), (0.5001, "Chiefs"), (0.504, "Chiefs"), (0.4949, "Bills"),
+])
+def test_near_even_game_is_written_from_the_template_without_an_api_call(
+    db, monkeypatch, prob, pick
+):
+    fake, calls = _recording_narrator()
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    db, row, _, factors, ranks, prev_ranks = _narrate_args(db)
+    result = narrate_safely(db, row, prob, factors, ranks, prev_ranks)
+    assert calls == []
+    assert result.source == "fallback" and result.near_even
+    assert re.search(rf"Our model (?:leans|gives|has) the {pick}\b", result.text), result.text
+
+
+@pytest.mark.parametrize("prob", [0.52, 0.48])
+def test_a_game_outside_the_near_even_window_still_calls_the_narrator(db, monkeypatch, prob):
+    fake, calls = _recording_narrator()
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    db, row, _, factors, ranks, prev_ranks = _narrate_args(db)
+    result = narrate_safely(db, row, prob, factors, ranks, prev_ranks)
+    assert len(calls) == 1
+    assert result == Narration("A fresh booth draft.", "llm")
+    assert not result.near_even
+
+
+@pytest.mark.parametrize("previous", [
+    "Our model sees a coin flip, with 50% for each side.",
+    "Our model leans the Chiefs by a hair, with 50% for each side.",
+])
+def test_near_even_game_replaces_any_stored_ai_text_with_the_template(db, monkeypatch, previous):
+    fake, calls = _recording_narrator()
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    db, row, _, factors, ranks, prev_ranks = _narrate_args(db)
+    result = narrate_safely(db, row, 0.5001, factors, ranks, prev_ranks, previous=previous)
+    assert calls == []
+    assert result.source == "fallback" and result.near_even
+    assert result.text != previous and "coin flip" not in result.text
+    assert "Our model leans the Chiefs" in result.text
+
+
+class _NearEvenModel:
+    def predict_proba(self, x):
+        import numpy as np
+
+        return np.array([[0.496, 0.504]])
+
+
+def test_main_writes_near_even_games_from_the_template_and_says_so(db, monkeypatch, capsys):
+    fake, calls = _recording_narrator()
+    out, commits = _run_main(db, monkeypatch, fake, capsys, model=_NearEvenModel())
+    assert calls == []
+    lines = out.splitlines()
+    summary = lines.index("narration: 0 written, 0 kept, 2 fallback, 0 minimal, 0 none")
+    assert lines[summary - 1] == "narration: near-even games written from the template by design: 2"
+    assert "coverage: 2 upcoming games, 0 missing a prediction, 0 missing a booth section" in out
+    assert "WARNING" not in out
+    assert len(commits) == 2
+    assert all("Our model" in text for text in _stored_texts(db).values())
+
+
+def test_main_prints_no_near_even_line_for_ordinary_games(db, monkeypatch, capsys):
+    out, _ = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys)
+    assert "near-even" not in out
+    assert "narration: 2 written, 0 kept, 0 fallback, 0 minimal, 0 none" in out
+
+
 def _bills_chiefs(p: float, weather: str | None):
     return _game(
         "NFL", _team(**BILLS, record="3-1"), _team(**CHIEFS, record="2-2"), p, 3.0,
@@ -1153,11 +1238,13 @@ def test_predict_one_breaks_an_exact_tie_before_anything_reads_it(
         lambda explainer, x, prob, **kw: seen.setdefault("factors", prob) and [],
     )
 
-    def draft(facts):
-        seen["facts"] = facts.home_win_prob
-        return "A fresh booth draft."
+    real_facts = predict_week.facts_for_row
 
-    monkeypatch.setattr(predict_week, "narrate", draft)
+    def facts_for_row(db_, row_, prob, *a):
+        seen["facts"] = prob
+        return real_facts(db_, row_, prob, *a)
+
+    monkeypatch.setattr(predict_week, "facts_for_row", facts_for_row)
     _, row = _week1_rows(db)
     row = row.copy()
     row["market_spread_home"], row["has_market_spread"] = spread, posted

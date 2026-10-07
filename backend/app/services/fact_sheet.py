@@ -466,6 +466,12 @@ def model_pick(facts: GameFacts) -> TeamFacts:
     return facts.home if model_picks_home(facts.home_win_prob) else facts.away
 
 
+def is_near_even(facts: GameFacts) -> bool:
+    """The home percentage rounds to 49, 50 or 51. These games are narrated
+    from the template, which always names the pick."""
+    return abs(round(facts.home_win_prob * 100) - 50) <= 1
+
+
 def market_favorite(facts: GameFacts) -> tuple[TeamFacts, TeamFacts] | None:
     if facts.spread_home is None or facts.spread_home == 0:
         return None

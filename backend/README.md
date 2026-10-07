@@ -163,8 +163,9 @@ fresh narrations are generated, which **spends Anthropic tokens** (up to 3
 calls per game) and refuses to run unless you also pass `--spend-tokens`.
 Every mode also verifies the deterministic fallback passes the guardrail and
 exits 1 if it does not. Each `predict_week` run ends with
-`narration: N written, K kept, F fallback, L minimal, J none` and a `WARNING:`
-line when any game has no narration.
+`narration: N written, K kept, F fallback, L minimal, J none` (preceded by
+`narration: near-even games written from the template by design: N` when
+nonzero) and a `WARNING:` line when any game has no narration.
 
 `/api/games` and `/api/schedule` also take `status=all|final|upcoming`
 (default `all`), filtering on whether both scores are present, not on the
@@ -209,7 +210,9 @@ serve fixture data so the frontend can develop without a database.
   when it is still exactly true today (`still_true`), else a deterministic
   template is used, else a minimal model-only line when even the fact sheet
   cannot be built. The booth always names the model's pick, and a draft or
-  stored text that calls it a toss-up or coin flip is rejected.
+  stored text that calls it a toss-up or coin flip is rejected. A near-even
+  game (the home percentage rounds to 49, 50 or 51) makes no API call and
+  gets the template.
 
 ## Model
 

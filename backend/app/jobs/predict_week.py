@@ -24,7 +24,12 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
-from app.services.fact_sheet import GameFacts, build_game_facts, trusted_numbers_text
+from app.services.fact_sheet import (
+    GameFacts,
+    build_game_facts,
+    is_near_even,
+    trusted_numbers_text,
+)
 from app.services.fallback_narration import (
     fallback_narration,
     fallback_reason,
@@ -174,6 +179,7 @@ def still_true(previous: str, facts: GameFacts) -> bool:
 class Narration(NamedTuple):
     text: str | None
     source: str  # "llm", "kept", "fallback", "minimal" or "none"
+    near_even: bool = False  # a fallback written from the template by design
 
 
 def _minimal(db: Session, row: pd.Series, prob: float) -> Narration:
@@ -197,27 +203,31 @@ def narrate_safely(
     that game, or the rest of the slate, its prediction. The chain: a fresh AI
     draft, else the previous narration only if it is still exactly true today,
     else the deterministic fallback from the fact sheet, else (no fact sheet, or
-    a fallback that fails its check) a model-only line from the row. Rolling
-    back is safe: since the last per-game commit the loop has only read."""
+    a fallback that fails its check) a model-only line from the row. A near-even
+    game skips the AI draft and the previous narration: the template always
+    names the pick. Rolling back is safe: since the last per-game commit the
+    loop has only read."""
     game_id = row["game_id"]
     try:
         facts = facts_for_row(db, row, prob, factors, ranks, prev_ranks)
     except Exception as exc:
         _failed(db, game_id, "fact sheet", exc)
         return _minimal(db, row, prob)
-    try:
-        text = narrate(facts)
-    except Exception as exc:
-        _failed(db, game_id, "narration draft", exc)
-        text = None
-    if text:
-        return Narration(text, "llm")
-    if previous:
+    near_even = is_near_even(facts)
+    if not near_even:
         try:
-            if still_true(previous, facts):
-                return Narration(previous, "kept")
+            text = narrate(facts)
         except Exception as exc:
-            _failed(db, game_id, "previous narration check", exc)
+            _failed(db, game_id, "narration draft", exc)
+            text = None
+        if text:
+            return Narration(text, "llm")
+        if previous:
+            try:
+                if still_true(previous, facts):
+                    return Narration(previous, "kept")
+            except Exception as exc:
+                _failed(db, game_id, "previous narration check", exc)
     try:
         text = fallback_narration(facts)
         reason = fallback_reason(text, facts)
@@ -229,7 +239,7 @@ def narrate_safely(
             "fallback narration rejected for %s: %s", game_id, reason_category(reason)
         )
         return _minimal(db, row, prob)
-    return Narration(text, "fallback")
+    return Narration(text, "fallback", near_even)
 
 
 def narrate_and_store(
@@ -248,10 +258,16 @@ def narrate_and_store(
 
 
 def narration_summary(sources: Counter) -> list[str]:
-    lines = [
+    lines = []
+    if sources["near_even"]:
+        lines.append(
+            "narration: near-even games written from the template by design: "
+            f"{sources['near_even']}"
+        )
+    lines.append(
         f"narration: {sources['llm']} written, {sources['kept']} kept, "
         f"{sources['fallback']} fallback, {sources['minimal']} minimal, {sources['none']} none"
-    ]
+    )
     none = sources["none"]
     if none:
         games = "1 game has" if none == 1 else f"{none} games have"
@@ -498,6 +514,7 @@ def main() -> None:
                 failed.append(row["game_id"])
             else:
                 sources[narration.source] += 1
+                sources["near_even"] += narration.near_even
 
         ok = len(target) - len(failed)
         print(f"predictions: {ok} ok, {len(failed)} failed")

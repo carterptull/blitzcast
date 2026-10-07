@@ -1546,3 +1546,100 @@ def test_prompt_says_the_model_always_has_a_pick():
     assert "The model always has a pick" in prompt
     for phrase in ("toss-up", "coin flip", "pick'em", "too close to call", "no clear favorite"):
         assert phrase in prompt
+
+
+@pytest.mark.parametrize("p, expected", [
+    (0.4949, True), (0.4999, True), (0.5, True), (0.5001, True), (0.504, True),
+    (0.514, True), (0.486, True), (0.516, False), (0.484, False), (0.52, False), (0.48, False),
+])
+def test_is_near_even_is_the_one_window(p, expected):
+    from app.services.fact_sheet import is_near_even
+
+    assert is_near_even(replace(DK51, home_win_prob=p)) is expected
+
+
+DK_TIE_AWAY = replace(DK51, home_win_prob=0.4999, spread_home=-1.0)
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("Our model has no clear pick, with Dallas favored by 1 in the market.", DK_TIE),
+    ("Our model has no clear pick, with Kansas City favored by 1 in the market.", DK_TIE_AWAY),
+    ("Our model has no clear pick, with Dallas favored by 1 in the market.", DK51),
+    ("The model has no strong pick, Dallas or Kansas City.", DK_TIE),
+    ("The model has no strong pick, Dallas or Kansas City.", replace(DK_TIE, spread_home=None)),
+    ("The model has no strong pick, Dallas or Kansas City.", replace(DK_TIE, spread_home=0.0)),
+    ("Our model barely has a pick, with Dallas favored by 1.", DK_TIE),
+    ("Our model has no clear pick in this one.", DK70),
+    ("Our model has no real pick here, and Dallas sits at 70%.", DK70),
+])
+def test_no_pick_noun_wording_is_rejected_and_never_kept(text, facts):
+    from app.jobs.predict_week import still_true
+
+    assert check_narration(text, facts) is not None
+    assert not still_true(text, facts)
+
+
+@pytest.mark.parametrize("text", [
+    "Dallas threw no picks last week, and our model likes the Cowboys at 70%.",
+    "A pick-six decided the last meeting, and our model likes Dallas at 70%.",
+    "Kansas City is not our pick this week. Our model likes Dallas at 70%.",
+])
+def test_plural_picks_pick_six_and_a_negated_pick_noun_pass(text):
+    assert check_narration(text, DK70) is None
+
+
+@pytest.mark.parametrize("text", [
+    "Our model leans Dallas at 70%, wary of Kansas City's call to start a backup.",
+    "The model weighs Kansas City's choice to start a backup and still leans Dallas at 70%.",
+    "Kansas City's lean roster worries our model, which likes Dallas at 70%.",
+])
+def test_a_team_possessive_is_not_the_models_pick(text):
+    assert check_narration(text, DK70) is None
+
+
+@pytest.mark.parametrize("wrong, right", [
+    ("The model's pick here is Kansas City.", "The model's pick here is Dallas."),
+    ("Our model's top pick this week is Kansas City.",
+     "Our model's top pick this week is Dallas."),
+    ("The model's selection here is Kansas City.", "The model's selection here is Dallas."),
+    ("Our model's top choice today is Kansas City.", "Our model's top choice today is Dallas."),
+])
+def test_a_pick_noun_with_a_short_adverb_is_read(wrong, right):
+    reason = check_narration(wrong, DK70)
+    assert reason is not None and "model's favorite" in reason, reason
+    assert check_narration(right, DK70) is None
+
+
+def test_near_even_pick_credit_needs_a_model_pick_noun():
+    text = "Dallas is the pick of the pundits. Our model has the Chiefs at 50%."
+    reason = check_narration(text, DK_TIE)
+    assert reason is not None and reason.startswith("names no model pick"), reason
+
+
+def test_near_even_wrong_side_percentage_is_rejected_even_with_a_named_pick():
+    text = "Our model leans Dallas by a hair, and the Chiefs are at 51%."
+    reason = check_narration(text, DK_TIE)
+    assert reason is not None and reason.startswith("gives Chiefs 51%"), reason
+
+
+DK70_KC_LINE = replace(DK70, spread_home=-3.0)
+
+
+def test_market_window_does_not_override_an_explicit_model_clause():
+    reason = check_narration("Our model gives Kansas City the edge, favored by 3.", DK70_KC_LINE)
+    assert reason is not None and "model's favorite" in reason, reason
+
+
+@pytest.mark.parametrize("text", [
+    "Our model likes Dallas at 70%, with Kansas City favored by 3.",
+    "Our model gives Dallas the edge at 70%, with Kansas City favored by 3 in the market.",
+    "Our model backs Dallas at 70% even with Kansas City a 3-point favorite.",
+])
+def test_market_favorite_inside_a_model_clause_still_reads_as_the_market(text):
+    assert check_narration(text, DK70_KC_LINE) is None
+
+
+def test_a_very_long_draft_is_rejected_by_characters():
+    text = "Our model likes Dallas at 70%. " + "x" * 1000
+    reason = check_narration(text, DK70)
+    assert reason is not None and reason.startswith("too long"), reason
