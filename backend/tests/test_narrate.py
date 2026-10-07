@@ -291,6 +291,13 @@ D = _facts(
     _team("Michigan State", "Michigan State Spartans", "MSU", "Spartans", "2-2"),
     0.88, 14.5, 52.5, venue="Ohio Stadium in Columbus", matchup_note="Big Ten conference game",
 )
+# DK: Chiefs at Cowboys at several model probabilities, Dallas home.
+DAL = _team("Cowboys", "Dallas Cowboys", "DAL", "Cowboys")
+KC = _team("Chiefs", "Kansas City Chiefs", "KC", "Chiefs")
+DK70 = _facts(DAL, KC, 0.70, 3.0, sport="NFL", when="Sunday afternoon")
+DK62 = _facts(DAL, KC, 0.62, 3.0, sport="NFL", when="Sunday afternoon")
+DK35 = _facts(DAL, KC, 0.35, -3.0, sport="NFL", when="Sunday afternoon")
+DK51 = _facts(DAL, KC, 0.51, 1.0, sport="NFL", when="Sunday afternoon")
 
 
 def _known_limit(text, facts, why):
@@ -420,6 +427,17 @@ CORPUS_TRUE = [
     ("Michigan State visits Ohio State, and the Spartans are getting 14.5. Our model has the "
      "Buckeyes at 88%.", D),
     ("Ohio State is laying 14.5 against Michigan State. Our model has the Buckeyes at 88%.", D),
+    # The pick noun names the right team.
+    ("The Cowboys are the model's pick this week.", DK70),
+    ("Dallas is the model's pick at 70%.", DK70),
+    ("The Cowboys are our model's pick, with the Chiefs at 49%.", DK51),
+    ("The pick from our model is the Cowboys, even with Kansas City at 49%.", DK51),
+    ("Dallas is our pick at 70%.", DK70),
+    ("Our model would pick the Cowboys this week.", DK70),
+    # Phrasal "takes" / "picks up" are not picks.
+    ("The model takes the Cowboys' pass rush seriously but still gives the Chiefs 65%.", DK35),
+    ("Our model picks up on the Cowboys' red zone defense, yet gives the Chiefs 65%.", DK35),
+    ("The model takes into account the Chiefs' short week and gives the Cowboys 62%.", DK62),
 ]
 
 
@@ -541,7 +559,29 @@ CORPUS_FALSE = [
     ("The Spartans are laying 14.5 in Columbus. Our model has Ohio State at 88%.", D),
     ("Ohio State hosts Michigan State and the Spartans are 14.5-point favorites. Our model has "
      "the Buckeyes at 88%.", D),
+    # The pick noun names the wrong team.
+    ("The Chiefs are the model's pick this week.", DK70),
+    ("Kansas City is the model's pick at 30%.", DK70),
+    ("The Chiefs are our model's pick, with the Cowboys at 51%.", DK51),
+    ("The pick from our model is the Chiefs, even with Dallas at 51%.", DK51),
+    ("Kansas City is our pick at 30%.", DK70),
+    ("Our model would pick the Chiefs this week.", DK70),
+    # A real "takes" / "picks" names the wrong team.
+    ("The model takes the Cowboys at 35%.", DK35),
+    ("Our model picks Dallas to win at home.", DK35),
+    ("The model takes Kansas City on the road.", DK62),
 ]
+
+
+@pytest.mark.parametrize("text, facts", [
+    ("The Chiefs are the model's pick this week.", DK70),
+    ("Kansas City is the model's pick at 30%.", DK70),
+    ("The Chiefs are our model's pick, with the Cowboys at 51%.", DK51),
+    ("The pick from our model is the Chiefs, even with Dallas at 51%.", DK51),
+])
+def test_wrong_pick_noun_reads_as_a_wrong_model_favorite(text, facts):
+    reason = check_narration(text, facts)
+    assert reason is not None and "model's favorite" in reason, reason
 
 
 @pytest.mark.parametrize("text, facts", CORPUS_FALSE)
@@ -1409,6 +1449,32 @@ def test_near_even_draft_that_names_the_pick_passes(text, facts):
 def test_near_even_draft_naming_the_wrong_pick_is_rejected():
     assert check_narration("Our model leans the Jaguars by a hair at 50%.", EVEN) is not None
     assert check_narration("Our model leans the Texans by a hair at 50%.", EVEN_AWAY) is not None
+
+
+DK_EVEN = replace(DK51, home_win_prob=0.5001)
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but it leans Dallas.",
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but they lean Dallas.",
+])
+def test_near_even_pick_named_after_a_pronoun_passes(text):
+    assert check_narration(text, DK_EVEN) is None
+
+
+@pytest.mark.parametrize("text", [
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but it leans Kansas City.",
+    "Our model has the Cowboys at 50%, the Chiefs at 50%, but it leans one way.",
+])
+def test_near_even_pronoun_without_the_right_pick_is_rejected(text):
+    assert check_narration(text, DK_EVEN) is not None
+
+
+def test_near_even_wrong_side_percentage_gets_a_clear_reason():
+    reason = check_narration("Our model has the Chiefs at 51%.", replace(DK51, home_win_prob=0.504))
+    assert reason is not None and reason.startswith("gives Chiefs 51%"), reason
+    assert "leans Cowboys" in reason
+    assert narrate_mod.reason_category(reason) == "wrong percentage for a team"
 
 
 def test_ordinary_game_needs_no_pick_wording():

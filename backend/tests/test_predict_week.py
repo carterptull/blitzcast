@@ -449,8 +449,8 @@ def test_still_true_drops_yesterdays_weather_and_percentage(weather):
 def test_still_true_drops_a_lean_that_flipped():
     facts = _game("CFB", _team(**UNLV, record="3-1"), _team(**CAL, record="2-2"), 0.497, None)
     text = "Our model gives UNLV 51% and California 49%."
-    # Within the +-1 tolerance, but it puts the wrong team above 50, so no pick is named.
-    assert check_narration(text, facts).startswith("names no model pick")
+    # Within the +-1 tolerance, but it puts the wrong team above 50.
+    assert check_narration(text, facts).startswith("gives UNLV 51%")
     assert not still_true(text, facts)
 
 

@@ -213,10 +213,18 @@ _DOG_RE = re.compile(
     r"\bunderdogs?\b|\b(?:the|a|an)\s+(?:road\s+|home\s+)?dogs?\b", re.IGNORECASE
 )
 # "Vegas likes X" / "our model leans X": the team is the object after the verb.
+# "takes into account" and "picks up on" are not picks.
 _AGENT_RE = re.compile(
     r"\b(model|vegas|market|books|oddsmakers|sportsbooks?|line)(?:['’]s)?\s+(?:\w+\s+)?"
-    r"(?:likes|leans|backs|favors|favours|prefers|loves|trusts|sides\s+with|is\s+on"
-    r"|picks|takes|goes\s+with|pick\s+is)\b",
+    r"(likes|leans|backs|favors|favours|prefers|loves|trusts|sides\s+with|is\s+on"
+    r"|picks(?!\s+up\b)|takes(?!\s+(?:into|in|on|note|a\s+look|issue|seriously)\b)"
+    r"|goes\s+with|pick\s+is)\b",
+    re.IGNORECASE,
+)
+# "it leans Dallas" after "Our model has ...": a pick named after a pronoun.
+_PRONOUN_PICK_RE = re.compile(
+    r"\b(?:it|he|she|they|the\s+numbers)\s+(?:still\s+|just\s+|slightly\s+)?"
+    r"(?:leans?|likes?|favou?rs?|edges?|gives?\s+the\s+edge\s+to|sides?\s+with)\b",
     re.IGNORECASE,
 )
 # Wording that says the model has no pick. Only a market clause about a 0 line may use it.
@@ -225,7 +233,13 @@ _NO_PICK_RE = re.compile(
     r"|\bno\s+clear\s+(?:favou?rite|lean)\b|\b(?:could|can)\s+go\s+either\s+way\b",
     re.IGNORECASE,
 )
-_PICK_NOUN_RE = re.compile(r"\bpick\b(?!\s?['’]?\s?em)", re.IGNORECASE)
+_PICK_NOUN_RE = re.compile(r"\bpick\b(?!\s?['’]?\s?em)(?![\s-]six\b)", re.IGNORECASE)
+# "The pick from our model is the Chiefs": the team comes after "is".
+_PICK_IS_RE = re.compile(
+    r"pick\s+(?:from|of)\s+(?:our\s+|the\s+)?model\s+(?:is|goes\s+to)\s+(?:the\s+)?",
+    re.IGNORECASE,
+)
+_OUR_RE = re.compile(r"\bour\s+$", re.IGNORECASE)
 _LINE_NUM_RE = re.compile(
     rf"\bfavou?red\s+by\s+(?:just\s+|only\s+)?({_NUM})"
     rf"|\b(?:laying|lays|giving|gives|getting|gets|plus|minus)\s+(?:just\s+|only\s+)?"
@@ -719,7 +733,7 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
         if reason:
             return reason
     for m in _AGENT_RE.finditer(s.text):
-        side = s.side_at(m.start(), m.end(), prefer_after=True)
+        side = _agent_side(s, m)
         if side is None:
             continue
         if m.group(1).lower() == "model":
@@ -728,7 +742,43 @@ def _claims_reason(s: _Sentence, facts: GameFacts, market: bool) -> str | None:
             reason = _market_claim_reason(side, "favorite", facts)
         if reason:
             return reason
+    for m in _PICK_NOUN_RE.finditer(s.text):
+        if not _is_model_pick_noun(s, m.start()):
+            continue
+        side = _pick_noun_side(s, m)
+        reason = side and _model_claim_reason(side, "favorite", facts)
+        if reason:
+            return reason
     return None
+
+
+def _agent_side(s: _Sentence, m: re.Match) -> str | None:
+    """The team an agent verb names. "takes the Cowboys' pass rush seriously"
+    is about something of the team's, not a pick of it."""
+    if m.group(2).lower() in ("takes", "picks"):
+        follow = next((x for x in s.mentions if x[0] >= m.end()), None)
+        if follow and s.text[follow[1]:follow[1] + 1] in ("'", "’"):
+            return None
+    return s.side_at(m.start(), m.end(), prefer_after=True)
+
+
+def _is_model_pick_noun(s: _Sentence, pos: int) -> bool:
+    return s.in_model_clause(pos) or bool(_OUR_RE.search(s.text, 0, pos))
+
+
+def _pick_noun_side(s: _Sentence, m: re.Match) -> str | None:
+    """A team before "pick" in its clause, else one named right after it ("the
+    model's pick is Houston", "the pick from our model is the Chiefs"), else
+    a pronoun's antecedent."""
+    cs, ce = s.clause(m.start())
+    if not any(x[0] >= cs and x[1] <= m.start() for x in s.mentions):
+        after = next((x for x in s.mentions if x[0] >= m.end() and x[1] <= ce), None)
+        if after and _AFTER_GAP_RE.fullmatch(s.text, m.end(), after[0]):
+            return after[2]
+        follow = _PICK_IS_RE.match(s.text, m.start())
+        if follow and s.side_starting_at(follow.end()):
+            return s.side_starting_at(follow.end())
+    return s.side_at(m.start(), m.end())
 
 
 def no_pick_phrase(text: str) -> str | None:
@@ -752,25 +802,51 @@ def _no_pick_reason(s: _Sentence, is_market: bool, facts: GameFacts) -> str | No
 
 def _names_model_pick(parsed: list[_Sentence], market: list[bool], facts: GameFacts) -> bool:
     """True when some sentence says which team the model picks: "the model
-    leans X", an edge or pick given to X outside a market clause, or a
-    percentage that puts X above 50 (or the other team below)."""
+    leans X" (or "it leans X" in a sentence about the model), an edge or pick
+    given to X outside a market clause, or a percentage that puts X above 50
+    (or the other team below)."""
     pick = "home" if model_pick(facts) is facts.home else "away"
     for s, is_market in zip(parsed, market, strict=True):
         for m in _AGENT_RE.finditer(s.text):
-            if m.group(1).lower() == "model" and s.side_at(
-                m.start(), m.end(), prefer_after=True
-            ) == pick:
+            if m.group(1).lower() == "model" and _agent_side(s, m) == pick:
                 return True
-        for regex in (_FAV_RE, _PICK_NOUN_RE):
-            for m in regex.finditer(s.text):
-                in_model = not is_market or s.in_model_clause(m.start())
-                if in_model and s.side_at(m.start(), m.end()) == pick:
+        if _MODEL_RE.search(s.text):
+            for m in _PRONOUN_PICK_RE.finditer(s.text):
+                after = next((x for x in s.mentions if x[0] >= m.end()), None)
+                if after and after[2] == pick and _AFTER_GAP_RE.fullmatch(
+                    s.text, m.end(), after[0]
+                ):
                     return True
+        for m in _FAV_RE.finditer(s.text):
+            in_model = not is_market or s.in_model_clause(m.start())
+            if in_model and s.side_at(m.start(), m.end()) == pick:
+                return True
+        for m in _PICK_NOUN_RE.finditer(s.text):
+            in_model = not is_market or s.in_model_clause(m.start())
+            if in_model and _pick_noun_side(s, m) == pick:
+                return True
         for m, side in _percentage_sides(s):
             pct = float(m.group(1))
             if (side == pick and pct > 50) or (side != pick and pct < 50):
                 return True
     return False
+
+
+def _wrong_side_percentage_reason(parsed: list[_Sentence], facts: GameFacts) -> str | None:
+    """Near even, a percentage within the tolerance can still put the wrong team ahead."""
+    pick = model_pick(facts)
+    pick_side = "home" if pick is facts.home else "away"
+    for s in parsed:
+        for m, side in _percentage_sides(s):
+            pct = float(m.group(1))
+            if (side != pick_side and pct > 50) or (side == pick_side and pct < 50):
+                team = _team(facts, side)
+                p = facts.home_win_prob if side == "home" else 1 - facts.home_win_prob
+                return (
+                    f"gives {team.name} {m.group(1)}% but the model has {team.name} at "
+                    f"{round(p * 100)}% and leans {pick.name}"
+                )
+    return None
 
 
 def _market_numbers_reason(s: _Sentence, facts: GameFacts) -> str | None:
@@ -988,7 +1064,7 @@ def check_narration(text: str, facts: GameFacts) -> str | None:
         if reason:
             return reason
     if abs(round(p * 100) - 50) <= 1 and not _names_model_pick(parsed, market, facts):
-        return (
+        return _wrong_side_percentage_reason(parsed, facts) or (
             "names no model pick (the percentages are nearly even, so say the model leans "
             f"{model_pick(facts).name})"
         )

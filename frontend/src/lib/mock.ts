@@ -148,7 +148,7 @@ const WEEK1: Week1Spec[] = [
       f("Win percentage, last 5 games", 0.02, "home"),
     ],
     narrative:
-      "Under the roof at Lucas Oil the model leans Indianapolis by a hair, with a home-field thumb on the scale: the Colts at 52 percent, laying a single point. Jacksonville actually grades out a hair better by rating, so if you like road divisional dogs, the model says this is the least you'll ever pay for one.",
+      "Under the roof at Lucas Oil the model narrowly leans Indianapolis, with a home-field thumb on the scale: the Colts at 52 percent, laying a single point. Jacksonville actually grades out a hair better by rating, so if you like road divisional dogs, the model says this is the least you'll ever pay for one.",
   },
   {
     away: "MIN",

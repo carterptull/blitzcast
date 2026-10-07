@@ -732,7 +732,9 @@ betting favorite: rejected for that reason.
 call, no clear favorite, could go either way). Market wording about a line of exactly 0, such as
 "the line is a pick'em", stays allowed. Within one point of even, a draft that names no model
 pick is also rejected, and `still_true` rejects any stored narration containing a no-pick phrase,
-so a kept "coin flip" text is replaced by the template. **Measured cost:** on the fresh probe
+so a kept "coin flip" text is replaced by the template. The noun form ("Dallas is the model's
+pick", "our pick") is now checked against the stored side too, so a draft that names the wrong
+team that way is rejected. **Measured cost:** on the fresh probe
 corpus, true narrations rejected went from 0 of 47 to 5 of 47. All five are drafts that said coin
 flip, 50-50, or named no pick at 50.4 percent, which are false under the new rule by design, so
 they are not false positives in the sense the rule cares about. A false rejection costs a retry
