@@ -791,3 +791,18 @@ still backs Dallas at 70%"), and a false rejection costs a retry (the reason is 
 draft passes the template covers the game, so the cost is a retry, never an empty section. The known false-negative rate on the same corpora is
 unchanged (4 of 48 and 1 of 70). **Alternative:** a prompt-only rule with no guardrail check: the
 guardrail exists because the prompt alone has shipped false claims before.
+
+## Dependency CVEs: patch what has a fix, document what does not
+
+Dependabot raised eight open alerts (`next`, `sharp`, `source-map-js`) and `npm audit` raised
+more, mostly in the jest 29 chain. Each one is either fixed by a patched release or recorded as
+an accepted residual. **Why not npm's suggested fixes:** `npm audit` proposed downgrading
+`eslint-config-next` to 14.2.35 (not a fix, and it would break the Next 16 lint setup) and
+`next` to 16.4.0. Every `next` advisory is patched in 16.3.8, so the smaller bump is enough.
+**Jest 30:** the jest 29 findings come from `micromatch` and `braces`; jest 30 drops that path.
+The suite (126 tests), lint, typecheck and production build all pass on it.
+**Honest residual:** `braces` (GHSA-vfj7-8cjw-p6xm) has no patched release, so it stays
+reachable through `eslint-config-next`'s `fast-glob`. It is a lint-time tool path over our own
+source and config, not part of the shipped bundle or the API, so it is accepted and tracked
+rather than hidden with a downgrade. **Alternative:** pin `eslint-config-next` to 14.x to clear
+the audit; rejected because it would regress the Next 16 lint rules to clear a dev-only finding.

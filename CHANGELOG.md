@@ -6,6 +6,32 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.4] — 2026-10-12
+
+A dependency security release. No change to the app's behavior, the model, or
+`MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
+
+### Security
+- `next` 16.3.6 to 16.3.8. Fixes GHSA-cjq9-62q9-8jv4 (high, server-side request
+  forgery in Image Optimization), GHSA-3w37-wq28-93x7, GHSA-mcj8-r9mp-w47p and
+  GHSA-4jqv-mc3x-m676 (medium, cache poisoning and Draft Mode leakage in
+  SSG/ISR), GHSA-f87g-xv8r-7p7x (medium, metadata image route disclosure), and
+  GHSA-39w2-rjm5-chcv (low, development server MCP endpoint).
+- `sharp` 0.35.4 to 0.35.5 (override). Fixes GHSA-wq5f-xc86-pv6w (high, librsvg
+  CVE-2026-96889). Brings libvips 1.3.4.
+- `source-map-js` 1.2.1 to 1.2.2 (override). Fixes GHSA-68fv-2mgg-jv7q (high,
+  event-loop denial of service).
+- Dev toolchain: `jest`, `jest-environment-jsdom` and `@types/jest` moved from
+  29 to 30. This clears the jest dependency chain (npm audit findings 36 to 5).
+  The frontend suite still passes all 126 tests.
+
+### Known, not fixed
+- `braces` 3.0.3 (GHSA-vfj7-8cjw-p6xm, high, stack exhaustion on deeply nested
+  patterns) has no patched release. It is reached only through
+  `eslint-config-next` (lint time, not shipped), via `fast-glob` and
+  `micromatch`. Revisit when upstream publishes a fix.
+- The backend's Python requirements report no known vulnerabilities (`pip-audit`).
+
 ## [1.1.3] — 2026-10-07
 
 The booth always names a pick. The model, its probabilities (other than the
