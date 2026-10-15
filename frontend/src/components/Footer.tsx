@@ -7,27 +7,29 @@ const issuesUrl = "https://github.com/carterptull/blitzcast/issues/new/choose";
 export default function Footer() {
   return (
     <footer className="mt-16 border-t border-edge">
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-8 sm:grid sm:grid-cols-3 sm:items-center sm:px-6">
-        <p className="flex flex-wrap items-center justify-center gap-x-2 text-sm text-ink-soft sm:justify-self-start">
+      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-8 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:px-6">
+        <div className="flex flex-col items-center gap-1 text-sm text-ink-soft sm:items-start sm:justify-self-start xl:flex-row xl:items-center xl:gap-x-2">
           <span>© 2026 Paymon Software</span>
-          <span aria-hidden="true" className="text-edge">
+          <span aria-hidden="true" className="hidden text-edge xl:inline">
             ·
           </span>
-          <Link href="/how-it-works" className="underline decoration-edge underline-offset-2 hover:text-ink">
-            How It Works
-          </Link>
-          <span aria-hidden="true" className="text-edge">
-            ·
+          <span className="flex items-center gap-x-2">
+            <Link href="/how-it-works" className="underline decoration-edge underline-offset-2 hover:text-ink">
+              How It Works
+            </Link>
+            <span aria-hidden="true" className="text-edge">
+              ·
+            </span>
+            <a
+              href={issuesUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-edge underline-offset-2 hover:text-ink"
+            >
+              Report an Issue
+            </a>
           </span>
-          <a
-            href={issuesUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-edge underline-offset-2 hover:text-ink"
-          >
-            Report an Issue
-          </a>
-        </p>
+        </div>
         <div className="sm:justify-self-center">
           {beerUrl ? (
             <a

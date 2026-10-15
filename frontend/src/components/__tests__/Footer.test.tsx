@@ -31,4 +31,11 @@ describe("Footer", () => {
     expect(screen.getByRole("link", { name: "How It Works" })).toHaveAttribute("href", "/how-it-works");
     expect(screen.getByText(`v${pkg.version}`)).toBeInTheDocument();
   });
+
+  it("keeps the two footer links together so they wrap as a unit", () => {
+    render(<Footer />);
+    const group = screen.getByRole("link", { name: "How It Works" }).parentElement;
+    expect(group).toBe(screen.getByRole("link", { name: "Report an Issue" }).parentElement);
+    expect(group).not.toHaveTextContent("Paymon Software");
+  });
 });

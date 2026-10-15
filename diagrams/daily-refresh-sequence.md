@@ -133,4 +133,4 @@ records a day even with CFB's 8-day window. See "Odds API: one batch call per da
 into January. Outside those months the jobs simply don't fire.
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.0_
+_Last updated: 2026-10-15 · reflects v1.2.1_

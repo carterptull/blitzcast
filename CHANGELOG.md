@@ -6,6 +6,15 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-10-15
+
+A footer layout fix. No change to the model or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
+
+### Fixed
+- The footer's left cell was too narrow, so "Report an Issue" wrapped onto its own line
+  with a stray separator. The copyright now sits above the links below the widest
+  breakpoint, and the two links stay together.
+
 ## [1.2.0] — 2026-10-15
 
 A visitor-facing release: a way to report issues from the site. No change to the
