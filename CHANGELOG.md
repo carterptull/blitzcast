@@ -6,6 +6,14 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-10-15
+
+A small repository fix. No change to the app, the model, or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
+
+### Fixed
+- The issue chooser listed "Report a security vulnerability" twice, once from GitHub's
+  built-in security entry and once from a custom contact link. The custom link is removed.
+
 ## [1.2.1] — 2026-10-15
 
 A footer layout fix. No change to the model or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).

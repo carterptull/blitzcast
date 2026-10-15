@@ -137,9 +137,10 @@ Full setup + env vars: [README.md](./README.md) and
   `frontend/src/lib/mockCfb.ts`. Assert it in
   `frontend/src/lib/__tests__/api.test.ts`.
 - **Issue reporting:** security reports go through GitHub private
-  vulnerability reporting (`SECURITY.md`, `security.txt`).
-  `.github/ISSUE_TEMPLATE/config.yml` turns blank issues off and lists
-  that private-reporting link as the chooser's contact link; keep both
-  when editing the forms. The footer's Report an Issue link opens the
-  issue chooser in a new tab, because the site is embedded in the
-  maintainer's portfolio site and GitHub refuses framing.
+  vulnerability reporting (`SECURITY.md`, `security.txt`). GitHub's issue
+  chooser lists it on its own because the repo has a security policy, so
+  `.github/ISSUE_TEMPLATE/config.yml` only turns blank issues off and
+  defines no contact link (a second one would show a duplicate entry). The
+  footer's Report an Issue link opens the issue chooser in a new tab,
+  because the site is embedded in the maintainer's portfolio site and
+  GitHub refuses framing.

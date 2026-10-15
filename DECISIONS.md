@@ -810,8 +810,9 @@ the audit; rejected because it would regress the Next 16 lint rules to clear a d
 ## Visitor issue reports go to GitHub, security reports stay private
 
 The footer links to GitHub's issue chooser, which has two issue forms (bugs and wrong game data)
-and blank issues turned off; its one contact link points security reports at private
-vulnerability reporting. **Why:** the site has no user accounts and no write path for a feedback
+and blank issues turned off; GitHub's built-in security entry (shown because the repo has a
+security policy) points security reports at private vulnerability reporting. A custom contact
+link was tried and removed because it duplicated that entry. **Why:** the site has no user accounts and no write path for a feedback
 form, and building one would mean spam handling and storing visitors' personal data. GitHub
 already does both. With blank issues off, a security report can't skip the private route by
 accident. **Trade-off:** filing needs a GitHub account, and the link shows the repo owner's

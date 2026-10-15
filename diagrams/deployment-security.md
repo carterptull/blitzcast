@@ -31,7 +31,7 @@ flowchart LR
         ci["CI on every PR<br/><small>ruff · pytest · eslint · jest · next build</small>"]
         guard["Dependabot security updates<br/>secret scanning + push protection"]
         advisories["Private vulnerability reporting"]
-        issues["Issue forms<br/><small>blank issues off, security contact link</small>"]
+        issues["Issue forms<br/><small>blank issues off, GitHub's built-in security entry</small>"]
     end
 
     visitor --> dns --> firewall --> next
@@ -74,4 +74,4 @@ directly.
 [`SECURITY.md`](../SECURITY.md)).
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.1_
+_Last updated: 2026-10-15 · reflects v1.2.2_
