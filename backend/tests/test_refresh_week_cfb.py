@@ -48,7 +48,7 @@ def _run_orchestrator(module, argv, failing=()):
 
     calls = []
 
-    def fake(name, args):
+    def fake(name, args, **kw):
         calls.append(name)
         return name not in failing
 

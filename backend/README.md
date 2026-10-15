@@ -43,6 +43,7 @@ All commands below run from `backend/` with the venv's Python
 | `ANTHROPIC_API_KEY` | Claude API (prediction narration) |
 | `ANTHROPIC_MODEL` | Narration model (default `claude-haiku-4-5-20251001`) |
 | `CORS_ORIGINS` | Allowed frontend origins (default `http://localhost:3000`) |
+| `API_DOCS` | `1` serves `/docs`, `/redoc` and `/openapi.json` (off by default; `.env.example` sets it for local use) |
 | `BLITZCAST_MOCK` | `1` serves fixture predictions (no DB/model needed) |
 | `MODEL_VERSION` | Version stamped on NFL artifacts and prediction rows (default `1.0.0`) |
 | `MODEL_VERSION_CFB` | Same stamp for CFB (default `cfb-1.0.0`) |
@@ -84,8 +85,11 @@ deterministic template.
 | Lint | `python -m ruff check .` |
 
 `--sport` defaults to `nfl` on every ML/prediction command, including
-`refresh_weather`. CFB has no injury refresh (no standardized CFB injury
-report exists): `refresh_schedule_cfb`, `refresh_stats_cfb`, `refresh_odds --sport cfb`,
+`refresh_weather`. `--season` defaults to the current season from
+`app/season.py` (`current_season`: NFL rolls over in March, CFB in
+June), so the 2026 in the examples above is only an override. CFB has
+no injury refresh (no standardized CFB injury report exists):
+`refresh_schedule_cfb`, `refresh_stats_cfb`, `refresh_odds --sport cfb`,
 `refresh_weather --sport cfb`, and `refresh_polls_cfb` are the in-season
 CFB syncs, bundled by `refresh_week_cfb`. CFB games get real stadium
 coordinates from CFBD (unlike NFL's Team-derived `stadium_id`), so
@@ -172,8 +176,15 @@ nonzero) and a `WARNING:` line when any game has no narration.
 `Game.status` column. Unlike `sport`, an unrecognized `status` value falls
 back to `all` silently rather than 422ing.
 
-Interactive docs at `http://localhost:8000/docs`. Set `BLITZCAST_MOCK=1` to
-serve fixture data so the frontend can develop without a database.
+`game_id` must match `^[A-Za-z0-9_-]{1,32}$`, `season` is 2000 to 2100 and
+`week` is 0 to 30; anything else is a 422. `/api/schedule` and
+`/api/record` are cached in-process for 60 seconds. CORS allows `GET` only,
+without credentials.
+
+Interactive docs at `http://localhost:8000/docs` need `API_DOCS=1` in
+`backend/.env` first (they are off by default, along with `/redoc` and
+`/openapi.json`). Set `BLITZCAST_MOCK=1` to serve fixture data so the
+frontend can develop without a database.
 
 ## Data sources & free-tier discipline
 

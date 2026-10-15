@@ -8,13 +8,14 @@ import sys
 
 from app.config import get_settings
 from app.db import session_scope
+from app.season import current_season
 from data_pipeline import cfbd
 from data_pipeline.cfb_games_loader import upsert_games
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("cfb"))
     args = parser.parse_args()
 
     if not get_settings().cfbd_api_key:

@@ -76,7 +76,13 @@ export async function getRecord(season = 2026, sport: Sport = "NFL"): Promise<Re
   return get<Record>(`/api/record?sport=${sport}&season=${season}`);
 }
 
+/** Same rule as the backend (Game.game_id is String(32)). */
+export function isGameId(id: string): boolean {
+  return /^[A-Za-z0-9_-]{1,32}$/.test(id);
+}
+
 export async function getMatchup(gameId: string): Promise<MatchupDetail> {
+  if (!isGameId(gameId)) throw new NotFoundError(gameId);
   if (MOCK) {
     const m = mockMatchup(gameId);
     if (!m) throw new NotFoundError(gameId);

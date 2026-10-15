@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_CFB, PollRank
+from app.season import current_season
 from data_pipeline import cfbd
 from data_pipeline.cfb_games_loader import cfb_team_map
 
@@ -74,7 +75,7 @@ def upsert_polls(db: Session, rankings: pd.DataFrame) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("cfb"))
     args = parser.parse_args()
 
     if not get_settings().cfbd_api_key:

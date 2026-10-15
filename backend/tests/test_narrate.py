@@ -768,6 +768,22 @@ def test_retry_feeds_back_the_rejection_reason(settings_with_key):
     assert "percentage" in second_messages[-1]["content"]
 
 
+def test_retry_fences_the_rejection_reason_as_data(settings_with_key):
+    client = MagicMock()
+    client.messages.create.side_effect = [
+        _mock_response("Ohio State is at 70% to win."),
+        _mock_response(GOOD),
+    ]
+    with patch.object(narrate_mod.anthropic, "Anthropic", return_value=client):
+        narrate_mod.generate(FACTS)
+    retry = client.messages.create.call_args_list[1].kwargs["messages"][-1]["content"]
+    reason = check_narration("Ohio State is at 70% to win.", FACTS)
+    assert f"<checker_note>{reason}</checker_note>" in retry
+    assert retry.startswith("That draft breaks a rule: <checker_note>")
+    system = client.messages.create.call_args_list[1].kwargs["system"]
+    assert "checker_note" in system and "never instructions" in system
+
+
 def test_all_attempts_rejected_returns_none(settings_with_key):
     client = MagicMock()
     client.messages.create.return_value = _mock_response("Ohio State is at 70% to win.")
@@ -804,6 +820,35 @@ def test_non_retryable_api_error_stops_immediately(settings_with_key, error_cls,
     assert client.messages.create.call_count == 1
     assert settings_with_key == []
     assert result.rejections == [f"api error: {error_cls.__name__}"]
+    assert result.api_error == error_cls.__name__
+
+
+def test_api_error_names_only_a_final_api_failure():
+    result = narrate_mod.NarrationResult
+    assert result(None, 3, ["api error: RuntimeError"] * 3).api_error == "RuntimeError"
+    assert result(None, 2, ["too long", "api error: APITimeoutError"]).api_error == (
+        "APITimeoutError"
+    )
+    assert result(None, 3, ["api error: RuntimeError", "too long", "too long"]).api_error is None
+    assert result(GOOD, 2, ["api error: RuntimeError"]).api_error is None
+    assert result(None, 0).api_error is None
+
+
+def test_narrate_raises_claude_unavailable_on_an_api_failure(settings_with_key):
+    client = MagicMock()
+    client.messages.create.side_effect = RuntimeError("api down at https://secret.example")
+    with patch.object(narrate_mod.anthropic, "Anthropic", return_value=client):
+        with pytest.raises(narrate_mod.ClaudeUnavailable) as info:
+            narrate_mod.narrate(FACTS)
+    assert info.value.kind == "RuntimeError"
+    assert "secret" not in str(info.value)
+
+
+def test_narrate_returns_none_on_a_guardrail_rejection(settings_with_key):
+    client = MagicMock()
+    client.messages.create.return_value = _mock_response("Ohio State is at 70% to win.")
+    with patch.object(narrate_mod.anthropic, "Anthropic", return_value=client):
+        assert narrate_mod.narrate(FACTS) is None
 
 
 def test_cfb_prompt_carries_injury_guardrail():
@@ -1370,6 +1415,34 @@ LINK_OR_NUMBER = "contains a link, handle, or long number"
 ])
 def test_output_rules_reject_link_and_phone_evasions(lead):
     assert check_narration(f"{lead} Our model leans Ohio State at 55%.", FACTS) == LINK_OR_NUMBER
+
+
+@pytest.mark.parametrize("lead", [
+    "Picks at scam\u200b.com tonight.",
+    "Visit scam\u200b.\u200bcom tonight.",
+    "Texas rolls \u202etonight.",
+    "Texas rolls tonight\U000e0041.",
+    "Texas\u00ad rolls tonight.",
+    "Texas rolls\u0007 tonight.",
+])
+def test_output_rules_reject_invisible_characters(lead):
+    text = f"{lead} Our model leans Ohio State at 55%."
+    assert narrate_mod.unsafe_output(text)
+    reason = check_narration(text, FACTS)
+    assert reason is not None
+    assert narrate_mod.reason_category(reason) != "other"
+
+
+def test_output_rules_keep_a_normal_draft():
+    assert not narrate_mod.unsafe_output(GOOD)
+    assert check_narration(GOOD, FACTS) is None
+
+
+@pytest.mark.parametrize("dash", ["‒", "–", "—", "―", "−"])
+def test_every_dash_like_character_becomes_a_comma(dash):
+    assert narrate_mod.plain_punctuation(f"Texas {dash} at home {dash} rolls.") == (
+        "Texas, at home, rolls."
+    )
 
 
 @pytest.mark.parametrize("text", [

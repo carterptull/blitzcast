@@ -48,12 +48,12 @@ sequenceDiagram
         P->>X: CollegeFootballData AP and Coaches polls
         P->>DB: upsert poll_ranks
     end
-    Note over O,P: Every step is its own subprocess. A failed step is logged and the next one still runs.
+    Note over O,P: Every step is its own subprocess with a 30 minute timeout. A failed or timed-out step is logged and the next one still runs.
     alt schedule sync failed
         O->>O: skip the prediction batch, then fail the run after the other steps
         O-->>R: exit 1
     else schedule sync succeeded
-        O->>J: python -m app.jobs.predict_week, plus --sport cfb for CFB
+        O->>J: python -m app.jobs.predict_week, plus --sport cfb for CFB, with a 90 minute timeout
         J->>DB: select_target_ids() reads the clock once, then picks games with both scores NULL and kickoff still ahead
         Note over J,DB: Selected = the default week (earliest week with an unplayed game) plus any game kicking off within 7 days. A TBD kickoff uses its game date.
         J->>DB: build_features() for the season, each row as of its kickoff
@@ -61,6 +61,7 @@ sequenceDiagram
             J->>J: predict_proba, Platt calibration, an exact 50-50 nudged 0.0001 toward the spread favorite, else the moneyline favorite, else home, top_factors via SHAP
             J->>L: build the fact sheet, then narrate(fact sheet) unless the game is near even
             L-->>J: draft that passed check_narration, or None after 3 attempts
+            Note over J,L: After 3 consecutive games with an API failure, or an auth error, Claude is skipped for the rest of the run
             J->>J: None keeps the stored narration only if still exactly true, else the template, else a minimal line
             Note over J: A near-even game (home percentage rounds to 49, 50 or 51) makes no API call and goes straight to the template
             J->>DB: upsert prediction on (game_id, model_version) and commit
@@ -74,10 +75,16 @@ sequenceDiagram
 ```
 
 **Soft-fail by design.** The orchestrator runs each step with `subprocess.run(..., check=False)`
-and keeps going when one fails: stale weather is better than no predictions. The one hard
+and a timeout (30 minutes, 90 for the prediction batch; a timeout counts as a failed step) and
+keeps going when one fails: stale weather is better than no predictions. The one hard
 dependency is the schedule sync, because predicting against an out-of-date schedule could target
 the wrong week or re-predict a game that has already finished. Only the prediction batch can fail
 the run itself, and only after every other step has run.
+
+**The season comes from the calendar.** Every step's `--season` defaults to `current_season`
+(`app/season.py`): NFL rolls over in March, CFB in June, so a cron never keeps predicting last
+year's season. `predict_week` exits 1 when the season has no games at all, while "no unplayed
+games" is still a clean exit 0.
 
 **Look-ahead window.** `predict_week` without `--week` predicts the default week plus every
 unplayed game kicking off within `LOOKAHEAD_DAYS` (7) of the run's single clock reading, so a
@@ -115,7 +122,9 @@ step and goes straight to the template, which always names the pick (swept over 
 about 0.485 to 0.515: 38,272 texts, none rejected). The run ends with
 `narration: N written, K kept, F fallback, L minimal, J none`, preceded by
 `narration: near-even games written from the template by design: N` when any were, plus a
-`WARNING:` line when any game has none. See [`llm-narration-boundary.md`](llm-narration-boundary.md).
+`WARNING:` line when any game has none. If Claude is down, a circuit breaker stops the calls
+after 3 consecutive games with an API failure (or at once on an auth error) and prints
+`narration: Claude disabled for the rest of the run after ...`; the summary line is unchanged. See [`llm-narration-boundary.md`](llm-narration-boundary.md).
 
 **Idempotent and resumable.** Every loader upserts on a natural key, and `predict_week` commits
 after each game, so a crash halfway through a ~100-game CFB slate keeps what finished and a
@@ -133,4 +142,4 @@ records a day even with CFB's 8-day window. See "Odds API: one batch call per da
 into January. Outside those months the jobs simply don't fire.
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.2_
+_Last updated: 2026-10-15 · reflects v1.2.3_

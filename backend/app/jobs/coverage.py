@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.db import session_scope
 from app.jobs.predict_week import LOOKAHEAD_DAYS, select_target_ids
 from app.models import Prediction
+from app.season import resolve_season
 
 
 class Gap(NamedTuple):
@@ -104,10 +105,11 @@ def current_version(sport: str) -> str | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=None)
     parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl", type=str.lower)
     args = parser.parse_args()
     sport = args.sport.upper()
+    args.season = resolve_season(args.season, args.sport)
     version = current_version(sport)
     if version is None:
         print(f"coverage: no current model version for {sport}, counting any live prediction")

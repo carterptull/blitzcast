@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
+    # Interactive API docs (/docs, /redoc, /openapi.json); off in production.
+    api_docs: bool = False
+
     # Serve fixture predictions so the frontend works before real data exists.
     blitzcast_mock: bool = False
 

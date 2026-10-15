@@ -51,6 +51,11 @@ daily batch (see [`daily-refresh-sequence.md`](daily-refresh-sequence.md)); this
 only. See "Batch-generated predictions, not per-request inference" in
 [`DECISIONS.md`](../DECISIONS.md).
 
+**Bad ids never leave the frontend.** `getMatchup` checks the id against
+`^[A-Za-z0-9_-]{1,32}$` (`isGameId`) and takes the normal not-found path without a fetch; the API
+applies the same rule to the `game_id` path parameter and answers 422 for anything else. The
+slate and record endpoints (not drawn here) keep a 60 second in-process cache on the API side.
+
 **A game with no prediction yet still renders.** The service returns
 `prediction_status: "pending"` with an empty factor list, so a newly scheduled game gets a real
 page instead of an error.
@@ -67,4 +72,4 @@ reconstructed row with a label). And if Railway is unreachable, `api.ts` throws
 back to a plain "Matchup" title); `src/app/error.tsx` only handles other, unexpected errors.
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.2_
+_Last updated: 2026-10-15 · reflects v1.2.3_

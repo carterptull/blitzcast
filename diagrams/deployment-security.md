@@ -16,19 +16,20 @@ flowchart LR
 
     subgraph vercel["Vercel"]
         firewall["Firewall<br/><small>automatic DDoS mitigation</small>"]
-        next["Next.js app<br/><small>headers() on every route<br/>CSP frame-ancestors 'self' + portfolio origins</small>"]
+        next["Next.js app<br/><small>headers() on every route<br/>CSP frame-ancestors 'self' + portfolio origins, base-uri, object-src, form-action<br/>nosniff · strict-origin-when-cross-origin referrer · Permissions-Policy<br/>no X-Powered-By</small>"]
         wellknown["/.well-known/security.txt<br/><small>static, frontend/public</small>"]
     end
 
     subgraph railway["Railway"]
-        api["FastAPI, public HTTPS URL<br/><small>read-only, no auth, no user data<br/>CORS allowlist from CORS_ORIGINS</small>"]
+        api["FastAPI, public HTTPS URL<br/><small>read-only, no auth, no user data<br/>CORS allowlist from CORS_ORIGINS, GET only, no credentials<br/>nosniff on every response · docs and OpenAPI off unless API_DOCS=1<br/>game_id, season and week validated, 422 on bad input<br/>60 s in-process cache on schedule and record</small>"]
         crons["nfl-cron · cfb-cron"]
         pg[("Postgres<br/><small>reached over Railway's private network</small>")]
         vars["Service variables<br/><small>DATABASE_URL · ODDS_API_KEY · CFBD_API_KEY<br/>VISUAL_CROSSING_API_KEY · ANTHROPIC_API_KEY</small>"]
     end
 
     subgraph gh["GitHub"]
-        ci["CI on every PR<br/><small>ruff · pytest · eslint · jest · next build</small>"]
+        ci["CI on every PR<br/><small>ruff · pytest · eslint · jest · next build<br/>read-only token, no persisted checkout credentials</small>"]
+        codeql["CodeQL code scanning, weekly and every PR"]
         guard["Dependabot security updates<br/>secret scanning + push protection"]
         advisories["Private vulnerability reporting"]
         issues["Issue forms<br/><small>blank issues off, GitHub's built-in security entry</small>"]
@@ -61,12 +62,23 @@ site. That's done with CSP `frame-ancestors` alone; `X-Frame-Options` can't list
 origin and is overridden by `frame-ancestors` wherever both are supported.
 
 **The browser never calls Railway.** Every API call happens server-to-server from Vercel, so CORS
-is a backstop rather than the main control. The API is publicly reachable, but it's read-only,
-unauthenticated by design, and serves nothing the website doesn't already show.
+is a backstop rather than the main control, and it allows `GET` only, without credentials. The API
+is publicly reachable, but it's read-only, unauthenticated by design, and serves nothing the
+website doesn't already show. Its interactive docs and OpenAPI schema are off unless `API_DOCS=1`
+(local `.env` only), bad parameters get a 422, and the two season-wide endpoints
+(`/api/schedule`, `/api/record`) keep a 60 second in-process cache so a flood of identical
+requests does not reach Postgres each time.
+
+**The site adds headers beyond framing:** `nosniff`, a strict-origin-when-cross-origin referrer
+policy, a `Permissions-Policy` that turns off camera, microphone, geolocation, payment and USB, and
+CSP `base-uri`, `object-src` and `form-action` restrictions. There is deliberately no
+`default-src`, `script-src` or `img-src`, so the portfolio frame and the ESPN team logos keep
+working. See "Repo-wide security review and CodeQL" in [`DECISIONS.md`](../DECISIONS.md).
 
 **Secrets never touch the repo.** Keys live in Vercel and Railway service variables and in
 gitignored `.env` files (only `.env.example` is committed). GitHub secret scanning with push
-protection is on, and every job degrades gracefully when a key is missing. Dependabot security
+protection is on, CodeQL scans the code weekly and on every pull request, and every job degrades
+gracefully when a key is missing. Dependabot security
 updates are enabled, but its PRs are applied by hand on a regular branch rather than merged
 directly.
 
@@ -74,4 +86,4 @@ directly.
 [`SECURITY.md`](../SECURITY.md)).
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.2_
+_Last updated: 2026-10-15 · reflects v1.2.3_

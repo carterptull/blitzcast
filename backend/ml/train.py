@@ -12,7 +12,6 @@ Usage: python -m ml.train [--sport nfl|cfb]
 """
 
 import argparse
-import json
 from datetime import UTC, datetime
 
 import joblib
@@ -27,7 +26,7 @@ from app.models import SPORT_CFB, SPORT_NFL
 from ml.calibration import PlattCalibrator
 from ml.explain import feature_labels
 from ml.features import FEATURE_COLUMNS, training_frame
-from ml.model_store import artifacts_dir
+from ml.model_store import artifacts_dir, write_latest
 
 TRAIN_SEASONS = [2022, 2023, 2024]
 CALIB_SEASON = 2025
@@ -136,10 +135,7 @@ def main() -> None:
         },
         artifact_path,
     )
-    (art_dir / "latest.json").write_text(
-        json.dumps({"model_version": version, "artifact": artifact_path.name}, indent=2),
-        encoding="utf-8",
-    )
+    write_latest(art_dir, version, artifact_path)
     print(f"wrote {artifact_path}")
 
 

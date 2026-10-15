@@ -17,8 +17,8 @@ router = APIRouter(prefix="/api", tags=["games"])
     summary="Games for one week of a season",
 )
 def get_games(
-    week: int,
-    season: int = 2026,
+    week: int = Query(..., ge=0, le=30),
+    season: int = Query(2026, ge=2000, le=2100),
     sport: str = "NFL",
     status: str = Query("all"),
     db: Session = Depends(get_db),

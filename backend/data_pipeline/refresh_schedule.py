@@ -6,13 +6,14 @@ Usage: python -m data_pipeline.refresh_schedule [--season 2026]
 import argparse
 
 from app.db import session_scope
+from app.season import current_season
 from data_pipeline import nflverse
 from data_pipeline.games_loader import upsert_games
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("nfl"))
     args = parser.parse_args()
 
     schedules = nflverse.load_schedules([args.season])

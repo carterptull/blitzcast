@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.jobs.predict_week import facts_for_row
 from app.models import Prediction
+from app.season import resolve_season
 from app.services.fact_sheet import GameFacts, is_near_even
 from app.services.fallback_narration import fallback_narration, fallback_reason
 from app.services.narrate import NarrationResult, check_narration, generate
@@ -146,12 +147,13 @@ def evaluate(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl", type=str.lower)
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=None)
     parser.add_argument("--week", type=int, required=True)
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--stored", action="store_true")
     parser.add_argument("--spend-tokens", action="store_true")
     args = parser.parse_args(argv)
+    args.season = resolve_season(args.season, args.sport)
 
     if not args.stored:
         print("Fresh generation spends Anthropic tokens (up to 3 calls per game).")

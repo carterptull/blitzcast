@@ -10,10 +10,16 @@ import argparse
 import subprocess
 import sys
 
+from app.season import current_season
 
-def run_step(name: str, args: list[str]) -> bool:
+
+def run_step(name: str, args: list[str], timeout: float = 1800) -> bool:
     print(f"--- {name} ---")
-    result = subprocess.run([sys.executable, "-m", *args], check=False)
+    try:
+        result = subprocess.run([sys.executable, "-m", *args], check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"{name} timed out after {timeout:g}s")
+        return False
     if result.returncode != 0:
         print(f"{name} failed with exit code {result.returncode}")
         return False
@@ -31,7 +37,7 @@ def finish_run(prediction_ok: bool | None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("nfl"))
     parser.add_argument("--skip-predict", action="store_true")
     args = parser.parse_args()
     season = str(args.season)
@@ -46,7 +52,9 @@ def main() -> None:
     predicted = None
     if not args.skip_predict:
         if ok:
-            predicted = run_step("prediction batch", ["app.jobs.predict_week", "--season", season])
+            predicted = run_step(
+                "prediction batch", ["app.jobs.predict_week", "--season", season], timeout=5400
+            )
         else:
             print("skipping prediction batch because schedule sync failed")
             predicted = False

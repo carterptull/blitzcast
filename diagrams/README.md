@@ -37,7 +37,7 @@ below, and update its Mermaid source and prose then, not on every release.
 | `backend/app/services/predictions.py` or caching in `frontend/src/lib/api.ts` | `prediction-request-sequence.md` |
 | `ml/train.py` windows, `ml/backtest.py`, or `ml/explain.py` | `ml-pipeline.md` |
 | completion or grading rules | `game-lifecycle-state.md` |
-| `next.config.ts` headers, CORS, hosting, or a new external API | `deployment-security.md`, `c4-context.md` |
+| `next.config.ts` headers, `backend/app/main.py` CORS or docs, CI or CodeQL workflows, hosting, or a new external API | `deployment-security.md`, `c4-context.md` |
 
 A routine UI or copy change doesn't need a diagram update.
 
@@ -51,4 +51,4 @@ A routine UI or copy change doesn't need a diagram update.
 - Verify by viewing the rendered file on github.com. Reading the source is not verification.
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.2_
+_Last updated: 2026-10-15 · reflects v1.2.3_

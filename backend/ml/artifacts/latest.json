@@ -1,4 +1,5 @@
 {
   "model_version": "1.0.0",
-  "artifact": "model_1.0.0.joblib"
+  "artifact": "model_1.0.0.joblib",
+  "sha256": "19055d24866fcb9a9e87fc4bca63141e0a8c26d4d49d09aaefc329100725d6be"
 }

@@ -14,12 +14,13 @@ Usage: python -m data_pipeline.refresh_week_cfb [--season 2026] [--skip-predict]
 
 import argparse
 
+from app.season import current_season
 from data_pipeline.refresh_week import finish_run, run_step
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("cfb"))
     parser.add_argument("--skip-predict", action="store_true")
     args = parser.parse_args()
     season = str(args.season)
@@ -41,6 +42,7 @@ def main() -> None:
             predicted = run_step(
                 "cfb prediction batch",
                 ["app.jobs.predict_week", "--season", season, "--sport", "cfb"],
+                timeout=5400,
             )
         else:
             print("skipping prediction batch because schedule sync failed")

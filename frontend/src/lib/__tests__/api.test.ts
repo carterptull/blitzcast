@@ -93,6 +93,52 @@ describe("API Client", () => {
     });
   });
 
+  describe("Game id validation", () => {
+    test("isGameId accepts real id shapes", async () => {
+      const { isGameId } = await import("../api");
+      expect(isGameId("2026_01_BUF_KC")).toBe(true);
+      expect(isGameId("cfb_401752873")).toBe(true);
+      expect(isGameId("a".repeat(32))).toBe(true);
+    });
+
+    test("isGameId accepts every mock game id", async () => {
+      const { mockSchedule } = await import("../mock");
+      const { isGameId } = await import("../api");
+      const ids = [mockSchedule("NFL"), mockSchedule("CFB")].flatMap((s) =>
+        s.weeks.flatMap((w) => w.games.map((g) => g.game_id))
+      );
+      expect(ids.length).toBeGreaterThan(0);
+      for (const id of ids) expect(isGameId(id)).toBe(true);
+    });
+
+    test("isGameId rejects malformed ids", async () => {
+      const { isGameId } = await import("../api");
+      for (const bad of ["..", "a/b", "a%00b", "a\0b", "", "a".repeat(33), "a b", "a?b"]) {
+        expect(isGameId(bad)).toBe(false);
+      }
+    });
+
+    test("getMatchup rejects a malformed id without fetching (live mode)", async () => {
+      delete process.env.NEXT_PUBLIC_USE_MOCK;
+      const fetchSpy = jest.fn();
+      const original = global.fetch;
+      global.fetch = fetchSpy as unknown as typeof fetch;
+      try {
+        const { getMatchup: live, NotFoundError: NF } = await import("../api");
+        await expect(live("..")).rejects.toBeInstanceOf(NF);
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } finally {
+        global.fetch = original;
+      }
+    });
+
+    test("getMatchup rejects a malformed id in mock mode", async () => {
+      process.env.NEXT_PUBLIC_USE_MOCK = "1";
+      const { getMatchup: mock, NotFoundError: NF } = await import("../api");
+      await expect(mock("a/b")).rejects.toBeInstanceOf(NF);
+    });
+  });
+
   describe("Contract Validation", () => {
     test("Team contract has required fields", async () => {
       process.env.NEXT_PUBLIC_USE_MOCK = "1";

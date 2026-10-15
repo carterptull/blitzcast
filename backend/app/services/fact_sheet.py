@@ -159,8 +159,8 @@ def _reads_like_a_name(text: str) -> bool:
 
 
 def _place(value: str | None, max_len: int) -> str | None:
-    """A cleaned venue, city, conference or division, or None when it does not
-    read like a name."""
+    """A cleaned venue, city, conference, division or player name, or None when
+    it does not read like a name."""
     text = _clean(value, max_len)
     return text if text is not None and _reads_like_a_name(text) else None
 
@@ -266,7 +266,7 @@ def _injuries(db: Session, game: Game, team_id: int) -> tuple[str, ...]:
     listed = []
     for r in rows:
         status = (r.status or "").lower()
-        name = _clean(r.player_name, 80)
+        name = _place(r.player_name, 80)
         if status in NARRATED_INJURY_STATUSES and name:
             listed.append((name, _clean(r.position, 6), status.title()))
     listed.sort(

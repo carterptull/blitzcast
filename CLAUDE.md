@@ -98,8 +98,10 @@ Full setup + env vars: [README.md](./README.md) and
   keeps the stored narration only if it is still exactly true today
   (`still_true`: exact percentages, every other number on today's sheet),
   else uses the deterministic template in `fallback_narration.py`, else a
-  minimal model-only line if even the fact sheet cannot be built. The run
-  ends with `narration: N written, K kept, F fallback, L minimal, J none`.
+  minimal model-only line if even the fact sheet cannot be built. After 3
+  consecutive Claude API failures or an auth error, the run stops
+  calling Claude and prints one extra line. The run ends with
+  `narration: N written, K kept, F fallback, L minimal, J none`.
 - **Market-factor SHAP direction:** in `ml/explain.py`, `market_spread_home`
   and `market_home_prob`'s displayed `direction` comes from the feature's
   own raw value, never the SHAP sign — these represent an independently
@@ -113,6 +115,16 @@ Full setup + env vars: [README.md](./README.md) and
   NULL). `refresh_weather.py` fetches these by venue-name geocoding
   instead of lat/lon; don't reintroduce a bare `stadium is None: skip`
   check without also checking `venue_name`.
+- **Game ids:** one rule on both sides, `^[A-Za-z0-9_-]{1,32}$`
+  (backend `Path` in the predictions router, frontend `isGameId` in
+  `api.ts`). Change them together.
+- **API docs:** `/docs`, `/redoc` and `/openapi.json` are off unless
+  `API_DOCS=1` (set in `backend/.env` for local use).
+- **Season defaults** come from `app/season.py`'s `current_season`,
+  never a hard-coded year as a batch job's `--season` default.
+- **Model artifacts:** `latest.json` carries a `sha256` that
+  `load_latest` verifies, so a retrain must write it (`train.py` does,
+  via `write_latest`).
 - **API keys** live in gitignored `.env` files (examples checked in). All
   jobs degrade gracefully when keys are missing — preserve that property.
 - **Odds API budget:** free tier, 500 req/month — odds are fetched by the

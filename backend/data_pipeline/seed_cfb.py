@@ -23,6 +23,16 @@ from data_pipeline.cfb_team_names import build_alias_map, derive_abbrs, save_ali
 
 # CFBD logos carry the ESPN CDN path .../ncaa/500/<espn_id>.png.
 _ESPN_LOGO_RE = re.compile(r"/(\d+)\.png$")
+_SAFE_LOGO_RE = re.compile(r"https://a\.espncdn\.com/i/teamlogos/ncaa/[\w/.-]+\.png")
+_HEX_COLOR_RE = re.compile(r"#?[0-9a-fA-F]{6}")
+
+
+def clean_logo(logo: str | None) -> str | None:
+    return logo if isinstance(logo, str) and _SAFE_LOGO_RE.fullmatch(logo) else None
+
+
+def clean_color(color: str | None) -> str | None:
+    return color if isinstance(color, str) and _HEX_COLOR_RE.fullmatch(color) else None
 
 
 def espn_id_from_logo(logo: str | None) -> int | None:
@@ -100,10 +110,10 @@ def upsert_teams(
         team.tier = tiers[school]
         logos = row.get("logos")
         logo = logos[0] if isinstance(logos, list) and logos else None
-        team.logo_url = logo
+        team.logo_url = clean_logo(logo)
         team.espn_id = espn_id_from_logo(logo)
-        team.color = field(row, "color")
-        team.alt_color = field(row, "alternateColor", "alt_color")
+        team.color = clean_color(field(row, "color"))
+        team.alt_color = clean_color(field(row, "alternateColor", "alt_color"))
         vid = field(row, "location.id", "location.venueId", "location.venue_id")
         stadium = venues_by_id.get(int(vid)) if vid is not None else None
         if stadium is None:

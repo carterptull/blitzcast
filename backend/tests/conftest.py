@@ -202,6 +202,15 @@ def _seed(db: Session) -> None:
     db.commit()
 
 
+@pytest.fixture(autouse=True)
+def _clear_api_cache():
+    from app import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture()
 def engine():
     engine = create_engine(

@@ -1,4 +1,5 @@
 {
   "model_version": "cfb-1.0.0",
-  "artifact": "model_cfb-1.0.0.joblib"
+  "artifact": "model_cfb-1.0.0.joblib",
+  "sha256": "997aa47638501cc12304f5745a79491b57475a90aef2ac269c52d06a9bc3f0c6"
 }

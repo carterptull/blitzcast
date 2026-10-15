@@ -1,10 +1,11 @@
 import { ImageResponse } from "next/og";
-import { getMatchup } from "@/lib/api";
+import { getMatchup, isGameId, NotFoundError } from "@/lib/api";
 import { buildOgContent } from "@/lib/og";
+import { isSportSlug } from "@/lib/sport";
 import { primaryColor } from "@/lib/teams";
 import type { MatchupDetail } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export const alt = "Blitzcast matchup prediction";
 export const size = { width: 1200, height: 630 };
@@ -130,12 +131,14 @@ function fallbackImage() {
 }
 
 export default async function Image({ params }: Props) {
-  const { gameId } = await params;
+  const { sport, gameId } = await params;
+  if (!isSportSlug(sport) || !isGameId(gameId)) return new Response(null, { status: 404 });
 
   let m: MatchupDetail | null = null;
   try {
     m = await getMatchup(gameId);
-  } catch {
+  } catch (e) {
+    if (e instanceof NotFoundError) return new Response(null, { status: 404 });
     m = null;
   }
 
