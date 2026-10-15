@@ -889,3 +889,20 @@ on (see the dependency CVE entry). Version-update PRs would make Dependabot a st
 contributor, which the maintainer does not want, and the workflows only run first-party actions
 with a read-only token, so pinning is low risk. **Alternative:** `.github/dependabot.yml` for
 the `github-actions` and `npm` ecosystems; revisit if a third-party action is ever added.
+
+## One football, drawn per size
+
+The favicon is generated from two SVG sources in `frontend/scripts/icons/`: a simpler 16 px
+drawing and the detailed 32 px one, because the 32 px laces turn to noise at 16 px. `favicon.ico`
+(16, 32 and 48 px PNG frames), `icon.svg` and `apple-icon.png` are committed outputs of
+`npm run icons`. The header and the share cards use the `BrandMark` component, which repeats the
+32 px drawing as JSX on purpose, since satori and React cannot import the SVG file; a comment
+points at the source and a test pins the palette in both. The share cards draw the ball only,
+because the dark green tile disappears on the dark card, and the header tile gets a 1 px edge
+ring for the same reason on the dark theme. The wordmark and the "2026 Season" pill are not
+changed. **Why:** the repo shipped the framework's default icon in `favicon.ico` since v0.1.0, and
+browsers chose it over the football `icon.svg`, so the tab never showed the brand. **Trade-off:**
+`sharp` is used by the script but is only a transitive dependency of Next, so the script needs
+`npm ci` first and is not run in CI; the committed outputs and `brand-assets.test.ts` are what
+keep them honest. **Alternative:** drop `favicon.ico` and rely on the SVG. Rejected because
+crawlers and some clients request `/favicon.ico` directly.

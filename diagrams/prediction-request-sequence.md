@@ -72,4 +72,4 @@ reconstructed row with a label). And if Railway is unreachable, `api.ts` throws
 back to a plain "Matchup" title); `src/app/error.tsx` only handles other, unexpected errors.
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.3_
+_Last updated: 2026-10-15 · reflects v1.2.4_

@@ -156,3 +156,8 @@ Full setup + env vars: [README.md](./README.md) and
   footer's Report an Issue link opens the issue chooser in a new tab,
   because the site is embedded in the maintainer's portfolio site and
   GitHub refuses framing.
+- **Icons are generated:** `favicon.ico`, `icon.svg` and `apple-icon.png`
+  in `frontend/src/app/` are outputs of `npm run icons`. Edit
+  `frontend/scripts/icons/*.svg`, run it (needs `npm ci`), and commit the
+  outputs. Keep `frontend/src/components/BrandMark.tsx` in sync with
+  `ball-32.svg`; `brand-assets.test.ts` pins the files and palette.
