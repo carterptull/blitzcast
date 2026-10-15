@@ -18,6 +18,7 @@ flowchart LR
     end
 
     anthropic["Anthropic API<br/><small>Claude Haiku 4.5, narration only</small>"]
+    github["GitHub<br/><small>issue forms and private vulnerability reporting</small>"]
 
     subgraph hosting["Hosting"]
         cloudflare["Cloudflare<br/><small>blitzcast.app domain and DNS</small>"]
@@ -26,6 +27,7 @@ flowchart LR
     end
 
     visitor -->|HTTPS| blitz
+    visitor -.->|"Report an Issue link, new tab"| github
     portfolio -.->|"iframe, allowed by CSP frame-ancestors"| blitz
     blitz -->|"daily batch pulls"| data
     blitz -->|"narrate finished predictions"| anthropic
@@ -33,8 +35,9 @@ flowchart LR
 ```
 
 **Only two things reach Blitzcast in real time:** visitors, and the portfolio site that frames
-it. Every data provider sits on the batch side and is called by scheduled jobs, so each free
-tier's budget is set by the cron schedule, not by how many people visit.
+it. (The footer's Report an Issue link sends visitors out to GitHub issues, not through
+Blitzcast.) Every data provider sits on the batch side and is called by scheduled jobs, so
+each free tier's budget is set by the cron schedule, not by how many people visit.
 
 **Anthropic is a dependency, not an authority.** It receives a finished probability and its top
 factors, plus a fact sheet of verified pre-game facts, and returns prose that is checked against
@@ -47,4 +50,4 @@ injuries endpoint (falling back to nflverse if it fails), and team logos load fr
 That includes CFB: the logo URLs are seeded from CollegeFootballData, but they point at ESPN.
 
 ---
-_Last updated: 2026-10-12 · reflects v1.1.4_
+_Last updated: 2026-10-15 · reflects v1.2.0_

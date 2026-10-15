@@ -806,3 +806,15 @@ reachable through `eslint-config-next`'s `fast-glob`. It is a lint-time tool pat
 source and config, not part of the shipped bundle or the API, so it is accepted and tracked
 rather than hidden with a downgrade. **Alternative:** pin `eslint-config-next` to 14.x to clear
 the audit; rejected because it would regress the Next 16 lint rules to clear a dev-only finding.
+
+## Visitor issue reports go to GitHub, security reports stay private
+
+The footer links to GitHub's issue chooser, which has two issue forms (bugs and wrong game data)
+and blank issues turned off; its one contact link points security reports at private
+vulnerability reporting. **Why:** the site has no user accounts and no write path for a feedback
+form, and building one would mean spam handling and storing visitors' personal data. GitHub
+already does both. With blank issues off, a security report can't skip the private route by
+accident. **Trade-off:** filing needs a GitHub account, and the link shows the repo owner's
+GitHub handle (already public in SECURITY.md and security.txt). Revisit if the repo moves to a
+Paymon organization. **Alternative:** an in-app feedback form posting to the API; rejected
+because it adds a write endpoint, spam filtering and personal-data storage to a read-only app.

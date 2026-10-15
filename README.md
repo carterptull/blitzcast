@@ -179,6 +179,7 @@ blitzcast/
 ├── railway.json         backend service config (start command, migrations)
 ├── railway-*-cron.json  daily NFL/CFB refresh cron services
 ├── .github/workflows/   CI: ruff + pytest, eslint + jest + build
+├── .github/ISSUE_TEMPLATE/  bug and wrong-data issue forms
 ├── DECISIONS.md         technical decision log
 ├── CHANGELOG.md         release history
 ├── SECURITY.md          vulnerability reporting policy

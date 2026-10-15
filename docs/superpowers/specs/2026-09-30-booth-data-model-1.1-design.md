@@ -12,7 +12,7 @@ feature code. It is implemented by four plans, one PR and one release each:
 | [P1 Data correctness](../plans/2026-09-30-p1-data-correctness.md) | v1.0.12 | `ct/fix/data-correctness` |
 | [P2 CFB in-season stats](../plans/2026-09-30-p2-cfb-inseason-stats.md) | v1.0.13 | `ct/feat/cfb-inseason-stats` |
 | [P3 Booth narrator](../plans/2026-09-30-p3-booth-narrator.md) | v1.1.0 | `ct/feat/booth-narrator` |
-| [P4 Model 1.1](../plans/2026-09-30-p4-model-1.1.md) | v1.2.0, models `1.1.0` / `cfb-1.1.0` | `ct/feat/model-1.1` |
+| [P4 Model 1.1](../plans/2026-09-30-p4-model-1.1.md) | parked (Feb 2027); models `1.1.0` / `cfb-1.1.0`, app version picked when it ships | `ct/feat/model-1.1` |
 
 Order: P1 → P2 → P3 → P4. P1 and P2 are independent of each other. P3 needs P1's
 `has_market_line`. P4 needs P1 (imputation, completion fix, CFB neutral sites) and P2 (CFB
