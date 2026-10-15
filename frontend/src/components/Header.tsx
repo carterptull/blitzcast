@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import BrandMark from "./BrandMark";
 import ThemeToggle from "./ThemeToggle";
 
 const TABS = [
@@ -17,14 +18,10 @@ export default function Header() {
     <header className="sticky top-0 z-40 border-b border-edge bg-canvas/85 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6">
         <Link href={`/${sport}`} className="group flex items-baseline gap-2 rounded-sm">
-          {/* Kicking-tee mark */}
-          <svg
-            viewBox="0 0 12 12"
-            className="size-2.5 self-center text-gold transition-transform group-hover:-rotate-12"
-            aria-hidden="true"
-          >
-            <path d="M6 0 12 12 0 12z" fill="currentColor" />
-          </svg>
+          <BrandMark
+            size={24}
+            className="self-center rounded-md ring-1 ring-edge transition-transform group-hover:-rotate-12"
+          />
           <span className="font-display text-2xl uppercase leading-none tracking-wide">
             Blitzcast
           </span>

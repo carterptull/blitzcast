@@ -42,4 +42,10 @@ describe("Header", () => {
     expect(screen.getByText("NFL").closest("a")).toHaveAttribute("data-prefetch", "false");
     expect(screen.getByText("CFB").closest("a")).toHaveAttribute("data-prefetch", "false");
   });
+
+  test("shows the football mark, not the old triangle", () => {
+    const { container } = render(<Header />);
+    expect(container.querySelector("svg[data-brand-mark='tile']")).not.toBeNull();
+    expect(container.querySelector("path[d='M6 0 12 12 0 12z']")).toBeNull();
+  });
 });
