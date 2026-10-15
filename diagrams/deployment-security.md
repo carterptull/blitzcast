@@ -31,6 +31,7 @@ flowchart LR
         ci["CI on every PR<br/><small>ruff · pytest · eslint · jest · next build</small>"]
         guard["Dependabot security updates<br/>secret scanning + push protection"]
         advisories["Private vulnerability reporting"]
+        issues["Issue forms<br/><small>blank issues off, security contact link</small>"]
     end
 
     visitor --> dns --> firewall --> next
@@ -42,6 +43,8 @@ flowchart LR
     vars -.-> crons
     researcher --> wellknown
     wellknown -.->|Contact| advisories
+    visitor -.->|"footer link, new tab"| issues
+    issues -.->|"security reports"| advisories
     gh -.->|"deploy on push to main"| vercel
     gh -.->|"deploy on push to main"| railway
 ```
@@ -71,4 +74,4 @@ directly.
 [`SECURITY.md`](../SECURITY.md)).
 
 ---
-_Last updated: 2026-10-12 · reflects v1.1.4_
+_Last updated: 2026-10-15 · reflects v1.2.0_

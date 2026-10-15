@@ -6,6 +6,24 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-15
+
+A visitor-facing release: a way to report issues from the site. No change to the
+model or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
+
+### Added
+- A "Report an Issue" link in the site footer, opening GitHub's issue chooser in a new tab.
+- GitHub issue forms for bugs and for wrong game data. Blank issues are off, and the
+  chooser sends security reports to private vulnerability reporting.
+
+### Fixed
+- Private vulnerability reporting is now enabled on the repository, so the reporting
+  link in SECURITY.md and the `Contact:` in `/.well-known/security.txt` work.
+
+### Changed
+- SECURITY.md: a 7 day acknowledgement target and a pointer to issues for non-security reports.
+- The parked model retrain (P4) no longer has a reserved version; it gets the next version when it ships.
+
 ## [1.1.4] — 2026-10-12
 
 A dependency security release. No change to the app's behavior, the model, or

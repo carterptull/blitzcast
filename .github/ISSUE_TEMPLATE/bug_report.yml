@@ -1,0 +1,32 @@
+name: Bug report
+description: Something on blitzcast.app is broken, stuck, or looks off.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for flagging it. Tell us what you saw and where, and we'll take a look.
+
+        Security problem? Back out and pick "Report a security vulnerability" so it stays private.
+  - type: input
+    id: url
+    attributes:
+      label: Page URL
+      placeholder: https://blitzcast.app/nfl
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw, and the steps that got you there.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened?
+  - type: input
+    id: device
+    attributes:
+      label: Browser and device
+      placeholder: Safari on iPhone 15

@@ -18,13 +18,19 @@ Please **do not** open a public GitHub issue for a security vulnerability.
 Use GitHub's private vulnerability reporting on this repository:
 [github.com/carterptull/blitzcast/security/advisories/new](https://github.com/carterptull/blitzcast/security/advisories/new)
 
+This opens a private channel with the maintainer, and nothing is made public
+until a fix is ready.
+
+For anything that is not a security problem, such as a bug or game data that
+looks wrong, open a regular issue instead:
+[github.com/carterptull/blitzcast/issues/new/choose](https://github.com/carterptull/blitzcast/issues/new/choose)
+
 Helpful details: affected component (frontend, API, data pipeline, or
 deployment), steps to reproduce, and the impact you believe it has.
 
 ## What to expect
 
-- An acknowledgement once the report has been read, typically within a
-  few days.
+- An acknowledgement within 7 days, usually sooner.
 - A follow-up with an assessment and, if the issue is valid, a fix or a
   mitigation plan.
 - Coordinated disclosure: please give the fix a chance to ship before

@@ -1,0 +1,30 @@
+name: Wrong game data
+description: A score, kickoff time, betting line, injury, venue, or weather detail on blitzcast.app is wrong.
+title: "[Data]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This one's for facts, not opinions. A pick that didn't hit isn't a data problem: the model deals in probabilities, and a 70 percent favorite still loses about three times in ten. That's football.
+
+        But if a score, a line, or a kickoff time is wrong, we want to know.
+  - type: input
+    id: url
+    attributes:
+      label: Game page URL
+      placeholder: https://blitzcast.app/nfl/matchup/...
+    validations:
+      required: true
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What is wrong?
+      description: The value shown on the page.
+    validations:
+      required: true
+  - type: textarea
+    id: correct
+    attributes:
+      label: What's the right value, and where did you see it?
+      description: A link to the source gets it fixed faster.
