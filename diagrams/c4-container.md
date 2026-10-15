@@ -58,4 +58,4 @@ through their own GitHub integrations. CI runs on every PR and on pushes to `mai
 merge gate, not a deploy trigger.
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.2_
+_Last updated: 2026-10-15 · reflects v1.2.3_

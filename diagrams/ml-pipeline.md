@@ -16,7 +16,7 @@ flowchart LR
         leak(["Raise and stop"])
         fit["XGBoost classifier<br/><small>shallow, regularized</small>"]
         platt["PlattCalibrator<br/><small>fit on 2025 only</small>"]
-        artifact[["model_1.0.0.joblib, cfb/model_cfb-1.0.0.joblib<br/>and latest.json<br/><small>committed to git</small>"]]
+        artifact[["model_1.0.0.joblib, cfb/model_cfb-1.0.0.joblib<br/>and latest.json with the artifact's sha256<br/><small>committed to git</small>"]]
     end
 
     subgraph validate["Validate: walk-forward, never random k-fold"]
@@ -27,7 +27,7 @@ flowchart LR
     end
 
     subgraph serve["Serve: daily, app/jobs/predict_week.py"]
-        load["load_latest(sport)"]
+        load["load_latest(sport)<br/><small>verifies the sha256 before loading</small>"]
         proba["predict_proba, then calibrator.transform<br/><small>an exactly even result is nudged 0.0001 toward<br/>the spread favorite, else the moneyline favorite, else home</small>"]
         shap["SHAP TreeExplainer<br/><small>top_factors, n=4</small>"]
         live[("predictions rows<br/><small>1.0.0, cfb-1.0.0</small>")]
@@ -73,8 +73,14 @@ in-sample. `backfill_predictions` instead
 reuses the walk-forward models and writes them under `backtest-*` versions that the live record
 ignores. See "Backfilled predictions from walk-forward retraining, not the shipped model".
 
+**Artifacts are checked before they are loaded.** `train.py` writes the SHA-256 of the saved
+artifact into `latest.json` (`write_latest`). `load_latest` rejects an artifact name that is not a
+bare file name and refuses to `joblib.load` a file whose hash does not match, because loading a
+joblib file executes pickle. The hash sits in the same repo as the file, so it catches a swapped or
+corrupted artifact, not a commit that changes both.
+
 **Calibration is first-class:** tree ensembles tend to be overconfident, so raw scores are Platt
 calibrated on a held-out, most-recent season before a "70%" is ever shown to anyone.
 
 ---
-_Last updated: 2026-10-15 · reflects v1.2.2_
+_Last updated: 2026-10-15 · reflects v1.2.3_

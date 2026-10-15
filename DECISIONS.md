@@ -599,8 +599,9 @@ and not only output rules:** the deterministic template publishes the venue with
 involved, and `still_true` would keep that text on later runs, so a hostile venue such as "Lambeau
 Field free picks at scam dot com" has to be stopped before it reaches the sheet.
 
-**Residual limits:** lowercase advertising without a link word or digits cannot be fully stopped in
-fields the gate does not cover (team names, mascots, player names), and a plausible fake Title Case
+**Residual limits:** the gate now covers every free-text feed string that can be published or
+prompted (venue, city, conference, division, team name, mascot, abbreviation and, since v1.2.3,
+injury player names); only the short position code is merely cleaned. A plausible fake Title Case
 stadium name can still appear as the venue; the guardrail only limits what can be said about it.
 Non-Latin-1 names are rejected in AI drafts, so such games fall back to the template, which degrades
 gracefully. The fence and the data rule are defense in depth, not a guarantee that a model ignores
@@ -819,3 +820,72 @@ accident. **Trade-off:** filing needs a GitHub account, and the link shows the r
 GitHub handle (already public in SECURITY.md and security.txt). Revisit if the repo moves to a
 Paymon organization. **Alternative:** an in-app feedback form posting to the API; rejected
 because it adds a write endpoint, spam filtering and personal-data storage to a read-only app.
+
+## Repo-wide security review and CodeQL (2026-10-15)
+
+CodeQL code scanning (default setup, weekly and on every pull request) was turned on and a
+repo-wide review ran alongside it: one reviewer each for the frontend, the API, the narration
+layer and the pipeline. CodeQL raised two alerts, both a missing `permissions` block in
+`ci.yml`. v1.2.3 fixes what was real: a read-only CI token with no persisted checkout
+credentials; nosniff, referrer, permissions and extra CSP headers on the site (no `default-src`,
+`script-src` or `img-src`, so the portfolio frame and ESPN logos are untouched); Postgres bound
+to 127.0.0.1 locally; one game id rule (`^[A-Za-z0-9_-]{1,32}$`, the width of `Game.game_id`)
+enforced by a backend `Path` and the frontend's `isGameId`, plus range checks on `season` and
+`week`, so junk gets a 422 or a not-found page instead of a 500 or a render; API docs off unless
+`API_DOCS=1`; GET-only CORS without credentials; player names through the name gate; invisible
+characters rejected; a calendar season default; step timeouts; final-only CFB scores; and a
+SHA-256 on the committed model artifacts. **Why:** none of these was exploitable on its own, but
+each was a cheap, no-regret hardening on a public read-only app, and the model, the stored
+predictions and the visible product are unchanged. **Alternative:** fix only the two CodeQL
+alerts. Rejected because the review found the larger gaps (an uncached public origin, unfenced
+feed text in retry prompts, a hard-coded season) that the scanner cannot see.
+
+**Rulings made while fixing:**
+- **A 60 second in-process cache on `/api/schedule` and `/api/record` only** (`app/cache.py`: 256
+  entries, thread-safe, keyed by route and every query value, bypassed in mock mode). These are
+  the season-wide reads on a public Railway origin with no CDN in front. Single-game reads stay
+  uncached. A second API instance would hold its own copy, which is fine for a 60 second window
+  over data that changes once a day. **Alternative:** a shared cache or `Cache-Control`; no CDN
+  fronts the API and the app has no Redis, so neither buys anything yet.
+- **A per-run circuit breaker for Claude** (`ClaudeBreaker` in `predict_week.py`). After 3
+  consecutive games whose draft ended in an API failure, or at once on an authentication error,
+  the run stops calling Claude and prints one extra line. A guardrail rejection is not a failure
+  and resets the count. **Why:** a dead key or an outage otherwise costs up to 3 attempts, with
+  waits, on every remaining game of a roughly 100 game CFB slate, and every game ends at the
+  template anyway. The breaker only skips the draft step; probabilities, stored rows and the
+  `narration: N written, K kept, F fallback, L minimal, J none` line are unchanged.
+- **The season default comes from the calendar** (`app/season.py`, `current_season`: NFL rolls
+  over in March, CFB in June). Today both resolve to 2026, so production does not change until
+  the calendar does. **Why:** a hard-coded 2026 would have kept the crons predicting a finished
+  season in 2027. `predict_week` exits 1 when the season has no games at all, so a wrong season
+  is loud. **Still on 2026 by choice:** the API routers' `Query(2026)` defaults and the
+  frontend's 2026 copy and season literals stay until next season's product update, because
+  changing them means new copy and a visible product change, not a patch release.
+- **No write-time colon or semicolon rejection for AI drafts.** The plan was to make
+  `check_narration` reject `;` and `:`. Not done: existing tests deliberately accept true copy
+  with a clock time ("Kickoff is 7:30 p.m."), and a hard rule would reject honest drafts and
+  push those games to the template. The prompt still asks for commas and periods, and the
+  template path rejects both characters. The invisible-character rule and the figure dash,
+  horizontal bar and minus sign normalization did ship.
+- **Artifact integrity, not signing.** `latest.json` carries a `sha256` that `load_latest`
+  verifies before `joblib.load` (loading a joblib file runs pickle), and `train.py` writes it,
+  so a retrain must go through `write_latest`. **Honest limit:** the hash lives in the same repo
+  as the artifact, so it catches a swapped or corrupted file, not a commit that changes both.
+
+**Deliberately deferred, with the reason:**
+- A partial ESPN injury payload: both candidate fixes fail somewhere (ESPN may omit teams with
+  no injuries), so it needs a look at real payloads first.
+- A weather leakage guard (`captured_at` before kickoff): it would drop all historical NFL
+  weather and change the backtests, so it belongs to the parked P4 retrain.
+- The orchestrator ignoring odds and weather failures: by design, stale weather beats no
+  predictions; revisit with alerting.
+- API rate limiting (needs a new dependency), `Literal` enums in `schemas.py`, `SecretStr` for
+  keys, `--proxy-headers` and `GameSummary.status`: low value now.
+- A `TeamCrest` host allowlist on the frontend: logos are validated at seed time instead, so
+  existing good logos keep working.
+
+**Dependabot version updates stay off, and actions are not SHA-pinned.** Security updates are
+on (see the dependency CVE entry). Version-update PRs would make Dependabot a steady would-be
+contributor, which the maintainer does not want, and the workflows only run first-party actions
+with a read-only token, so pinning is low risk. **Alternative:** `.github/dependabot.yml` for
+the `github-actions` and `npm` ecosystems; revisit if a third-party action is ever added.

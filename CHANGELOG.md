@@ -6,6 +6,65 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.3] — 2026-10-15
+
+A security hardening release from a repo-wide review and the first CodeQL scan. No change
+to the model, `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`) or stored predictions.
+
+For operators: the API's interactive docs (`/docs`, `/redoc`, `/openapi.json`) are now off
+unless `API_DOCS=1` is set. For local use, `backend/.env.example` sets it.
+
+### Added
+- CodeQL code scanning (default setup), weekly and on every pull request.
+
+### Security
+- CI runs with a read-only token (`permissions: contents: read`), and checkouts no longer
+  leave the token in `.git/config`. This closes the two CodeQL alerts on `ci.yml`.
+- The site now sends `X-Content-Type-Options: nosniff`, a strict-origin-when-cross-origin
+  `Referrer-Policy` and a `Permissions-Policy` that turns off camera, microphone,
+  geolocation, payment and USB. The CSP adds `base-uri 'self'`, `object-src 'none'` and
+  `form-action 'self'`; embedding rules are unchanged. The `X-Powered-By` header is gone.
+- The local Postgres container is bound to `127.0.0.1` instead of every interface.
+- The API validates `game_id` (up to 32 letters, digits, underscores or hyphens), `season`
+  (2000 to 2100) and `week` (0 to 30), and answers 422 instead of failing with a 500.
+- The API's interactive docs and OpenAPI schema are off by default.
+- API CORS no longer allows credentials or any method but GET, and every API response
+  carries `X-Content-Type-Options: nosniff`.
+- `/api/schedule` and `/api/record` keep a 60 second in-process cache, so repeated
+  requests for the same season no longer reach Postgres each time.
+- Matchup ids are checked with the same rule on the frontend. A bad id takes the normal
+  not-found path without calling the API, and the share image route returns 404 for a bad
+  or unknown game instead of rendering an image for any path.
+- Injury player names from the feeds now go through the same name check as the other feed
+  strings, so a prose-like value is dropped instead of reaching the narration prompt.
+- When a draft is rejected, the reason sent back to Claude is fenced in `<checker_note>`
+  tags and the prompt says tagged text is data.
+- Narration containing invisible control or format characters (zero-width, bidirectional,
+  tag characters) is rejected, and the figure dash, horizontal bar and minus sign are
+  normalized like en and em dashes.
+- `latest.json` records the SHA-256 of each committed model artifact. `load_latest` verifies
+  it before loading and rejects an artifact name that is not a bare file name.
+- CFB team logos are stored only if they are ESPN CDN images, and team colors only if they
+  are hex colors.
+
+### Fixed
+- If the Anthropic API is down, `predict_week` no longer spends the run retrying every game.
+  After 3 consecutive games with an API failure, or at once on an authentication error, it
+  stops calling Claude for the rest of the run and prints
+  `narration: Claude disabled for the rest of the run after <reason>`. Predictions and the
+  summary line are unchanged, and the kept text, template and minimal line still cover each game.
+- The pipeline jobs, `predict_week`, `coverage` and `narration_eval` defaulted to season
+  2026. They now take the season from the calendar (`app/season.py`: NFL changes in March,
+  CFB in June), which is still 2026 today. `predict_week` exits 1 when the season has no
+  games at all, and still exits 0 when there are only no unplayed games.
+- Each orchestrator step now has a 30 minute timeout (90 minutes for the prediction batch),
+  and a timeout counts as a failed step. Database connection attempts time out after 15 seconds.
+- The CFB loader stored running points for games still in progress as if they were final
+  scores. It now stores scores only for completed games.
+- `alembic` no longer breaks on a `%` in the database password.
+- The sitemap refreshes hourly as its comment says (`revalidate = 3600`), and the stale
+  comment about `no-store` fetches is corrected.
+
 ## [1.2.2] — 2026-10-15
 
 A small repository fix. No change to the app, the model, or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).

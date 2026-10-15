@@ -14,14 +14,8 @@ const SPORTS = [
   { slug: "cfb", api: "CFB" as const },
 ] as const;
 
-// getSchedule() -> api.ts's get<T>() always fetches with `cache: "no-store"`
-// (correct for real pages, which need per-request freshness). That same
-// no-store fetch would force *this* route to re-run on every single crawler
-// hit if we called it directly — Next silently ignores a route's
-// `revalidate` export whenever a no-store fetch happens inside it. Wrapping
-// the call in unstable_cache gives this route its own independent cache
-// layer, so the schedule is actually fetched at most once per sport per
-// hour, no matter how often /sitemap.xml is requested in between.
+// getSchedule() revalidates every 30s via api.ts, and unstable_cache stretches
+// that to one fetch per sport per hour, matching the revalidate export.
 const getCachedSchedule = unstable_cache(
   async (season: number, sport: "NFL" | "CFB") => getSchedule(season, sport, "all"),
   ["sitemap-schedule"],
