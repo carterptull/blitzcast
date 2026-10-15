@@ -7,6 +7,8 @@ const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ??
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
+export const revalidate = 3600;
+
 const SPORTS = [
   { slug: "nfl", api: "NFL" as const },
   { slug: "cfb", api: "CFB" as const },
