@@ -2,6 +2,7 @@ import Link from "next/link";
 import pkg from "../../package.json";
 
 const beerUrl = process.env.NEXT_PUBLIC_BUYMEACOFFEE_URL;
+const issuesUrl = "https://github.com/carterptull/blitzcast/issues/new/choose";
 
 export default function Footer() {
   return (
@@ -15,6 +16,17 @@ export default function Footer() {
           <Link href="/how-it-works" className="underline decoration-edge underline-offset-2 hover:text-ink">
             How It Works
           </Link>
+          <span aria-hidden="true" className="text-edge">
+            ·
+          </span>
+          <a
+            href={issuesUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-edge underline-offset-2 hover:text-ink"
+          >
+            Report an Issue
+          </a>
         </p>
         <div className="sm:justify-self-center">
           {beerUrl ? (
