@@ -6,6 +6,24 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.4] — 2026-10-15
+
+A branding fix. No change to the model or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
+
+### Added
+- `npm run icons` (from `frontend/`) regenerates `favicon.ico`, `icon.svg` and `apple-icon.png`
+  from the two SVG sources in `frontend/scripts/icons/`.
+
+### Changed
+- The browser tab, the iPhone home-screen icon, the site header and the share cards now show
+  the Blitzcast football instead of the framework's default icon, the small gold triangle
+  and the plain gold pill they used before. The header mark keeps the wordmark's 24 px
+  height, so the header does not grow.
+
+### Fixed
+- Browsers picked the committed default `favicon.ico` over the football `icon.svg`, so the
+  tab showed the default icon. The `.ico` is now the football at 16, 32 and 48 px.
+
 ## [1.2.3] — 2026-10-15
 
 A security hardening release from a repo-wide review and the first CodeQL scan. No change
