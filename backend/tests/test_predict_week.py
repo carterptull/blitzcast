@@ -524,6 +524,135 @@ def test_main_prints_no_near_even_line_for_ordinary_games(db, monkeypatch, capsy
     assert "narration: 2 written, 0 kept, 0 fallback, 0 minimal, 0 none" in out
 
 
+DISABLED = "narration: Claude disabled for the rest of the run after"
+
+
+def _scripted_narrator(*steps):
+    """Each call takes the next step: an exception class name raises
+    ClaudeUnavailable, an exception instance raises it, anything else is returned."""
+    from app.services.narrate import ClaudeUnavailable
+
+    calls = []
+
+    def fake(facts):
+        step = steps[len(calls)]
+        calls.append(facts)
+        if isinstance(step, Exception):
+            raise step
+        if isinstance(step, str) and step.endswith("Error"):
+            raise ClaudeUnavailable(step)
+        return step
+
+    return fake, calls
+
+
+def test_breaker_trips_after_three_consecutive_api_failed_games(db, monkeypatch, capsys):
+    fake, calls = _scripted_narrator(*["APITimeoutError"] * 3)
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    breaker = predict_week.ClaudeBreaker()
+    results = [narrate_safely(*_narrate_args(db), breaker=breaker) for _ in range(5)]
+    assert len(calls) == 3
+    assert breaker.tripped
+    assert all(r.source == "fallback" and "60%" in r.text for r in results)
+    out = capsys.readouterr().out
+    assert out.count(DISABLED) == 1
+    assert f"{DISABLED} 3 consecutive API failures" in out
+
+
+def test_breaker_trips_at_once_on_an_authentication_error(db, monkeypatch, capsys):
+    fake, calls = _scripted_narrator("AuthenticationError")
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    breaker = predict_week.ClaudeBreaker()
+    results = [narrate_safely(*_narrate_args(db), breaker=breaker) for _ in range(3)]
+    assert len(calls) == 1
+    assert all(r.source == "fallback" for r in results)
+    assert capsys.readouterr().out.splitlines() == [f"{DISABLED} an authentication error"]
+
+
+def test_a_guardrail_rejection_or_a_success_resets_the_breaker(db, monkeypatch, capsys):
+    fake, calls = _scripted_narrator(
+        "APIConnectionError", "APIConnectionError", None,
+        "APITimeoutError", "APITimeoutError", "A fresh booth draft.",
+        "InternalServerError", "InternalServerError", "InternalServerError",
+    )
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    breaker = predict_week.ClaudeBreaker()
+    for _ in range(8):
+        narrate_safely(*_narrate_args(db), breaker=breaker)
+        assert not breaker.tripped
+    narrate_safely(*_narrate_args(db), breaker=breaker)
+    assert breaker.tripped
+    assert narrate_safely(*_narrate_args(db), breaker=breaker).source == "fallback"
+    assert len(calls) == 9
+    assert capsys.readouterr().out.count(DISABLED) == 1
+
+
+def test_an_unexpected_narrator_error_is_not_an_api_failure(db, monkeypatch):
+    fake, calls = _scripted_narrator(*[RuntimeError(SECRET)] * 4)
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    breaker = predict_week.ClaudeBreaker()
+    for _ in range(4):
+        narrate_safely(*_narrate_args(db), breaker=breaker)
+    assert len(calls) == 4 and not breaker.tripped
+
+
+def test_a_tripped_breaker_still_keeps_a_valid_previous(db, monkeypatch, capsys):
+    fake, calls = _scripted_narrator("AuthenticationError")
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    breaker = predict_week.ClaudeBreaker()
+    narrate_safely(*_narrate_args(db), breaker=breaker)
+    result = narrate_safely(*_narrate_args(db), previous=GOOD_PREVIOUS, breaker=breaker)
+    assert result == Narration(GOOD_PREVIOUS, "kept")
+    assert len(calls) == 1
+
+
+def test_without_a_breaker_every_game_still_calls_the_narrator(db, monkeypatch):
+    fake, calls = _scripted_narrator(*["AuthenticationError"] * 4)
+    monkeypatch.setattr(predict_week, "narrate", fake)
+    for _ in range(4):
+        assert narrate_safely(*_narrate_args(db)).source == "fallback"
+    assert len(calls) == 4
+
+
+def _stored_predictions(db):
+    from app.models import Prediction
+
+    rows = db.scalars(select(Prediction).where(Prediction.model_version == "1.0.0")).all()
+    return {
+        p.game_id: (p.home_win_prob, p.shap_top_features)
+        for p in rows if p.game_id.startswith("2026_01")
+    }
+
+
+def test_main_stores_identical_predictions_when_the_breaker_trips(db, monkeypatch, capsys):
+    out, commits = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys)
+    assert DISABLED not in out
+    healthy = _stored_predictions(db)
+    assert len(healthy) == 2 and len(commits) == 2
+
+    fake, calls = _scripted_narrator("AuthenticationError")
+    out, commits = _run_main(db, monkeypatch, fake, capsys)
+    assert len(calls) == 1
+    assert _stored_predictions(db) == healthy
+    assert len(commits) == 2
+    assert f"{DISABLED} an authentication error" in out
+    assert "predictions: 2 ok, 0 failed" in out
+    assert re.search(
+        r"^narration: \d+ written, \d+ kept, \d+ fallback, \d+ minimal, \d+ none$", out, re.M
+    )
+    assert "narration: 0 written" in out
+    assert all(_stored_texts(db).values())
+
+
+def test_main_breaker_is_per_run(db, monkeypatch, capsys):
+    fake, calls = _scripted_narrator("AuthenticationError")
+    out, _ = _run_main(db, monkeypatch, fake, capsys)
+    assert len(calls) == 1 and DISABLED in out
+    out, _ = _run_main(db, monkeypatch, lambda f: "A fresh booth draft.", capsys)
+    assert DISABLED not in out
+    assert "narration: 2 written, 0 kept, 0 fallback, 0 minimal, 0 none" in out
+
+
 def _bills_chiefs(p: float, weather: str | None):
     return _game(
         "NFL", _team(**BILLS, record="3-1"), _team(**CHIEFS, record="2-2"), p, 3.0,
@@ -624,6 +753,14 @@ def test_still_true_never_keeps_a_link():
 def test_still_true_never_keeps_a_link_or_phone_evasion(lead):
     facts = _bills_chiefs(0.6, None)
     assert not still_true(f"{lead} Our model gives the Bills 60% and the Chiefs 40%.", facts)
+
+
+@pytest.mark.parametrize("hidden", ["​", "‮", "\U000e0041", "­"])
+def test_still_true_never_keeps_an_invisible_character(hidden):
+    facts = _bills_chiefs(0.6, None)
+    good = "Our model gives the Bills 60% and the Chiefs 40%."
+    assert still_true(good, facts)
+    assert not still_true(good.replace("Bills ", f"Bills{hidden} "), facts)
 
 
 @pytest.mark.parametrize("abbr", [

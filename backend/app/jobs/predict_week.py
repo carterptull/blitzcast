@@ -35,7 +35,13 @@ from app.services.fallback_narration import (
     fallback_reason,
     minimal_narration,
 )
-from app.services.narrate import check_narration, narrate, no_pick_phrase, reason_category
+from app.services.narrate import (
+    ClaudeUnavailable,
+    check_narration,
+    narrate,
+    no_pick_phrase,
+    reason_category,
+)
 from app.services.predictions import poll_ranks_entering
 from ml.explain import make_explainer, top_factors
 from ml.features import build_features, market_home_prob
@@ -182,6 +188,54 @@ class Narration(NamedTuple):
     near_even: bool = False  # a fallback written from the template by design
 
 
+class ClaudeBreaker:
+    """One per run. After MAX_FAILURES consecutive games whose draft ended in an
+    API failure, or at once on an authentication error, the rest of the run
+    skips Claude and goes straight to the kept/template/minimal chain. Any game
+    that reaches Claude without an outage (a pass or a rejection) resets it."""
+
+    MAX_FAILURES = 3
+
+    def __init__(self) -> None:
+        self.failures = 0
+        self.reason: str | None = None
+
+    @property
+    def tripped(self) -> bool:
+        return self.reason is not None
+
+    def success(self) -> None:
+        self.failures = 0
+
+    def failure(self, kind: str) -> None:
+        if self.tripped:
+            return
+        self.failures += 1
+        if kind == "AuthenticationError":
+            self.reason = "an authentication error"
+        elif self.failures >= self.MAX_FAILURES:
+            self.reason = f"{self.failures} consecutive API failures"
+        if self.reason:
+            print(f"narration: Claude disabled for the rest of the run after {self.reason}")
+
+
+def _draft(
+    db: Session, game_id: str, facts: GameFacts, breaker: ClaudeBreaker | None
+) -> str | None:
+    if breaker is not None and breaker.tripped:
+        return None
+    try:
+        text = narrate(facts)
+    except Exception as exc:
+        _failed(db, game_id, "narration draft", exc)
+        if breaker is not None and isinstance(exc, ClaudeUnavailable):
+            breaker.failure(exc.kind)
+        return None
+    if breaker is not None:
+        breaker.success()
+    return text
+
+
 def _minimal(db: Session, row: pd.Series, prob: float) -> Narration:
     try:
         return Narration(minimal_narration(row["home_abbr"], row["away_abbr"], prob), "minimal")
@@ -198,6 +252,7 @@ def narrate_safely(
     ranks: dict[int, int],
     prev_ranks: dict[int, int],
     previous: str | None = None,
+    breaker: ClaudeBreaker | None = None,
 ) -> Narration:
     """Fact-sheet building and narration may fail for one game without costing
     that game, or the rest of the slate, its prediction. The chain: a fresh AI
@@ -205,8 +260,8 @@ def narrate_safely(
     else the deterministic fallback from the fact sheet, else (no fact sheet, or
     a fallback that fails its check) a model-only line from the row. A near-even
     game skips the AI draft and the previous narration: the template always
-    names the pick. Rolling back is safe: since the last per-game commit the
-    loop has only read."""
+    names the pick. A tripped breaker skips only the AI draft. Rolling back is
+    safe: since the last per-game commit the loop has only read."""
     game_id = row["game_id"]
     try:
         facts = facts_for_row(db, row, prob, factors, ranks, prev_ranks)
@@ -215,11 +270,7 @@ def narrate_safely(
         return _minimal(db, row, prob)
     near_even = is_near_even(facts)
     if not near_even:
-        try:
-            text = narrate(facts)
-        except Exception as exc:
-            _failed(db, game_id, "narration draft", exc)
-            text = None
+        text = _draft(db, game_id, facts, breaker)
         if text:
             return Narration(text, "llm")
         if previous:
@@ -250,9 +301,12 @@ def narrate_and_store(
     factors: list,
     ranks: dict[int, int],
     prev_ranks: dict[int, int],
+    breaker: ClaudeBreaker | None = None,
 ) -> Narration:
     previous = existing_narrative(db, row["game_id"], version)
-    narration = narrate_safely(db, row, prob, factors, ranks, prev_ranks, previous=previous)
+    narration = narrate_safely(
+        db, row, prob, factors, ranks, prev_ranks, previous=previous, breaker=breaker
+    )
     upsert_prediction(db, row["game_id"], version, prob, factors, narration.text)
     return narration
 
@@ -393,6 +447,7 @@ def predict_one(
     predictor: Predictor,
     ranks: dict[int, int],
     prev_ranks: dict[int, int],
+    breaker: ClaudeBreaker | None = None,
 ) -> Narration | None:
     """Predict, narrate, store and commit one game. Any failure is rolled back
     and logged by type only, and returns None so the rest of the slate runs."""
@@ -416,7 +471,7 @@ def predict_one(
             spread_available=bool(row["has_market_spread"]),
         )
         narration = narrate_and_store(
-            db, row, predictor.version, prob, factors, ranks, prev_ranks
+            db, row, predictor.version, prob, factors, ranks, prev_ranks, breaker
         )
         # Commit per game: a full CFB slate is ~100 sequential Claude calls,
         # and the upsert is idempotent, so partial progress is safe to keep.
@@ -507,9 +562,10 @@ def main() -> None:
         print(f"predicting {len(target)} {sport} games for {args.season} {span}")
         poll_cache: dict[int, dict[int, int]] = {}
         sources: Counter = Counter()
+        breaker = ClaudeBreaker()
         for _, row in target.iterrows():
             ranks, prev_ranks = ranks_for_week(db, sport, args.season, int(row["week"]), poll_cache)
-            narration = predict_one(db, row, predictor, ranks, prev_ranks)
+            narration = predict_one(db, row, predictor, ranks, prev_ranks, breaker)
             if narration is None:
                 failed.append(row["game_id"])
             else:
