@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import BrandMark from "@/components/BrandMark";
 
 export const alt = "Blitzcast: NFL & college football win probabilities";
 export const size = { width: 1200, height: 630 };
@@ -10,7 +11,6 @@ export const contentType = "image/png";
 // comment for why the values are pinned rather than pulled from CSS.
 const STRIPE_A = "#0f2a1d";
 const STRIPE_B = "#18402c";
-const GOLD_TURF = "#f0c464";
 const CHALK = "#eef4ec";
 const CHALK_SOFT = "rgba(238, 244, 236, 0.7)";
 
@@ -42,7 +42,7 @@ export default function Image() {
           }}
         >
           <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 20 }}>
-            <div style={{ display: "flex", width: 36, height: 22, borderRadius: 999, backgroundColor: GOLD_TURF }} />
+            <BrandMark size={72} tile={false} />
             <div style={{ display: "flex", fontSize: 64, fontWeight: 700, letterSpacing: 4, textTransform: "uppercase", color: CHALK }}>
               Blitzcast
             </div>

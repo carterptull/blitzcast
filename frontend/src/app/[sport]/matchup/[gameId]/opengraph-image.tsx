@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import BrandMark from "@/components/BrandMark";
 import { getMatchup, isGameId, NotFoundError } from "@/lib/api";
 import { buildOgContent } from "@/lib/og";
 import { isSportSlug } from "@/lib/sport";
@@ -47,7 +48,7 @@ function TurfBackdrop() {
 function Brand() {
   return (
     <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 16 }}>
-      <div style={{ display: "flex", width: 26, height: 16, borderRadius: 999, backgroundColor: GOLD_TURF }} />
+      <BrandMark size={40} tile={false} />
       <div style={{ display: "flex", fontSize: 34, fontWeight: 700, letterSpacing: 3, textTransform: "uppercase", color: CHALK }}>
         Blitzcast
       </div>
