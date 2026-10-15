@@ -1219,6 +1219,26 @@ def test_main_with_nothing_to_predict_exits_quietly(db, monkeypatch, capsys):
     assert commits == []
 
 
+def test_main_exits_1_when_the_season_has_no_games_at_all(db, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exc:
+        _run_main(
+            db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+            argv=["predict_week", "--season", "2031"],
+        )
+    assert exc.value.code == 1
+    assert "no NFL games exist for season 2031" in capsys.readouterr().out
+
+
+def test_main_zero_game_season_is_per_sport(db, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exc:
+        _run_main(
+            db, monkeypatch, lambda f: "A fresh booth draft.", capsys,
+            argv=["predict_week", "--season", "2025", "--sport", "cfb", "--week", "1"],
+        )
+    assert exc.value.code == 1
+    assert "no CFB games exist for season 2025" in capsys.readouterr().out
+
+
 def test_main_explicit_week_all_final_prints_the_skipped_line(db, monkeypatch, capsys):
     db.query(Game).filter(Game.game_id.like("2026_01_%")).update(
         {"home_score": 24, "away_score": 17}, synchronize_session=False

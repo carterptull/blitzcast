@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_CFB, Game
+from app.season import current_season
 from data_pipeline.backfill_cfb import backfill_team_game_stats
 
 
@@ -36,7 +37,7 @@ def has_final_games(db: Session, season: int) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("cfb"))
     args = parser.parse_args()
 
     if not get_settings().cfbd_api_key:

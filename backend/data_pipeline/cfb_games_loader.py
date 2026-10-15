@@ -94,11 +94,13 @@ def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
         game.is_divisional = bool(field(row, "conferenceGame", "conference_game"))
         home_pts = field(row, "homePoints", "home_points")
         away_pts = field(row, "awayPoints", "away_points")
-        game.home_score = None if home_pts is None else int(home_pts)
-        game.away_score = None if away_pts is None else int(away_pts)
         completed = field(row, "completed")
         if completed is None:
             completed = home_pts is not None and away_pts is not None
+        # Live games carry running points; only a finished game has a score.
+        keep = completed is not False
+        game.home_score = None if home_pts is None or not keep else int(home_pts)
+        game.away_score = None if away_pts is None or not keep else int(away_pts)
         game.status = "final" if completed else "scheduled"
         written += 1
     db.flush()

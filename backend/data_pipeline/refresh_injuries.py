@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db import session_scope
 from app.models import Game, Injury
+from app.season import current_season
 from data_pipeline import nflverse
 from data_pipeline.games_loader import team_id_map
 from data_pipeline.team_names import to_abbr
@@ -119,7 +120,7 @@ def upsert_injuries(db: Session, rows: list[dict], season: int) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("nfl"))
     args = parser.parse_args()
 
     try:

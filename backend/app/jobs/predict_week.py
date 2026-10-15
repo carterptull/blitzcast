@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
+from app.season import resolve_season
 from app.services.fact_sheet import (
     GameFacts,
     build_game_facts,
@@ -512,11 +513,12 @@ def _week_span(weeks: list[int]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=None)
     parser.add_argument("--week", type=int, default=None)
     parser.add_argument("--sport", choices=["nfl", "cfb"], default="nfl", type=str.lower)
     args = parser.parse_args()
     sport = args.sport.upper()
+    args.season = resolve_season(args.season, args.sport)
 
     bundle = load_latest(sport=sport)
     model = bundle["model"]
@@ -545,6 +547,13 @@ def main() -> None:
             if skipped:
                 print(f"skipping {skipped} already-final {sport} games")
         if not playable:
+            if not db.scalar(
+                select(func.count()).select_from(Game).where(
+                    Game.season == args.season, Game.sport == sport
+                )
+            ):
+                print(f"no {sport} games exist for season {args.season}")
+                sys.exit(1)
             if args.week is not None:
                 print(f"no unplayed {sport} games found for {args.season} week {args.week}")
             else:

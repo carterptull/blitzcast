@@ -18,12 +18,13 @@ from sqlalchemy import func, select
 
 from app.db import session_scope
 from app.models import Game
+from app.season import current_season
 from data_pipeline.backfill import backfill_team_game_stats
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--season", type=int, default=current_season("nfl"))
     args = parser.parse_args()
 
     with session_scope() as db:
