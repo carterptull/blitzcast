@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
 
 from app import mock_data
@@ -20,7 +20,10 @@ router = APIRouter(prefix="/api", tags=["predictions"])
         "empty. Unknown game_id returns 404."
     ),
 )
-def get_prediction(game_id: str, db: Session = Depends(get_db)) -> PredictionOut:
+def get_prediction(
+    game_id: str = Path(..., min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$"),
+    db: Session = Depends(get_db),
+) -> PredictionOut:
     if get_settings().blitzcast_mock:
         detail = mock_data.get_prediction_detail(game_id)
     else:
