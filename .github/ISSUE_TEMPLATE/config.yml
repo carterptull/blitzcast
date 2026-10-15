@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/carterptull/blitzcast/security/advisories/new
+    about: Found a security hole? Report it privately here, not in a public issue.
