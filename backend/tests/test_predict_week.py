@@ -728,6 +728,18 @@ def test_still_true_keeps_a_text_that_is_exactly_true_today():
     assert not still_true(text, _bills_chiefs(0.61, "47 degrees, wind 5 mph"))
 
 
+@pytest.mark.parametrize("mark", ["\u2012","\u2015","\u2212"])
+def test_still_true_rejects_dash_lookalikes(mark):
+    text = (
+        "It is 48 degrees in Orchard Park with wind at 5 mph, and the Bills are 3-1. Our model "
+        "gives the Bills 61% and the Chiefs 39%, and the Bills are favored by 3 points."
+    )
+    facts = _bills_chiefs(0.61, "48 degrees, wind 5 mph")
+    assert still_true(text, facts)
+    swapped = text.replace(", and the Bills are 3-1", f" {mark} the Bills are 3-1")
+    assert not still_true(swapped, facts)
+
+
 def test_existing_narrative_reads_the_stored_text(db):
     from app.jobs.predict_week import upsert_prediction
 
@@ -755,7 +767,7 @@ def test_still_true_never_keeps_a_link_or_phone_evasion(lead):
     assert not still_true(f"{lead} Our model gives the Bills 60% and the Chiefs 40%.", facts)
 
 
-@pytest.mark.parametrize("hidden", ["​", "‮", "\U000e0041", "­"])
+@pytest.mark.parametrize("hidden", ["\u200b", "\u202e", "\U000e0041", "\u00ad"])
 def test_still_true_never_keeps_an_invisible_character(hidden):
     facts = _bills_chiefs(0.6, None)
     good = "Our model gives the Bills 60% and the Chiefs 40%."

@@ -139,7 +139,7 @@ def _failed(db: Session, game_id: str, step: str, exc: Exception) -> None:
     logger.warning("%s failed for %s: %s", step, game_id, type(exc).__name__)
 
 
-_PUNCTUATION_RE = re.compile("[\u2014\u2013;:]")
+_PUNCTUATION_RE = re.compile("[\u2014\u2013\u2012\u2015\u2212;:]")
 _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)", re.IGNORECASE)
 _NUMBER_RE = re.compile(r"\d+(?:[.-]\d+)*")
 _UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(degrees|mph)\b", re.IGNORECASE)

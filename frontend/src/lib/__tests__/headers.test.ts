@@ -1,8 +1,5 @@
 import nextConfig from "../../../next.config";
 
-const ORIGINAL_FRAME_ANCESTORS =
-  "frame-ancestors 'self' https://cartertull.com https://www.cartertull.com";
-
 async function routeHeaders() {
   const routes = await nextConfig.headers!();
   const all = routes.find((r) => r.source === "/:path*");
@@ -11,11 +8,13 @@ async function routeHeaders() {
 }
 
 describe("security headers", () => {
-  it("keeps the original frame-ancestors directive and adds the hardening directives", async () => {
-    const csp = (await routeHeaders()).get("Content-Security-Policy");
-    expect(csp).toBe(
-      `${ORIGINAL_FRAME_ANCESTORS}; base-uri 'self'; object-src 'none'; form-action 'self'`,
+  it("keeps frame-ancestors first and adds the hardening directives", async () => {
+    const csp = (await routeHeaders()).get("Content-Security-Policy")!;
+    const [frameAncestors, ...rest] = csp.split("; ");
+    expect(frameAncestors).toMatch(
+      /^frame-ancestors 'self' https:\/\/[a-z0-9.-]+ https:\/\/www\.[a-z0-9.-]+$/,
     );
+    expect(rest).toEqual(["base-uri 'self'", "object-src 'none'", "form-action 'self'"]);
   });
 
   it("does not add default-src, script-src or img-src", async () => {

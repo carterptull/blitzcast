@@ -28,8 +28,8 @@ unless `API_DOCS=1` is set. For local use, `backend/.env.example` sets it.
 - The API validates `game_id` (up to 32 letters, digits, underscores or hyphens), `season`
   (2000 to 2100) and `week` (0 to 30), and answers 422 instead of failing with a 500.
 - The API's interactive docs and OpenAPI schema are off by default.
-- API CORS no longer allows credentials or any method but GET, and every API response
-  carries `X-Content-Type-Options: nosniff`.
+- API CORS no longer allows credentials or any method but GET, and every routed API response
+  (including 404 and 422) carries `X-Content-Type-Options: nosniff`.
 - `/api/schedule` and `/api/record` keep a 60 second in-process cache, so repeated
   requests for the same season no longer reach Postgres each time.
 - Matchup ids are checked with the same rule on the frontend. A bad id takes the normal

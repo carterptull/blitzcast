@@ -121,7 +121,7 @@ Full setup + env vars: [README.md](./README.md) and
 - **API docs:** `/docs`, `/redoc` and `/openapi.json` are off unless
   `API_DOCS=1` (set in `backend/.env` for local use).
 - **Season defaults** come from `app/season.py`'s `current_season`,
-  never a hard-coded year in a job.
+  never a hard-coded year as a batch job's `--season` default.
 - **Model artifacts:** `latest.json` carries a `sha256` that
   `load_latest` verifies, so a retrain must write it (`train.py` does,
   via `write_latest`).

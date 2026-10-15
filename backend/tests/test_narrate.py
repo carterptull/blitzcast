@@ -1418,11 +1418,11 @@ def test_output_rules_reject_link_and_phone_evasions(lead):
 
 
 @pytest.mark.parametrize("lead", [
-    "Picks at scam​.com tonight.",
-    "Visit scam​.​com tonight.",
-    "Texas rolls ‮tonight.",
+    "Picks at scam\u200b.com tonight.",
+    "Visit scam\u200b.\u200bcom tonight.",
+    "Texas rolls \u202etonight.",
     "Texas rolls tonight\U000e0041.",
-    "Texas­ rolls tonight.",
+    "Texas\u00ad rolls tonight.",
     "Texas rolls\u0007 tonight.",
 ])
 def test_output_rules_reject_invisible_characters(lead):

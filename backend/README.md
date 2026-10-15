@@ -87,8 +87,9 @@ deterministic template.
 `--sport` defaults to `nfl` on every ML/prediction command, including
 `refresh_weather`. `--season` defaults to the current season from
 `app/season.py` (`current_season`: NFL rolls over in March, CFB in
-June), so the 2026 in the examples above is only an override. CFB has no injury refresh (no standardized CFB injury
-report exists): `refresh_schedule_cfb`, `refresh_stats_cfb`, `refresh_odds --sport cfb`,
+June), so the 2026 in the examples above is only an override. CFB has
+no injury refresh (no standardized CFB injury report exists):
+`refresh_schedule_cfb`, `refresh_stats_cfb`, `refresh_odds --sport cfb`,
 `refresh_weather --sport cfb`, and `refresh_polls_cfb` are the in-season
 CFB syncs, bundled by `refresh_week_cfb`. CFB games get real stadium
 coordinates from CFBD (unlike NFL's Team-derived `stadium_id`), so

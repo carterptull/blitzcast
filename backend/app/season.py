@@ -4,8 +4,8 @@ from datetime import date
 
 
 def current_season(sport: str, today: date | None = None) -> int:
-    """NFL seasons start in September but the schedule exists from March; CFB
-    rolls over in June. Earlier months belong to the previous season."""
+    """NFL rolls over in March, after the Super Bowl; CFB in June. Earlier
+    months belong to the previous season."""
     today = today or date.today()
     first_month = 3 if sport.lower() == "nfl" else 6
     return today.year if today.month >= first_month else today.year - 1
