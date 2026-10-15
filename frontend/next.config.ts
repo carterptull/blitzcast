@@ -9,7 +9,13 @@ const securityHeaders = [
   {
     key: "Content-Security-Policy",
     value:
-      "frame-ancestors 'self' https://cartertull.com https://www.cartertull.com",
+      "frame-ancestors 'self' https://cartertull.com https://www.cartertull.com; base-uri 'self'; object-src 'none'; form-action 'self'",
+  },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
   },
 ];
 
@@ -17,6 +23,7 @@ const nextConfig: NextConfig = {
   // Next.js 16.3+ auto-generates AGENTS.md/CLAUDE.md scaffolding on
   // dev/build; this repo has its own hand-maintained CLAUDE.md, so opt out.
   agentRules: false,
+  poweredByHeader: false,
   images: {
     remotePatterns: [
       {
