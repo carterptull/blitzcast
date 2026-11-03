@@ -906,3 +906,18 @@ browsers chose it over the football `icon.svg`, so the tab never showed the bran
 `npm ci` first and is not run in CI; the committed outputs and `brand-assets.test.ts` are what
 keep them honest. **Alternative:** drop `favicon.ico` and rely on the SVG. Rejected because
 crawlers and some clients request `/favicon.ico` directly.
+
+## Take the current stable patch of `next`, not only the first fixed release
+
+Three `next` advisories (two critical remote code execution, one high denial of service) are
+all patched from 16.4.1, which is what the Dependabot PR proposed. We moved to 16.4.5, the
+current stable release in the same minor, so the next bot PR does not arrive within days and
+the four patch releases in between come with it. **Why this is low risk:** the minor is the
+same, the advisory database lists nothing against 16.4.1 or 16.4.5, and the suite, lint,
+typecheck, production build and a browser pass all ran on 16.4.5. **Dev toolchain:** `zod`
+(high) is fixed by a patch inside the existing range. `glob` and `minimatch` are patched only
+in majors (14, 11) that eslint and jest pin below, and `minimatch` 11 changes its export shape,
+so forcing it with an override could break the lint setup; `deepmerge` has no patch. They are
+reached through lint and test tooling over our own files, not the shipped bundle or the API,
+so they are accepted and tracked. **Alternative:** pin to 16.4.1 for the smallest possible
+diff; rejected because the benefit is only a smaller diff and 16.4.5 passed the same checks.
