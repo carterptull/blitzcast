@@ -6,6 +6,29 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.5] — 2026-11-03
+
+A dependency security release. No change to the app's behavior, the model, or
+`MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
+
+### Security
+- `next` 16.3.8 to 16.4.5. Fixes GHSA-673q-mjm6-r5xr (critical, unauthenticated remote
+  code execution in `use cache` functions that return typed arrays), GHSA-2464-fhr4-w9xw
+  (critical, unauthenticated remote code execution in the Image Optimization API when SVG
+  files are used) and GHSA-p3m5-59mp-jv5r (high, denial of service in App Router Server
+  Actions). All three are patched from 16.4.1; 16.4.5 is the current stable release.
+- `zod` 4.4.3 to 4.6.7 (lockfile only, lint toolchain). Fixes GHSA-mrhx-c7xc-m3w5 (high,
+  memory exhaustion on oversized constrained collections).
+- The `braces` advisory recorded as a residual in 1.1.4 (GHSA-vfj7-8cjw-p6xm) was withdrawn
+  upstream on 2026-10-23, so that residual no longer applies.
+
+### Known, not fixed
+- `deepmerge` (GHSA-gcqx-w48m-w2h4, low) has no patched release. `glob` (GHSA-3g3m-2fjr-6pw4)
+  and `minimatch` (GHSA-g3hv-75wg-m249), both moderate, are patched only in a new major
+  (14 and 11) that the pinned ranges of eslint and jest do not accept. All three are reached
+  only through the lint and test toolchain over our own files, not the shipped bundle.
+  Revisit when upstream widens its ranges.
+
 ## [1.2.4] — 2026-10-15
 
 A branding fix. No change to the model or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
