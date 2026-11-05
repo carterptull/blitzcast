@@ -159,4 +159,4 @@ reason. A vandalized value that still looks like a plausible Title Case stadium 
 shown as the venue; the check limits what can be said about it.
 
 ---
-_Last updated: 2026-11-03 · reflects v1.2.5_
+_Last updated: 2026-11-05 · reflects v1.2.6_

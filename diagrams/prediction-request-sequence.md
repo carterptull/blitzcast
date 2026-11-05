@@ -15,9 +15,9 @@ sequenceDiagram
 
     V->>N: GET /nfl/matchup/2026_01_CHI_CAR
     Note over N: generateMetadata and the page both call getMatchup(),<br/>deduplicated into a single fetch per render
-    N->>C: fetch /api/predictions/2026_01_CHI_CAR with revalidate 30
+    N->>C: fetch /api/predictions/2026_01_CHI_CAR through a 30 s cache keyed to a 5-minute window
     alt cached entry exists
-        C-->>N: cached JSON, refetched in the background once older than 30s
+        C-->>N: cached JSON, at most about 5 minutes old
     else no cached entry
         C->>A: GET /api/predictions/{game_id}
         alt BLITZCAST_MOCK=1
@@ -60,7 +60,7 @@ slate and record endpoints (not drawn here) keep a 60 second in-process cache on
 `prediction_status: "pending"` with an empty factor list, so a newly scheduled game gets a real
 page instead of an error.
 
-**Why a 30-second cache and not `no-store`:** predictions change once a day, so a live
+**Why a 30-second cache, bounded to about 5 minutes, and not `no-store`:** predictions change once a day, so a live
 Vercel-to-Railway-to-Postgres round trip on every click bought no freshness and cost noticeable
 latency on mobile. See "Short revalidation window over `no-store`" in
 [`DECISIONS.md`](../DECISIONS.md).
@@ -72,4 +72,4 @@ reconstructed row with a label). And if Railway is unreachable, `api.ts` throws
 back to a plain "Matchup" title); `src/app/error.tsx` only handles other, unexpected errors.
 
 ---
-_Last updated: 2026-11-03 · reflects v1.2.5_
+_Last updated: 2026-11-05 · reflects v1.2.6_

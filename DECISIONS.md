@@ -212,6 +212,19 @@ navigation within a single browsing session. **Alternative:** a longer window (m
 tighter to the cron cadence: would cache more aggressively, but risks a visitor seeing a stale
 score during a live game for no real latency benefit over 30 seconds; rejected.
 
+**Update (2026-11-05): the window bounded refresh frequency, not age.** A cached read past its 30
+seconds was served as is while a refresh ran in the background, so the first visitor to a page
+nobody had opened for days saw a days-old prediction even though the database was current. The
+client now reads through `unstable_cache` keyed to a 5-minute window (`FRESH_WINDOW_MS`), so
+the worst case is about 5 minutes and repeat clicks still hit the 30-second cache. The matchup
+page and its share image render per request. **Alternatives:** `no-store` again, which brings
+back the mobile stall this section exists to avoid; and cron-triggered on-demand revalidation,
+which needs a shared secret and a new public route for little gain over a 5-minute bound.
+**Costs, accepted:** on Vercel the old window entries expire on the managed data cache, but a
+self-hosted `next start` would accumulate one cache file per path per window under
+`.next/cache`. `unstable_cache` keys include the callback's source, so the matchup page and its
+share image do not share entries, which costs one extra API call per route per window.
+
 ## Scoping `frame-ancestors` instead of leaving embedding unrestricted
 
 `frontend/next.config.ts` now sends `Content-Security-Policy: frame-ancestors 'self'` plus the
@@ -525,6 +538,25 @@ mentions unchecked (the documented gap in the old diagram) and made correct copy
 unknown name. With the mascot in the sheet, both the allowlist and team attribution recognize it.
 **Alternative:** hardcode a mascot table in the narration code: it would drift from the CFBD data
 that already feeds every other team field.
+
+## Folding accents and apostrophes in CFB name matching
+
+CFB odds for San José State and Hawai'i games had no spread, moneyline or total: CFBD spells
+the schools with an accent and an okina, the Odds API spells them "San Jose State" and "Hawaii",
+and `normalize()` in `cfb_team_names.py` kept the accented letter and turned the apostrophe into
+a space, so the lookup missed. **Fix:** `normalize()` now folds accents (NFKD) and deletes
+apostrophes. **Why there and not by hand-adding aliases:** the alias file is generated from CFBD
+data, so a hand edit would be lost at the next seed and the next accented school would break the
+same way. The regenerated file went from 826 to 825 keys, with all 246 team abbreviations
+unchanged: 6 keys removed (`hawai i`, `hawai i rainbow warriors`, `san jos st`, `san jos state`,
+`san jos state spartans`, `n western st`) and 5 added (`hawaii`, `hawaii rainbow warriors`,
+`san jose state`, `san jose state spartans`, `nwestern st`). **Caveat:** the file was not fully
+regenerated. The delta was computed by building today's CFBD data with the old and the new
+normalizer and applying only the difference, because today's CFBD data also drops St. Francis
+(PA) (`SFPA`: `saint francis`, `sfpa`, `st francis pa`, `st francis pa red flash`) and one East
+Texas A&M alternate (`e texas a m`). Those keys were kept on purpose; the next full
+`python -m data_pipeline.seed_cfb` will drop them, so check whether any SFPA games still need
+resolving before that seed.
 
 ## Default sampling on Haiku, with `ANTHROPIC_MODEL` as the lever
 

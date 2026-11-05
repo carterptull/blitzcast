@@ -6,6 +6,19 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.6] — 2026-11-05
+
+A patch release. No change to the model or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).
+
+### Fixed
+- CFB odds now match schools whose name carries an accent or an apostrophe. San José State
+  and Hawai'i games had no spread, moneyline or total because the Odds API spells them "San
+  Jose State" and "Hawaii"; the team alias file was regenerated to cover both spellings.
+- A page nobody had opened for a while could show its first visitor a prediction that was
+  days old (the database was current; the cached page was not). Cached reads now expire
+  within about 5 minutes, while repeat clicks stay cached for 30 seconds. Matchup pages and
+  share images render per request.
+
 ## [1.2.5] — 2026-11-03
 
 A dependency security release. No change to the app's behavior, the model, or
