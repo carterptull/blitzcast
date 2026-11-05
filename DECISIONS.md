@@ -220,10 +220,13 @@ the worst case is about 5 minutes and repeat clicks still hit the 30-second cach
 page and its share image render per request. **Alternatives:** `no-store` again, which brings
 back the mobile stall this section exists to avoid; and cron-triggered on-demand revalidation,
 which needs a shared secret and a new public route for little gain over a 5-minute bound.
-**Costs, accepted:** on Vercel the old window entries expire on the managed data cache, but a
-self-hosted `next start` would accumulate one cache file per path per window under
-`.next/cache`. `unstable_cache` keys include the callback's source, so the matchup page and its
-share image do not share entries, which costs one extra API call per route per window.
+**Costs, accepted:** old window entries are never read again and are left to Vercel's managed
+data cache, but a self-hosted `next start` would accumulate one cache file per path per window
+under `.next/cache`. `unstable_cache` keys include the callback's source, so the matchup page and
+its share image do not share entries, which costs one extra API call per route per window. While
+the backend is unreachable, the last good copy now covers at most the rest of the current
+5-minute window; after that a visitor sees the BackendDown page instead of an old copy, because
+bounded freshness and serving stale data during an outage pull in opposite directions.
 
 ## Scoping `frame-ancestors` instead of leaving embedding unrestricted
 
