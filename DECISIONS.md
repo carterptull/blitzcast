@@ -202,8 +202,8 @@ the filename changes.
 
 ## Short revalidation window over `no-store` for slate/matchup fetches
 
-The frontend's API client caches every GET for 30 seconds (`next: { revalidate: 30 }`) instead of
-bypassing the cache entirely. **Why:** predictions only change on the weekly cron refresh, so
+The frontend's API client caches every GET for 30 seconds (`next: { revalidate: 30 }`, superseded
+in part, see the 2026-11-05 update below) instead of bypassing the cache entirely. **Why:** predictions only change on the weekly cron refresh, so
 `no-store` bought no real freshness — every week-selector click was a live Vercel-to-Railway-to-
 Postgres round trip, which read as instant on desktop broadband but was a noticeable stall on
 mobile/cellular, especially for CFB's larger per-week payload. A 30-second window is short enough
