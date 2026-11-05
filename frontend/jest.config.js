@@ -13,6 +13,7 @@ const customJestConfig = {
   resetMocks: true,
   restoreMocks: true,
   moduleNameMapper: {
+    '^next/cache$': '<rootDir>/jest.next-cache-mock.js',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   testMatch: [

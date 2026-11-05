@@ -8,7 +8,7 @@ flowchart TB
     visitor(["👤 Visitor"])
 
     subgraph vercel["Vercel"]
-        web["<b>Web app</b><br/>Next.js 16 · React 19 · Tailwind v4<br/><small>/nfl · /cfb · /[sport]/matchup/[gameId] · /how-it-works<br/>server components, fetch revalidate 30s</small>"]
+        web["<b>Web app</b><br/>Next.js 16 · React 19 · Tailwind v4<br/><small>/nfl · /cfb · /[sport]/matchup/[gameId] · /how-it-works<br/>server components, fetch cached 30 s, at most about 5 min old</small>"]
     end
 
     subgraph railway["Railway, production environment"]
@@ -58,4 +58,4 @@ through their own GitHub integrations. CI runs on every PR and on pushes to `mai
 merge gate, not a deploy trigger.
 
 ---
-_Last updated: 2026-11-03 · reflects v1.2.5_
+_Last updated: 2026-11-05 · reflects v1.2.6_

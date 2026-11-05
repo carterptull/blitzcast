@@ -83,4 +83,4 @@ corrupted artifact, not a commit that changes both.
 calibrated on a held-out, most-recent season before a "70%" is ever shown to anyone.
 
 ---
-_Last updated: 2026-11-03 · reflects v1.2.5_
+_Last updated: 2026-11-05 · reflects v1.2.6_

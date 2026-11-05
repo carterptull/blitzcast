@@ -10,7 +10,7 @@ flowchart TB
 
     subgraph request["Request side: every page view"]
         direction LR
-        web["🖥️ Next.js on Vercel<br/><small>server components<br/>30s fetch revalidation</small>"]
+        web["🖥️ Next.js on Vercel<br/><small>server components<br/>30 s fetch cache, at most about 5 min old</small>"]
         api["⚙️ FastAPI on Railway<br/><small>read-only JSON API</small>"]
     end
 
@@ -65,4 +65,4 @@ at all, in which case the batch stores a deterministic template instead.
 | How is it hosted and secured? | [`deployment-security.md`](deployment-security.md) |
 
 ---
-_Last updated: 2026-11-03 · reflects v1.2.5_
+_Last updated: 2026-11-05 · reflects v1.2.6_

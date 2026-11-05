@@ -14,8 +14,8 @@ const SPORTS = [
   { slug: "cfb", api: "CFB" as const },
 ] as const;
 
-// getSchedule() revalidates every 30s via api.ts, and unstable_cache stretches
-// that to one fetch per sport per hour, matching the revalidate export.
+// Nested inside this cache, api.ts's own unstable_cache is skipped, so this
+// one hour cache governs: one fetch per sport per hour.
 const getCachedSchedule = unstable_cache(
   async (season: number, sport: "NFL" | "CFB") => getSchedule(season, sport, "all"),
   ["sitemap-schedule"],

@@ -11,7 +11,12 @@ from sqlalchemy.pool import StaticPool
 from app.models import SPORT_CFB, Base, Game, PollRank, Stadium, Team
 from data_pipeline.backfill_cfb import pick_lines
 from data_pipeline.cfb_games_loader import should_skip_game, upsert_games
-from data_pipeline.cfb_team_names import build_alias_map, cfb_to_abbr, derive_abbrs
+from data_pipeline.cfb_team_names import (
+    build_alias_map,
+    cfb_to_abbr,
+    derive_abbrs,
+    normalize,
+)
 from data_pipeline.refresh_polls_cfb import upsert_polls
 from data_pipeline.seed_cfb import espn_id_from_logo
 
@@ -98,6 +103,32 @@ def test_ambiguous_alias_dropped():
     assert table["beta"] == "BET"
     with pytest.raises(KeyError):
         cfb_to_abbr("The U", table)
+
+
+def test_normalize_folds_accents_and_apostrophes():
+    assert normalize("San José State") == "san jose state"
+    assert normalize("Hawai'i") == "hawaii"
+    assert normalize("Hawaiʻi") == "hawaii"
+    assert normalize("Hawai’i") == "hawaii"
+    assert normalize("Miami (OH)") == "miami oh"
+    assert normalize("Texas A&M") == "texas a m"
+
+
+def test_accented_and_apostrophe_schools_match_odds_names():
+    df = pd.DataFrame(
+        [
+            {"school": "San José State", "mascot": "Spartans",
+             "abbreviation": "SJSU", "alternateNames": []},
+            {"school": "Hawai'i", "mascot": "Rainbow Warriors",
+             "abbreviation": "HAW", "alternateNames": []},
+        ]
+    )
+    table = build_alias_map(df)
+    for name in ("San Jose State Spartans", "San José State Spartans",
+                 "San Jose State"):
+        assert cfb_to_abbr(name, table) == "SJSU"
+    for name in ("Hawaii Rainbow Warriors", "Hawai'i Rainbow Warriors", "Hawaii"):
+        assert cfb_to_abbr(name, table) == "HAW"
 
 
 def test_derive_abbrs_decollides():

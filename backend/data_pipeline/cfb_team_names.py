@@ -8,6 +8,7 @@ hand-typed. NFL names stay in team_names.py.
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 import pandas as pd
@@ -17,8 +18,15 @@ ALIASES_PATH = Path(__file__).resolve().parent / "seeds" / "cfb_team_aliases.jso
 _cache: dict[str, str] | None = None
 
 
+_APOSTROPHES = str.maketrans("", "", "'’‘ʻʼ`")
+
+
 def normalize(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+    """Fold accents, drop apostrophes, then collapse non-alphanumerics."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    text = "".join(c for c in decomposed if not unicodedata.combining(c))
+    text = text.translate(_APOSTROPHES).lower()
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 
 def _clean(value) -> str | None:

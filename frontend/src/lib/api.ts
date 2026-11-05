@@ -3,11 +3,13 @@
 // Sport is a query param on list endpoints; prediction lookups need none,
 // game ids are globally unique.
 
+import { unstable_cache } from "next/cache";
 import { mockGames, mockMatchup, mockSchedule, mockTeams } from "./mock";
 import type { GameSummary, MatchupDetail, Record, Schedule, Sport, Team } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
+const FRESH_WINDOW_MS = 5 * 60 * 1000;
 
 export class ApiUnreachableError extends Error {
   constructor(detail?: string) {
@@ -27,18 +29,27 @@ export class NotFoundError extends Error {
  *  — unrecognized values fall back to "all"). */
 export type StatusFilterValue = "all" | "final" | "upcoming";
 
-async function get<T>(path: string): Promise<T> {
+async function fetchJson<T>(path: string): Promise<T> {
   let res: Response;
   try {
-    // Predictions only change on the weekly cron refresh, so a short
-    // revalidation window avoids a live round trip on every week click.
-    res = await fetch(`${BASE}${path}`, { next: { revalidate: 30 } });
+    res = await fetch(`${BASE}${path}`, { cache: "no-store" });
   } catch {
     throw new ApiUnreachableError();
   }
   if (res.status === 404) throw new NotFoundError(path);
   if (!res.ok) throw new ApiUnreachableError(`API responded ${res.status} for ${path}`);
   return res.json() as Promise<T>;
+}
+
+// unstable_cache serves repeat week clicks from cache for 30s, but it hands
+// back a stale entry however old. Keying on the clock window forces a blocking
+// fresh fetch once a window rolls over, so data is never older than the window.
+// Thrown errors are not cached.
+async function get<T>(path: string): Promise<T> {
+  const window = Math.floor(Date.now() / FRESH_WINDOW_MS);
+  return unstable_cache(() => fetchJson<T>(path), ["api", path, String(window)], {
+    revalidate: 30,
+  })();
 }
 
 export async function getTeams(sport: Sport = "NFL"): Promise<Team[]> {

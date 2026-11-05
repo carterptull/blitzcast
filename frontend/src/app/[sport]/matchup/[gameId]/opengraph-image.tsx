@@ -6,7 +6,7 @@ import { isSportSlug } from "@/lib/sport";
 import { primaryColor } from "@/lib/teams";
 import type { MatchupDetail } from "@/lib/types";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export const alt = "Blitzcast matchup prediction";
 export const size = { width: 1200, height: 630 };
