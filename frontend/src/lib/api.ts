@@ -4,8 +4,8 @@
 // game ids are globally unique.
 
 import { unstable_cache } from "next/cache";
-import { mockGames, mockMatchup, mockSchedule, mockTeams } from "./mock";
-import type { GameSummary, MatchupDetail, Record, Schedule, Sport, Team } from "./types";
+import { mockGames, mockMatchup, mockSchedule, mockSlates, mockTeams } from "./mock";
+import type { GameSummary, MatchupDetail, Record, Schedule, Slate, Sport, Team } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
@@ -70,12 +70,20 @@ export async function getGames(
   week: number,
   season = 2026,
   sport: Sport = "NFL",
-  status: StatusFilterValue = "all"
+  status: StatusFilterValue = "all",
+  round?: string
 ): Promise<GameSummary[]> {
-  if (MOCK) return mockGames(week, sport);
+  if (MOCK) return mockGames(week, sport, round);
+  const roundQuery = round ? `&round=${encodeURIComponent(round)}` : "";
   return get<GameSummary[]>(
-    `/api/games?week=${week}&season=${season}&sport=${sport}&status=${status}`
+    `/api/games?week=${week}&season=${season}&sport=${sport}&status=${status}${roundQuery}`
   );
+}
+
+/** Week and round chips for a season; unfiltered by status. */
+export async function getSlates(season = 2026, sport: Sport = "NFL"): Promise<Slate[]> {
+  if (MOCK) return mockSlates(sport);
+  return get<Slate[]>(`/api/slates?season=${season}&sport=${sport}`);
 }
 
 export async function getRecord(season = 2026, sport: Sport = "NFL"): Promise<Record> {

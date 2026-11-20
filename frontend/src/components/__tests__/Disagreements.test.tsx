@@ -4,6 +4,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import Disagreements from "../Disagreements";
+import { REGULAR_OCCASION } from "@/lib/occasion";
 import type { GameSummary } from "@/lib/types";
 
 // Mock Next.js Link, forwarding `prefetch` as a data attribute so tests
@@ -40,6 +41,8 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
     home_score: null,
     away_score: null,
     prediction_correct: null,
+    ...REGULAR_OCCASION,
+    is_neutral_site: false,
     ...overrides,
   };
 }

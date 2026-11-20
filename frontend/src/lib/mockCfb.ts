@@ -2,6 +2,8 @@
 // slate across conferences (ranked marquee, FBS-vs-FCS, TBD kickoff), plus
 // generated schedule-only weeks 2–15.
 
+import { roundForSlug } from "./mockSlates";
+import { REGULAR_OCCASION } from "./occasion";
 import type {
   Factor,
   GameSummary,
@@ -9,6 +11,7 @@ import type {
   MatchupDetail,
   Odds,
   PredictionTeam,
+  Round,
   Schedule,
   Team,
   Weather,
@@ -378,6 +381,8 @@ function toSummary(s: Week1Spec): GameSummary {
     home_score: s.homeScore ?? null,
     away_score: s.awayScore ?? null,
     prediction_correct: verdict(s.homeProb, s.homeScore, s.awayScore),
+    ...REGULAR_OCCASION,
+    is_neutral_site: false,
   };
 }
 
@@ -424,6 +429,8 @@ function generatedWeekGames(week: number): GameSummary[] {
       home_score: null,
       away_score: null,
       prediction_correct: null,
+      ...REGULAR_OCCASION,
+      is_neutral_site: false,
     });
   }
   games.sort((x, y) => (x.kickoff ?? "9999").localeCompare(y.kickoff ?? "9999"));
@@ -448,8 +455,12 @@ export function cfbMockTeams(): Team[] {
   });
 }
 
-export function cfbMockGames(week: number): GameSummary[] {
+export function cfbMockGames(week: number, round?: string): GameSummary[] {
   if (week === 1) return WEEK1.map(toSummary);
+  if (week === 14 || week === 17) {
+    const wanted = round ? roundForSlug(round) : null;
+    return occasionGames(week).filter((g) => !round || g.round === wanted);
+  }
   if (week >= 2 && week <= 15) return generatedWeekGames(week);
   return [];
 }
@@ -457,8 +468,107 @@ export function cfbMockGames(week: number): GameSummary[] {
 export function cfbMockSchedule(): Schedule {
   const weeks = [];
   for (let w = 1; w <= 15; w++) weeks.push({ week: w, games: cfbMockGames(w) });
+  weeks.push({ week: 17, games: cfbMockGames(17) });
   return { season: SEASON, weeks, sport: "CFB" };
 }
+
+// --- Championship week and postseason ------------------------------------
+
+interface OccasionSpec {
+  id: number;
+  week: number;
+  away: string;
+  home: string;
+  kickoff: number | null;
+  homeProb: number | null;
+  round: Round;
+  event: string;
+  neutral: boolean;
+  venue: { name: string; city: string; dome: boolean };
+  seeds?: [number, number];
+}
+
+const OCCASIONS: OccasionSpec[] = [
+  { id: 401900101, week: 14, away: "ALA", home: "UGA", kickoff: Date.UTC(2026, 11, 5, 21, 0),
+    homeProb: 0.55, round: "conf_championship", event: "SEC Championship", neutral: true,
+    venue: { name: "Mercedes-Benz Stadium", city: "Atlanta", dome: true } },
+  { id: 401900102, week: 14, away: "ORE", home: "OSU", kickoff: Date.UTC(2026, 11, 6, 1, 0),
+    homeProb: 0.6, round: "conf_championship", event: "Big Ten Championship", neutral: true,
+    venue: { name: "Lucas Oil Stadium", city: "Indianapolis", dome: true } },
+  { id: 401900201, week: 17, away: "GT", home: "CLEM", kickoff: Date.UTC(2026, 11, 26, 19, 0),
+    homeProb: 0.57, round: "bowl", event: "Duke's Mayo Bowl", neutral: true,
+    venue: { name: "Bank of America Stadium", city: "Charlotte", dome: false } },
+  { id: 401900202, week: 17, away: "FRES", home: "BSU", kickoff: null,
+    homeProb: null, round: "bowl", event: "Famous Idaho Potato Bowl", neutral: false,
+    venue: { name: "Albertsons Stadium", city: "Boise", dome: false } },
+  { id: 401900301, week: 17, away: "MIA", home: "TEX", kickoff: Date.UTC(2026, 11, 19, 17, 0),
+    homeProb: 0.71, round: "cfp_first_round", event: "CFP First Round", neutral: false,
+    venue: { name: "DKR-Texas Memorial Stadium", city: "Austin", dome: false }, seeds: [5, 12] },
+  { id: 401900302, week: 17, away: "ND", home: "ORE", kickoff: Date.UTC(2026, 11, 20, 0, 30),
+    homeProb: 0.58, round: "cfp_first_round", event: "CFP First Round", neutral: false,
+    venue: { name: "Autzen Stadium", city: "Eugene", dome: false }, seeds: [6, 11] },
+  { id: 401900401, week: 17, away: "TEX", home: "OSU", kickoff: Date.UTC(2027, 0, 1, 21, 0),
+    homeProb: 0.54, round: "cfp_quarterfinal", event: "Rose Bowl, CFP Quarterfinal",
+    neutral: true, venue: { name: "Rose Bowl", city: "Pasadena", dome: false }, seeds: [4, 5] },
+];
+
+function occasionGames(week: number): GameSummary[] {
+  return OCCASIONS.filter((o) => o.week === week).map((o) => ({
+    game_id: `cfb_${o.id}`,
+    kickoff: o.kickoff === null ? null : iso(o.kickoff),
+    home: ref(o.home),
+    away: ref(o.away),
+    is_primetime: o.kickoff !== null && new Date(o.kickoff).getUTCHours() >= 23,
+    status: "scheduled",
+    has_prediction: o.homeProb !== null,
+    sport: "CFB",
+    home_win_prob: o.homeProb,
+    market_home_prob: null,
+    home_score: null,
+    away_score: null,
+    prediction_correct: null,
+    season_type: o.week === 17 ? "postseason" : "regular",
+    round: o.round,
+    event_name: o.event,
+    home_seed: o.seeds?.[0] ?? null,
+    away_seed: o.seeds?.[1] ?? null,
+    is_neutral_site: o.neutral,
+  }));
+}
+
+function occasionMatchup(id: string): MatchupDetail | null {
+  const o = OCCASIONS.find((x) => `cfb_${x.id}` === id);
+  if (!o) return null;
+  const ready = o.homeProb !== null;
+  return {
+    game_id: id,
+    season: SEASON,
+    week: o.week,
+    kickoff: o.kickoff === null ? null : iso(o.kickoff),
+    venue: { name: o.venue.name, city: o.venue.city, is_dome: o.venue.dome, is_neutral_site: o.neutral },
+    is_primetime: false,
+    is_divisional: o.round === "conf_championship",
+    home: predTeam(o.home, o.homeProb),
+    away: predTeam(o.away, o.homeProb === null ? null : Math.round((1 - o.homeProb) * 100) / 100),
+    odds: null,
+    weather: null,
+    factors: [],
+    narrative: null,
+    model_version: ready ? "cfb-0.1.0" : null,
+    predicted_at: ready ? iso(Date.UTC(2026, 11, 7, 12, 0)) : null,
+    prediction_status: ready ? "ready" : "pending",
+    sport: "CFB",
+    home_score: null,
+    away_score: null,
+    prediction_correct: null,
+    season_type: o.week === 17 ? "postseason" : "regular",
+    round: o.round,
+    event_name: o.event,
+    home_seed: o.seeds?.[0] ?? null,
+    away_seed: o.seeds?.[1] ?? null,
+  };
+}
+
 
 function predTeam(abbr: string, winProb: number | null): PredictionTeam {
   const t = CFB[abbr];
@@ -503,11 +613,16 @@ export function cfbMockMatchup(id: string): MatchupDetail | null {
       home_score: spec.homeScore ?? null,
       away_score: spec.awayScore ?? null,
       prediction_correct: verdict(spec.homeProb, spec.homeScore, spec.awayScore),
+      ...REGULAR_OCCASION,
     };
   }
 
+  const occasion = occasionMatchup(id);
+  if (occasion) return occasion;
+
   // Generated weeks: return a "prediction pending" detail.
   for (let w = 2; w <= 15; w++) {
+    if (w === 14) continue;
     const g = generatedWeekGames(w).find((x) => x.game_id === id);
     if (!g) continue;
     const home = CFB[g.home.abbr];
@@ -532,6 +647,7 @@ export function cfbMockMatchup(id: string): MatchupDetail | null {
       home_score: null,
       away_score: null,
       prediction_correct: null,
+      ...REGULAR_OCCASION,
     };
   }
   return null;

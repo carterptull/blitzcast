@@ -3,6 +3,7 @@
  *  A mixed week (any non-final game) always keeps "predicted". */
 
 import { weekCounter } from "../page";
+import { REGULAR_OCCASION } from "@/lib/occasion";
 import type { GameSummary } from "@/lib/types";
 
 function game(overrides: Partial<GameSummary> = {}): GameSummary {
@@ -18,6 +19,8 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
     home_score: null,
     away_score: null,
     prediction_correct: null,
+    ...REGULAR_OCCASION,
+    is_neutral_site: false,
     ...overrides,
   };
 }
