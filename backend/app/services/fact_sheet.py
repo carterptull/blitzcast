@@ -390,6 +390,9 @@ def _occasion(game: Game) -> str | None:
     """Built only from our own round and cleaned event fields."""
     event = _event_text(game.event_name)
     round_ = game.round
+    if round_ == "conf_championship":
+        conference = _place(game.home_team.conference, 40)
+        event = f"{conference} Championship" if conference else event
     if not round_ or not event and round_ not in CFP_ROUND_WORDS:
         return None
     if round_ in ("wild_card", "divisional"):
@@ -455,8 +458,8 @@ def _last_meeting(db: Session, game: Game) -> str | None:
     elif prior.season_type == SEASON_POSTSEASON:
         name = _bowl_part(prior.event_name) or event
         when = f"in the {prior.season} {name}" if name else f"in the {prior.season} postseason"
-    elif prior.round == "conf_championship" and event:
-        when = f"in the {prior.season} {event}"
+    elif prior.round == "conf_championship" and _place(prior.home_team.conference, 40):
+        when = f"in the {prior.season} {_place(prior.home_team.conference, 40)} Championship"
     else:
         when = f"in Week {prior.week} of {prior.season}"
     if hs == as_:

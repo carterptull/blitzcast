@@ -263,3 +263,13 @@ def test_out_of_range_or_bad_seeds_are_dropped(pdb, bad):
     (game,) = _games(pdb)
     assert written == 1 and game.home_seed is None
     assert game.away_seed == rows[0]["playoff"]["awaySeed"]
+
+
+def test_one_malformed_row_does_not_abort_the_sync(pdb, capsys):
+    """PS-C4: a malformed row is logged and skipped; the rest of the sync still loads."""
+    good = _rows("cfbd_post_2025.json")[:3]
+    bad = json.loads(json.dumps(good[0]))
+    bad["id"] = "not-a-number"
+    written, skipped = upsert_games(pdb, _frame([bad] + good[1:]))
+    assert written == 2 and skipped == 1
+    assert "skipping cfb game" in capsys.readouterr().out

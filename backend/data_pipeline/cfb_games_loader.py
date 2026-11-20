@@ -99,12 +99,24 @@ def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
     """Idempotent upsert keyed on `cfb_<cfbd_id>`. Returns (written, skipped)."""
     teams = cfb_team_map(db)
     stadium_by_name = {s.name: s.stadium_id for s in db.scalars(select(Stadium))}
-    ids = [f"cfb_{int(i)}" for i in games["id"]]
+    ids = []
+    for raw_id in games["id"]:
+        try:
+            ids.append(f"cfb_{int(raw_id)}")
+        except (TypeError, ValueError):
+            continue
     existing = {g.game_id: g for g in db.scalars(select(Game).where(Game.game_id.in_(ids)))}
 
     written = skipped = 0
     unknown_rounds: set[str] = set()
     for row in games.to_dict("records"):
+        try:
+            int(row["id"]), int(row["season"]), int(row["week"])
+            _start(row)
+        except (KeyError, TypeError, ValueError) as exc:
+            print(f"skipping cfb game {row.get('id')}: malformed row ({exc!r})")
+            skipped += 1
+            continue
         postseason = field(row, "seasonType", "season_type") == SEASON_POSTSEASON
         if postseason and not (
             field(row, "homeClassification") == "fbs"

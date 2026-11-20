@@ -251,4 +251,15 @@ describe("SlatePage", () => {
     expect(screen.getByTestId("card")).toHaveTextContent("2026_19_KC_BUF");
     expect(screen.queryByText("Top 25")).not.toBeInTheDocument();
   });
+
+  it.each(["cfb", "nfl"])("PS-F13: a %s page whose API has no /api/slates yet shows the backend-down view", async (sport) => {
+    const { NotFoundError } = jest.requireActual("@/lib/api");
+    jest.mocked(getRecord).mockRejectedValue(new Error("no record"));
+    jest.mocked(getSlates).mockRejectedValue(new NotFoundError("/api/slates"));
+    jest.mocked(getSchedule).mockResolvedValue({ season: 2026, weeks: [], sport: "NFL" });
+    jest.mocked(getGames).mockResolvedValue([]);
+    await renderPage(sport);
+    expect(screen.getByText(/reach the press box/)).toBeInTheDocument();
+    expect(screen.queryByText("Select a week")).not.toBeInTheDocument();
+  });
 });

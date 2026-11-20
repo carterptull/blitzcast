@@ -101,3 +101,22 @@ def test_seed_variants_are_checked_and_never_slip_past_both_rules():
         assert reason and "seed" in reason, text
     reason = check_narration(f"{BASE} The #9 seedling crowd roars.", ROSE)
     assert reason and "rank" in reason
+
+
+def test_word_and_ordinal_seed_claims_are_checked():
+    """PS-B6: top/second/2nd/seeded 9th seed claims must match a seed on the sheet."""
+    for text in ("Texas is the top seed.", "Texas is the second seed.", "Texas is the 2nd seed.",
+                 "Texas, seeded 9th, rolls.", "The top-seeded Longhorns roll."):
+        reason = check_narration(f"{BASE} {text}", ROSE)
+        assert reason and "seed" in reason, text
+    assert check_narration(f"{BASE} Texas is the fifth seed.", ROSE) is None
+    assert check_narration(f"{BASE} Texas is the 5th seed.", ROSE) is None
+    assert check_narration(f"{BASE} Ohio State is the fourth seed.", ROSE) is None
+
+
+def test_word_seed_claim_fails_on_nfl():
+    """PS-B6: NFL sheets carry no seeds, so a top-seed claim is rejected."""
+    from tests.test_narrate import RAMS_AT_LAC
+
+    reason = check_narration("Our model gives the Chargers 58%, the top seed at home.", RAMS_AT_LAC)
+    assert reason and "seed" in reason

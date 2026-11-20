@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import {
   ApiUnreachableError,
+  NotFoundError,
   getGames,
   getRecord,
   getSchedule,
@@ -248,7 +249,8 @@ async function NflSlate({
   try {
     [slates, schedule] = await Promise.all([getSlates(2026, "NFL"), getSchedule(2026, "NFL", status)]);
   } catch (e) {
-    if (e instanceof ApiUnreachableError) return <BackendDown />;
+    // A 404 means the API predates /api/slates (deploy gap or a failed migration).
+    if (e instanceof ApiUnreachableError || e instanceof NotFoundError) return <BackendDown />;
     throw e;
   }
   const record = await recordPromise;
@@ -314,7 +316,8 @@ async function CfbSlate({
         )
       : [];
   } catch (e) {
-    if (e instanceof ApiUnreachableError) return <BackendDown />;
+    // A 404 means the API predates /api/slates (deploy gap or a failed migration).
+    if (e instanceof ApiUnreachableError || e instanceof NotFoundError) return <BackendDown />;
     throw e;
   }
   const record = await recordPromise;
