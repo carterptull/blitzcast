@@ -29,6 +29,7 @@ models/*.bin
 
 # Data
 *.csv
+!backend/tests/fixtures/*.csv
 *.parquet
 data/raw/
 data/processed/
