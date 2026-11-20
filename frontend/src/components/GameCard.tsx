@@ -85,7 +85,7 @@ export default function GameCard({
   return (
     // prefetch off: a slate page renders many of these at once, and letting
     // Next.js prefetch every visible card tripped Vercel's automatic DDoS
-    // mitigation (see WeekSelector.tsx and DECISIONS.md).
+    // mitigation (see SlateSelector.tsx and DECISIONS.md).
     <Link
       href={`/${sport}/matchup/${game.game_id}`}
       prefetch={false}
