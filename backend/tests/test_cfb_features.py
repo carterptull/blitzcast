@@ -168,3 +168,62 @@ def test_tier_carried_in_metadata(session):
     row = _row(cfb, "cfb_1")
     assert row["home_tier"] == "FBS"
     assert row["away_tier"] == "FCS"
+
+
+def _add_bowl_and_leaky_poll(session):
+    teams = {t.abbr: t for t in session.query(Team)}
+    k = datetime(2025, 12, 31, 20, 0, tzinfo=UTC)
+    _add_game(session, "cfb_bowl", SPORT_CFB, 2025, 17, k, teams["UGA"], teams["BAMA"], None, None)
+    session.query(Game).filter(Game.game_id == "cfb_bowl").one().season_type = "postseason"
+    # A poll filed at a postseason slate week (e.g. the final poll) must never be read.
+    session.add(PollRank(sport=SPORT_CFB, season=2025, week=17, poll="AP Top 25",
+                         team_id=teams["UGA"].team_id, rank=25))
+    _add_game(session, "2025_22_BUF_KC", SPORT_NFL, 2025, 22, k + timedelta(days=40),
+              teams["KC"], teams["BUF"], None, None)
+    session.commit()
+    return teams
+
+
+def test_postseason_feature_poll_strength_from_latest_regular_poll(session):
+    """PS-M1: a bowl's poll feature uses the latest regular-season poll (week 3 here)."""
+    _add_bowl_and_leaky_poll(session)
+    df = build_features(session, sport=SPORT_CFB)
+    # Latest regular poll: UGA #2 (24) home vs BAMA #1 (25) away.
+    assert _row(df, "cfb_bowl")["poll_strength_diff"] == -1.0
+    assert _row(df, "cfb_3")["poll_strength_diff"] == 1.0
+
+
+def test_postseason_feature_never_reads_a_postseason_poll(session):
+    """PS-M2: a poll stored at a postseason week never reaches a bowl's features."""
+    _add_bowl_and_leaky_poll(session)
+    df = build_features(session, sport=SPORT_CFB)
+    # Joining the week-17 row (UGA #25 -> 1.0, BAMA unranked) would give +1.0.
+    assert _row(df, "cfb_bowl")["poll_strength_diff"] == -1.0
+
+
+def test_postseason_week_number_feature_clamped_to_16(session):
+    """PS-M3: CFB postseason week_number is clamped to 16; NFL playoff weeks are unchanged."""
+    _add_bowl_and_leaky_poll(session)
+    assert _row(build_features(session, sport=SPORT_CFB), "cfb_bowl")["week_number"] == 16.0
+    assert _row(build_features(session), "2025_22_BUF_KC")["week_number"] == 22.0
+    assert _row(build_features(session, sport=SPORT_CFB), "cfb_3")["week_number"] == 3.0
+
+
+def test_postseason_ranks_use_latest_regular_poll(session):
+    """PS-M1: displayed and narrated ranks for week 17 come from the latest regular poll."""
+    from app.jobs.predict_week import ranks_for_week
+    from app.services.predictions import _poll_ranks_by_week, poll_ranks_entering
+
+    teams = _add_bowl_and_leaky_poll(session)
+    latest = {teams["BAMA"].team_id: 1, teams["UGA"].team_id: 2}
+    assert poll_ranks_entering(session, SPORT_CFB, 2025, 17) == latest
+    assert _poll_ranks_by_week(session, SPORT_CFB, 2025)[17] == latest
+    assert ranks_for_week(session, SPORT_CFB, 2025, 17, {}) == (latest, {})
+
+
+def test_postseason_ranks_never_read_a_postseason_poll(session):
+    """PS-M2: the week-17 poll row is ignored for display, so UGA is #2, not #25."""
+    from app.services.predictions import poll_ranks_entering
+
+    teams = _add_bowl_and_leaky_poll(session)
+    assert poll_ranks_entering(session, SPORT_CFB, 2025, 17)[teams["UGA"].team_id] == 2

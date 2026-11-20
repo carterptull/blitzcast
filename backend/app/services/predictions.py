@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.market import plausible_moneylines
 from app.models import SPORT_CFB, SPORT_NFL, Game, Odds, PollRank, Prediction, Team, Weather
+from app.postseason import CFB_POSTSEASON_WEEK
 from app.schemas import (
     FactorOut,
     GameSummary,
@@ -43,18 +44,29 @@ def _display_name(team: Team) -> str:
 
 
 def poll_ranks_entering(db: Session, sport: str, season: int, week: int) -> dict[int, int]:
-    """team_id -> rank from the poll entering (season, week); AP preferred."""
+    """team_id -> rank from the poll entering (season, week); AP preferred.
+    Postseason games read the latest regular-season poll."""
+    if week >= CFB_POSTSEASON_WEEK:
+        return latest_regular_poll_ranks(db, sport, season)
     return _poll_ranks_by_week(db, sport, season, week=week).get(week, {})
+
+
+def latest_regular_poll_ranks(db: Session, sport: str, season: int) -> dict[int, int]:
+    return _poll_ranks_by_week(db, sport, season).get(CFB_POSTSEASON_WEEK, {})
 
 
 def _poll_ranks_by_week(
     db: Session, sport: str, season: int, week: int | None = None
 ) -> dict[int, dict[int, int]]:
-    """week -> {team_id: rank} from the poll entering each week; AP preferred."""
+    """week -> {team_id: rank} from the poll entering each week; AP preferred.
+    Polls at a postseason slate week are never read (the final poll comes after
+    the title game); the postseason slate maps to the latest regular-season poll."""
     if sport != SPORT_CFB:
         return {}
     query = select(PollRank.week, PollRank.poll, PollRank.team_id, PollRank.rank).where(
-        PollRank.sport == sport, PollRank.season == season
+        PollRank.sport == sport,
+        PollRank.season == season,
+        PollRank.week < CFB_POSTSEASON_WEEK,
     )
     if week is not None:
         query = query.where(PollRank.week == week)
@@ -65,6 +77,8 @@ def _poll_ranks_by_week(
     for wk, polls in by_week.items():
         ap = next((p for p in sorted(polls) if p.upper().startswith("AP")), None)
         ranks[wk] = polls[ap or sorted(polls)[0]]
+    if week is None and ranks:
+        ranks[CFB_POSTSEASON_WEEK] = ranks[max(ranks)]
     return ranks
 
 

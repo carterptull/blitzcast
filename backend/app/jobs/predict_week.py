@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
+from app.postseason import CFB_POSTSEASON_WEEK
 from app.season import resolve_season
 from app.services.fact_sheet import (
     GameFacts,
@@ -404,6 +405,9 @@ def ranks_for_week(
             cache[wk] = poll_ranks_entering(db, sport, season, wk)
         return cache[wk]
 
+    if week >= CFB_POSTSEASON_WEEK:
+        # Postseason: the latest regular poll, with no week-over-week movement.
+        return ranks(week), {}
     # Both weeks resolve AP first, so the rank movement compares the same poll in practice.
     return ranks(week), (ranks(week - 1) if week > 1 else {})
 
