@@ -252,3 +252,14 @@ class _null_scope:
 
     def __exit__(self, *exc):
         return False
+
+
+@pytest.mark.parametrize("bad", ["first", 0, -3, 99, 40000, 5.5])
+def test_out_of_range_or_bad_seeds_are_dropped(pdb, bad):
+    """PS-C2: only whole-number seeds 1-16 are stored; anything else is dropped, not fatal."""
+    rows = _one_cfp_row()
+    rows[0]["playoff"]["homeSeed"] = bad
+    written, _ = upsert_games(pdb, _frame(rows))
+    (game,) = _games(pdb)
+    assert written == 1 and game.home_seed is None
+    assert game.away_seed == rows[0]["playoff"]["awaySeed"]

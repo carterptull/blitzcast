@@ -186,9 +186,11 @@ _STREAK_RE = re.compile(r"(?:\b(?:won|lost)\s+)?\b\d{1,2}\s+straight\b", re.IGNO
 _PREV_RANK_RE = re.compile(r"(?:up|down) from #(\d+)")
 # A CFP seed claim: "No. 5 seed", "the 5 seed", "5-seed", "No. 5 seeded".
 _SEED_RE = re.compile(
-    r"(?:\bNo\.\s?|#|\bnumber\s+)?\b(\d{1,2})[\s-]seed(?:ed)?\b", re.IGNORECASE
+    r"(?:\bNo\.\s?|#|\bnumber\s+)?\b(\d{1,2})[\s-]seed(?:s|ed|ing)?\b", re.IGNORECASE
 )
-_SEED_AFTER_RE = re.compile(r"[\s-]seed", re.IGNORECASE)
+# Exactly the seed forms _SEED_RE checks, so a number skipped by the rank rule
+# is always seed-checked ("Seedling" is not a seed and stays a rank claim).
+_SEED_AFTER_RE = re.compile(r"[\s-]seed(?:s|ed|ing)?\b", re.IGNORECASE)
 _FROM_RE = re.compile(r"\bfrom\s+$", re.IGNORECASE)
 # Hyphenated pairs that are not scores or records.
 _NOT_A_SCORE_RE = re.compile(

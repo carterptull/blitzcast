@@ -82,9 +82,17 @@ def _set_occasion(game: Game, row: dict, postseason: bool, unknown_rounds: set[s
         unknown_rounds.add(str(raw_round))
         print(f"cfb postseason: unknown playoff round {raw_round!r}, stored as cfp_other")
     game.event_name = cfp_event_name(raw_round, field(row, "playoff.bowlName"))
-    home_seed, away_seed = field(row, "playoff.homeSeed"), field(row, "playoff.awaySeed")
-    game.home_seed = None if home_seed is None else int(home_seed)
-    game.away_seed = None if away_seed is None else int(away_seed)
+    game.home_seed = _seed(field(row, "playoff.homeSeed"))
+    game.away_seed = _seed(field(row, "playoff.awaySeed"))
+
+
+def _seed(value) -> int | None:
+    """A CFP seed from the feed: a whole number 1-16, else None (never fatal)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(number) if number.is_integer() and 1 <= number <= 16 else None
 
 
 def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:

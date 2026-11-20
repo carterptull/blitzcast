@@ -91,3 +91,13 @@ def test_seed_attributed_to_the_wrong_team_fails():
     """PS-B6: a real seed said of the other team is rejected (Texas is 5, Ohio State is 4)."""
     reason = check_narration(f"{BASE} Ohio State, the No. 5 seed, hosts nothing here.", ROSE)
     assert reason is not None
+
+
+def test_seed_variants_are_checked_and_never_slip_past_both_rules():
+    """PS-B6: seeding/seeds are seed-checked; seed-like words still hit the rank rule."""
+    for text in ("Texas earned the No. 9 seeding.", "The No. 9 seeds meet here.",
+                 "Texas holds the 9-seed."):
+        reason = check_narration(f"{BASE} {text}", ROSE)
+        assert reason and "seed" in reason, text
+    reason = check_narration(f"{BASE} The #9 seedling crowd roars.", ROSE)
+    assert reason and "rank" in reason

@@ -84,6 +84,11 @@ _CFP_ROUNDS: dict[str, Round] = {
 _LONG_DASH_RE = re.compile(r"\s*[–—]\s*")
 _SPONSOR_TAIL_RE = re.compile(r"\s+(?:presented|powered|hosted)\s+by\b.*$", re.IGNORECASE)
 _EVENT_NAME_RE = re.compile(r"^[A-Za-z0-9'&.,\- ]{3,48}$")
+_EVENT_AD_RE = re.compile(r"\b(?:pick|odds|site|bets?|wager)\b", re.IGNORECASE)
+_EVENT_JOINERS = {
+    "of", "at", "the", "and", "to", "for", "by", "in", "on", "de", "la", "del", "du", "a",
+}
+EVENT_NAME_MAX = 64  # Game.event_name is String(64)
 
 
 def round_for_slug(slug: str) -> Round | None:
@@ -140,8 +145,12 @@ def clean_event_name(raw: str | None) -> str | None:
     text = " ".join(_SPONSOR_TAIL_RE.sub("", text).split())
     if not _EVENT_NAME_RE.match(text) or sum(ch.isdigit() for ch in text) > 2:
         return None
-    if _LINK_WORD_RE.search(text) or _AD_WORD_RE.search(text):
+    if _LINK_WORD_RE.search(text) or _AD_WORD_RE.search(text) or _EVENT_AD_RE.search(text):
         return None
+    # Names are Title Case: a lowercase word other than a small joiner is prose.
+    for word in re.findall(r"[A-Za-z][\w']*", text):
+        if word[0].islower() and word not in _EVENT_JOINERS:
+            return None
     return text
 
 
@@ -149,7 +158,7 @@ def cfp_event_name(raw_round: str | None, bowl_name: str | None) -> str:
     round_ = cfb_playoff_round(raw_round)
     generic = generic_event_name(round_)
     bowl = clean_event_name(bowl_name)
-    if bowl and bowl.endswith("Bowl"):
+    if bowl and bowl.endswith("Bowl") and len(f"{bowl}, {generic}") <= EVENT_NAME_MAX:
         return f"{bowl}, {generic}"
     return generic
 
