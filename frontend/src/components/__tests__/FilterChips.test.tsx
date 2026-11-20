@@ -36,7 +36,7 @@ describe("FilterChips", () => {
         conferences={["SEC", "Big Ten"]}
         activeConf={null}
         top25={false}
-        week={3}
+        slateQuery="week=3"
         query="&status=final"
       />
     );
@@ -51,14 +51,28 @@ describe("FilterChips", () => {
     );
   });
 
+  test("PS-F10: on the bowls slate, chip links keep round=bowls", () => {
+    render(
+      <FilterChips conferences={["SEC"]} activeConf={null} top25={false} slateQuery="round=bowls" />
+    );
+    expect(screen.getByText("SEC").closest("a")).toHaveAttribute(
+      "href",
+      "/cfb?round=bowls&conf=SEC"
+    );
+    expect(screen.getByText("Top 25").closest("a")).toHaveAttribute(
+      "href",
+      "/cfb?round=bowls&top25=1"
+    );
+  });
+
   test("query defaults to empty, leaving hrefs unchanged when omitted", () => {
-    render(<FilterChips conferences={["SEC"]} activeConf={null} top25={false} week={3} />);
+    render(<FilterChips conferences={["SEC"]} activeConf={null} top25={false} slateQuery="week=3" />);
     expect(screen.getByText("SEC").closest("a")?.getAttribute("href")).not.toContain("status=");
   });
 
   test("no chip prefetches (a full CFB conference list renders many at once)", () => {
     render(
-      <FilterChips conferences={["SEC", "Big Ten", "ACC"]} activeConf={null} top25={false} week={3} />
+      <FilterChips conferences={["SEC", "Big Ten", "ACC"]} activeConf={null} top25={false} slateQuery="week=3" />
     );
     for (const label of ["Top 25", "All conferences", "SEC", "Big Ten", "ACC"]) {
       expect(screen.getByText(label).closest("a")).toHaveAttribute("data-prefetch", "false");

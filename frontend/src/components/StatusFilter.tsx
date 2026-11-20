@@ -8,7 +8,8 @@ import type { SportSlug } from "@/lib/sport";
 interface Props {
   sport: SportSlug;
   active: StatusFilterValue;
-  week: number;
+  /** The current slate, "week=5" or "round=bowls". */
+  slateQuery: string;
   /** Extra query params to preserve across status changes, e.g. "&conf=SEC". */
   query?: string;
 }
@@ -23,7 +24,7 @@ const CHIPS: { value: StatusFilterValue; label: string }[] = [
  *  and CFB slates. Filter state lives in the URL query, so a filtered slate
  *  is shareable. Sport-parameterized rather than an extension of
  *  `FilterChips`, which hardcodes the `/cfb` path and conference logic. */
-export default function StatusFilter({ sport, active, week, query = "" }: Props) {
+export default function StatusFilter({ sport, active, slateQuery, query = "" }: Props) {
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export default function StatusFilter({ sport, active, week, query = "" }: Props)
   }, [active]);
 
   const href = (status: StatusFilterValue) =>
-    `/${sport}?week=${week}${status !== "all" ? `&status=${status}` : ""}${query}`;
+    `/${sport}?${slateQuery}${status !== "all" ? `&status=${status}` : ""}${query}`;
 
   const base =
     "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors";
