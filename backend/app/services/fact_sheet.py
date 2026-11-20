@@ -359,18 +359,42 @@ _STAKES = {
 }
 
 
+_EVENT_FUNCTION_WORDS = _FUNCTION_WORDS | {"to", "for", "by"}
+
+
+def _event_text(raw: str | None) -> str | None:
+    """A feed event name, safe for the fact sheet: scores and any word holding a digit
+    are dropped (no feed number may back a claim), then it must pass the ingest cleaner
+    and read like a Title Case name (no instruction-like prose)."""
+    if not raw:
+        return None
+    from app.postseason import clean_event_name
+
+    text = _without_scores(raw)
+    if not text:
+        return None
+    text = " ".join(w for w in text.split() if not any(ch.isdigit() for ch in w))
+    text = clean_event_name(text)
+    if not text:
+        return None
+    for word in _PLACE_WORD_RE.findall(text):
+        if word[0].islower() and word not in _EVENT_FUNCTION_WORDS:
+            return None
+    return text
+
+
 def _bowl_part(raw_event: str | None) -> str | None:
     """'Rose Bowl' from 'Rose Bowl, CFP Quarterfinal'; None when the name is not a bowl.
     Split before cleaning: _clean() turns the comma into a space."""
     if not raw_event:
         return None
-    head = _clean(raw_event.split(",")[0], 64)
+    head = _event_text(raw_event.split(",")[0])
     return head if head and head.endswith("Bowl") else None
 
 
 def _occasion(game: Game) -> str | None:
     """Built only from our own round and cleaned event fields."""
-    event = _clean(game.event_name, 64)
+    event = _event_text(game.event_name)
     round_ = game.round
     if not round_ or not event and round_ not in _CFP_ROUND_WORDS:
         return None
@@ -431,7 +455,7 @@ def _last_meeting(db: Session, game: Game) -> str | None:
     if prior is None:
         return None
     hs, as_ = prior.home_score, prior.away_score
-    event = _clean(prior.event_name, 64)
+    event = _event_text(prior.event_name)
     if prior.season_type == SEASON_POSTSEASON and prior.sport == SPORT_NFL:
         when = f"in the {prior.season} NFL postseason"
     elif prior.season_type == SEASON_POSTSEASON:
