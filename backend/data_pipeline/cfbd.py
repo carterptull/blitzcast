@@ -42,8 +42,13 @@ def load_venues() -> pd.DataFrame:
     return pd.json_normalize(_get("/venues"))
 
 
-def load_games(year: int, season_type: str = "regular") -> pd.DataFrame:
-    return pd.json_normalize(_get("/games", {"year": year, "seasonType": season_type}))
+def load_games(
+    year: int, season_type: str = "regular", classification: str | None = None
+) -> pd.DataFrame:
+    params: dict = {"year": year, "seasonType": season_type}
+    if classification:
+        params["classification"] = classification
+    return pd.json_normalize(_get("/games", params))
 
 
 def load_lines(year: int, season_type: str = "regular") -> pd.DataFrame:
