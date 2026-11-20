@@ -82,7 +82,7 @@ def test_stakes(db):
 
 
 def test_postseason_matchup_note_is_the_occasion(db):
-    """PS-B3: a postseason game's game-type line is the occasion, never interconference or X at Y."""
+    """PS-B3: a postseason game-type line is the occasion, not interconference or X at Y."""
     gid = _playoff_game(db, round_="super_bowl", event="Super Bowl LXI", neutral=True)
     facts = _build(db, gid)
     assert facts.matchup_note == "Super Bowl LXI, neutral site"
