@@ -356,7 +356,7 @@ _STAKES = {
 _EVENT_FUNCTION_WORDS = _FUNCTION_WORDS | {"to", "for", "by"}
 
 
-def _event_text(raw: str | None) -> str | None:
+def _event_text(raw: str | None, require_bowl: bool = True) -> str | None:
     """A feed event name, safe for the fact sheet: scores and any word holding a digit
     are dropped (no feed number may back a claim), then it must pass the ingest cleaner
     and read like a Title Case name (no instruction-like prose)."""
@@ -374,6 +374,10 @@ def _event_text(raw: str | None) -> str | None:
     for word in _PLACE_WORD_RE.findall(text):
         if word[0].islower() and word not in _EVENT_FUNCTION_WORDS:
             return None
+    # Title games and NFL rounds are named from our own data, so feed text only
+    # ever names a bowl: anything else is not let into the prompt.
+    if require_bowl and not text.endswith(("Bowl", "Classic")):
+        return None
     return text
 
 
@@ -388,7 +392,8 @@ def _bowl_part(raw_event: str | None) -> str | None:
 
 def _occasion(game: Game) -> str | None:
     """Built only from our own round and cleaned event fields."""
-    event = _event_text(game.event_name)
+    # NFL names are ours (nfl_event_name); only CFB names come from the feed.
+    event = _event_text(game.event_name, require_bowl=game.sport != SPORT_NFL)
     round_ = game.round
     if round_ == "conf_championship":
         conference = _place(game.home_team.conference, 40)

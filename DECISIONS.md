@@ -1050,6 +1050,15 @@ Bowl" on the booth sheet; the site still shows the stored name. **Alternative:**
 `_reads_like_a_name`; rejected because it rejects real bowl names with lowercase words ("IS4S
 Salute to Veterans Bowl").
 
+Follow-up from the code and push reviews: conference title games are named from our own
+`Team.conference` (the digit drop had turned "Big 12 Championship" into "Big Championship"),
+NFL round names are ours, and the only feed text left on the sheet is a CFB bowl name, which
+must end in "Bowl" or "Classic". **Known residual:** a Title Case, bowl-shaped feed string of up
+to 48 characters can still put words on the sheet. It is bounded by the prompt marking the sheet
+as data and by `check_narration` (numbers, names, pick and market wording must all check out).
+A curated bowl allowlist would close it but needs a yearly update as bowls are renamed; revisit
+if a feed ever abuses it.
+
 ## Spec requirements carry IDs that tests must cite (v1.3.0)
 
 Every testable requirement in `docs/superpowers/specs/2026-11-19-postseason-design.md` has an

@@ -80,7 +80,9 @@ conference championships.
   scores are dropped and the result must read like a Title Case name, or it is treated as
   missing. This keeps feed digits out of the trusted sheet text and instruction-like prose
   out of the prompt. "68 Ventures Bowl" therefore reads "Ventures Bowl" on the booth sheet;
-  the site still shows the stored name.
+  the site still shows the stored name. Title games and NFL rounds are named from our own
+  data, so the only feed text left on the sheet is a CFB bowl name ending in "Bowl" or
+  "Classic".
 - Stored event names pass `clean_event_name` (one rule, in `app/postseason.py`): sponsor
   tails dropped, no links or ad words, no en or em dash, at most 2 digits, Title Case words
   only (lowercase prose is rejected), else "Bowl game". A CFP name that would not fit the
