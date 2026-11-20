@@ -10,8 +10,11 @@ flowchart TB
     subgraph fixed["Decided before Claude is called: deterministic and tested"]
         prob["Calibrated home win probability<br/><small>XGBoost + Platt calibration</small>"]
         factors["Top 4 SHAP factors<br/><small>ml/explain.py top_factors()<br/>market factors take direction from the raw value, not the SHAP sign</small>"]
-        data["Verified game data<br/><small>records, last result, streak, venue, kickoff window<br/>posted betting line · NFL injury report · CFB poll ranks</small>"]
+        data["Verified game data<br/><small>regular-season records, last result, streak, venue, kickoff window<br/>posted betting line · NFL injury report · CFB poll ranks<br/>postseason: occasion and stakes lines from our own round fields,<br/>each CFP team's own seed, a separate postseason record</small>"]
     end
+
+    eventgate["_event_text() on every feed event name<br/><small>CFBD notes and bowlName, already cleaned at ingest by clean_event_name<br/>scores and every digit-bearing word dropped<br/>must read like a Title Case name, else missing</small>"]
+    window{"Kickoff within 7 days?<br/><small>in_narration_window(), a TBD kickoff uses its game date</small>"}
 
     sanitize["_clean() on every feed string<br/><small>team, mascot, conference, venue, city, player and position<br/>one plain line: letters, digits, spaces, period, apostrophe, ampersand, parentheses, hyphen<br/>control characters dropped, empty means missing<br/>venue, city, conference, division, team name, mascot, abbreviation, injury player name: dropped unless they read like a name<br/>no link word, no ad word (free, picks, call, bet and similar), no run of 3+ digits<br/>no 3 or more number words, no lowercase word but of, at, the, de<br/>team name, mascot, abbreviation: scores and won N straight also stripped<br/>this gate is a first filter, not the guarantee</small>"]
     sheet["Fact sheet<br/><small>build_game_facts() then render_fact_sheet()<br/>app/services/fact_sheet.py, data from before kickoff only</small>"]
@@ -25,14 +28,14 @@ flowchart TB
     end
 
     clean["_call_api() then plain_punctuation()<br/><small>surrounding markdown symbols stripped<br/>em dash, en dash, figure dash, horizontal bar and minus sign become commas, spacing tidied</small>"]
-    check{"check_narration()<br/><small>output: no invisible control or format character (zero-width, bidi, tag), then read after NFKC: no URL, domain, handle, slash, dot com or hxxp,<br/>no long digit run, phone-like or vanity number such as 1-800-PICKS, Latin-1 letters only<br/>shape: length, sentence count, banned phrases, spelled-out numbers, CFB injury talk<br/>percentages: each one matches the model's number for that team<br/>names: every capitalized word is on the fact sheet or is a plain word<br/>facts: scores, records, streaks and ranks are on the trusted sheet text and belong to that team<br/>market: favorite, underdog, line and total match the sheet<br/>model: pick and favorite wording match the model<br/>no-pick wording about the model (coin flip, toss-up, too close to call) is rejected, and within 1 point of even the draft must name the model's pick<br/>injuries: a listed player is not pinned on the other team</small>"}
+    check{"check_narration()<br/><small>output: no invisible control or format character (zero-width, bidi, tag), then read after NFKC: no URL, domain, handle, slash, dot com or hxxp,<br/>no long digit run, phone-like or vanity number such as 1-800-PICKS, Latin-1 letters only<br/>shape: length, sentence count, banned phrases, spelled-out numbers, CFB injury talk<br/>percentages: each one matches the model's number for that team<br/>names: every capitalized word is on the fact sheet or is a plain word<br/>facts: scores, records, streaks and ranks are on the trusted sheet text and belong to that team<br/>seeds: No. N seed, N seed or N-seed must be a seed on the sheet and belong to that team, and NFL sheets carry none<br/>market: favorite, underdog, line and total match the sheet<br/>model: pick and favorite wording match the model<br/>no-pick wording about the model (coin flip, toss-up, too close to call) is rejected, and within 1 point of even the draft must name the model's pick<br/>injuries: a listed player is not pinned on the other team</small>"}
     again{"Attempt 3 reached?"}
     wait["Try again<br/><small>after a rejection, the draft plus the rule it broke, fenced in checker_note tags, is sent back<br/>after a transient API error, wait 2s</small>"]
     accept(["✅ Store the AI draft"])
 
     prev{"Stored narration still exactly true today?<br/><small>still_true(): passes check_narration(), percentages exactly today's,<br/>every other number on today's trusted sheet text, no no-pick phrase at all,<br/>weather talk backed by today's weather</small>"}
     kept(["♻️ Keep the stored narration"])
-    fallback["fallback_narration()<br/><small>deterministic template from the same fact sheet<br/>richest draft that fits the word budget and passes the check</small>"]
+    fallback["fallback_narration()<br/><small>deterministic template from the same fact sheet<br/>a postseason game opens with the occasion, In the Rose Bowl or In Super Bowl LXI<br/>richest draft that fits the word budget and passes the check</small>"]
     fbcheck{"Passes check_narration()<br/>with no semicolon or colon?"}
     template(["📄 Store the template"])
     minimal(["🔢 Store a minimal model-only line<br/><small>minimal_narration() from the prediction row alone<br/>Our model gives KC 60% and BUF 40%.</small>"])
@@ -44,10 +47,13 @@ flowchart TB
     prob --> sheet
     factors --> sheet
     data --> sanitize --> sheet
+    data --> eventgate --> sheet
     sheet -.->|"build error"| minimal
     sheet --> even
     even -->|"yes, no API call and no kept text"| fallback
-    even -->|no| breaker
+    even -->|no| window
+    window -->|"no, no API call and no kept text"| fallback
+    window -->|yes| breaker
     breaker -->|"yes, skip Claude"| prev
     breaker -->|no| key
     key -->|yes| prompt --> claude --> clean --> check
@@ -116,6 +122,24 @@ covers the game if none passes. The 5 of 47 fresh-corpus rejections are near-eve
 production no longer requests.
 See "The booth always names a pick" in [`DECISIONS.md`](../DECISIONS.md).
 
+**Postseason games name the occasion, and Claude only sees the next 7 days.** The sheet's
+occasion line ("AFC Wild Card playoff game", "Super Bowl LXI, neutral site", "Rose Bowl, College
+Football Playoff quarterfinal, neutral site") and stakes line ("Win and advance; lose and the
+season ends", "Winner wins the Super Bowl", "Winner is the national champion") are built from
+our own `season_type`, `round` and `event_name` fields, never the feed's prose, and replace the
+"interconference" or "X at Y" matchup note. Each CFP team's seed sits on its own block ("Seed:
+No. 3") rather than in the occasion line, so a seed cannot float free of its team, and
+`check_narration` rejects a seed that is not on the sheet or is said of the other team; an NFL
+sheet has no seeds, so any NFL seed claim fails. Records are regular season only, with the
+playoff record on its own line. A feed event name reaches the sheet only through `_event_text`:
+it was already cleaned at ingest, and here every digit-bearing word and score is dropped and the
+rest must read like a Title Case name, so feed digits never back a number claim and
+instruction-like prose never reaches the prompt ("68 Ventures Bowl" reads "Ventures Bowl" on
+the sheet). Every published postseason game is predicted daily, but a game more than 7 days out
+skips Claude and the kept step and gets the template, so a month of bowls costs no daily calls.
+See "Feed event names are gated before the fact sheet" and "Claude narrates only games within 7
+days" in [`DECISIONS.md`](../DECISIONS.md).
+
 **Each rule family exists because of a real bug.** Narrations misread the stored spread sign,
 called the underdog "a slight favorite" while citing the right percentage, named players and
 venues that were never in the data, and called a window that spans last season "recent form".
@@ -159,4 +183,4 @@ reason. A vandalized value that still looks like a plausible Title Case stadium 
 shown as the venue; the check limits what can be said about it.
 
 ---
-_Last updated: 2026-11-05 · reflects v1.2.6_
+_Last updated: 2026-11-19 · reflects v1.3.0_

@@ -18,34 +18,36 @@ sequenceDiagram
         R->>O: python -m data_pipeline.refresh_week
         O->>P: refresh_schedule
         P->>X: nflverse schedules
-        P->>DB: upsert games, including final scores
+        P->>DB: upsert games with season type, playoff round and event name, including final scores
+        Note over P,DB: A bad row is logged and skipped. A neutral game links its stadium by exact venue name.
         O->>P: refresh_stats
         P->>X: nflverse play-by-play
         P->>DB: upsert team_game_stats
         O->>P: refresh_odds
         P->>X: The Odds API, one call for every game
-        P->>DB: upsert odds for games kicking off in the next 14 days
+        P->>DB: upsert odds for games kicking off in the next 14 days, a neutral game matched in either orientation
         O->>P: refresh_weather --backfill-days 3
         P->>X: Visual Crossing by lat/lon, or by venue name for neutral sites
         P->>DB: upsert weather for upcoming games plus past 3 days missing weather, domes skipped
         O->>P: refresh_injuries
         P->>X: ESPN injuries, nflverse as fallback
-        P->>DB: upsert injuries onto each team's next game
+        P->>DB: upsert injuries onto each team's next game, a TBD-time game counted from its date
     else CFB, cfb-cron at 10:00 UTC
         R->>O: python -m data_pipeline.refresh_week_cfb
         O->>P: refresh_schedule_cfb
-        P->>X: CollegeFootballData games
-        P->>DB: upsert games, including final scores
+        P->>X: CollegeFootballData games, regular season and FBS postseason
+        P->>DB: upsert games, bowls and CFP rounds at slate week 17 with round, event name and seeds
+        Note over P,DB: Every upsert overwrites kickoff, venue, round, event name and seeds, since Selection Day sets them after a row exists
         O->>P: refresh_stats_cfb
-        P->>X: CollegeFootballData team-game PPA
+        P->>X: CollegeFootballData team-game PPA, regular season and postseason
         P->>DB: upsert team_game_stats
         O->>P: refresh_odds --sport cfb
-        P->>DB: upsert odds
+        P->>DB: upsert odds, a neutral game matched in either orientation
         O->>P: refresh_weather --sport cfb --backfill-days 3
         P->>X: Visual Crossing by lat/lon, or by venue name for neutral sites
         P->>DB: upsert weather for upcoming games plus past 3 days missing weather
         O->>P: refresh_polls_cfb
-        P->>X: CollegeFootballData AP and Coaches polls
+        P->>X: CollegeFootballData AP and Coaches polls, regular season only
         P->>DB: upsert poll_ranks
     end
     Note over O,P: Every step is its own subprocess with a 30 minute timeout. A failed or timed-out step is logged and the next one still runs.
@@ -55,15 +57,15 @@ sequenceDiagram
     else schedule sync succeeded
         O->>J: python -m app.jobs.predict_week, plus --sport cfb for CFB, with a 90 minute timeout
         J->>DB: select_target_ids() reads the clock once, then picks games with both scores NULL and kickoff still ahead
-        Note over J,DB: Selected = the default week (earliest week with an unplayed game) plus any game kicking off within 7 days. A TBD kickoff uses its game date.
+        Note over J,DB: Selected = the default week (earliest week with an unplayed game) plus any game kicking off within 7 days plus every published postseason game. A TBD kickoff uses its game date.
         J->>DB: build_features() for the season, each row as of its kickoff
         loop each selected game
             J->>J: predict_proba, Platt calibration, an exact 50-50 nudged 0.0001 toward the spread favorite, else the moneyline favorite, else home, top_factors via SHAP
-            J->>L: build the fact sheet, then narrate(fact sheet) unless the game is near even
+            J->>L: build the fact sheet, then narrate(fact sheet) unless the game is near even or outside the 7 day window
             L-->>J: draft that passed check_narration, or None after 3 attempts
             Note over J,L: After 3 consecutive games with an API failure, or an auth error, Claude is skipped for the rest of the run
             J->>J: None keeps the stored narration only if still exactly true, else the template, else a minimal line
-            Note over J: A near-even game (home percentage rounds to 49, 50 or 51) makes no API call and goes straight to the template
+            Note over J: A near-even game (home percentage rounds to 49, 50 or 51), or a game more than 7 days out, makes no API call and goes straight to the template
             J->>DB: upsert prediction on (game_id, model_version) and commit
             Note over J: Any error in this game rolls back, logs the exception type, and moves on to the next game
         end
@@ -95,6 +97,19 @@ never selected, and a TBD-kickoff game leaves the window 36 hours after its game
 predictions. `--week N` still predicts only that week. An early CFB game written before the weekly
 AP poll is out lacks the poll rank line until the next daily run.
 
+**The postseason rides the same crons.** Every published, unplayed postseason game is selected on
+every run, however far out, so a bowl announced weeks ahead has a prediction at once. Claude is
+called only for games inside the 7 day window; further-out games get the template (counted as
+fallback) until they enter it. The CFB schedule sync makes two CFBD calls, the regular season and
+the FBS postseason (a postseason row is kept only when both teams are FBS), and stores bowls and
+CFP games at slate week 17 with `season_type`, `round`, `event_name` and seeds. Event names from
+CFBD `notes` and `bowlName` go through `clean_event_name` before they are stored. The NFL sync
+maps `game_type` to the round and names the occasion ("AFC Wild Card", "Super Bowl LXI"); one
+bad row is logged and skipped instead of aborting the sync. Odds for a neutral-site game also
+match when the book lists the teams the other way round, with the spread and moneylines flipped
+to the stored home team; a non-neutral game never matches reversed. The poll step never loads
+CFBD's postseason rankings (the final poll comes after the title game). No cron schedule changed.
+
 **Failure is isolated per game, and the run is loud.** Each game is predicted, narrated and
 committed inside its own guard, so one failing game is rolled back, logged by exception type, and
 counted while the rest of the slate runs. The job then runs a read-only coverage check
@@ -109,8 +124,9 @@ where every attempted call fails exits 1, and a missing `VISUAL_CROSSING_API_KEY
 `WARNING:`. Because the orchestrator ignores the exit codes of every step but the prediction batch, either one
 shows in the cron logs only and the next step still runs.
 
-**CFB form data comes from this cron.** `refresh_stats_cfb` re-ingests the season's team-game PPA
-(one CFBD call a day) into `team_game_stats`, which feeds the rolling EPA form features. It skips
+**CFB form data comes from this cron.** `refresh_stats_cfb` re-ingests the season's team-game PPA,
+regular season and postseason (two CFBD calls a day), into `team_game_stats`, which feeds the
+rolling EPA form features, so later CFP rounds see earlier bowl and playoff results. It skips
 until the season has a final game. CFB turnovers and yards stay NULL, since CFBD PPA has neither.
 
 **A narration never costs a prediction.** Each game's fact sheet and narration are built inside a
@@ -142,4 +158,4 @@ records a day even with CFB's 8-day window. See "Odds API: one batch call per da
 into January. Outside those months the jobs simply don't fire.
 
 ---
-_Last updated: 2026-11-05 · reflects v1.2.6_
+_Last updated: 2026-11-19 · reflects v1.3.0_

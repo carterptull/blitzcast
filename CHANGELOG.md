@@ -6,6 +6,110 @@ follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-11-19
+
+A minor release adding postseason support for both sports. No model change: `MODEL_VERSION`
+stays `1.0.0` / `cfb-1.0.0` and the committed artifacts are untouched. The data, API and UI
+work and the booth work were planned as two releases (1.3.0 and 1.3.1) and ship together here.
+
+For operators: migration `d5a1c7e3f9b2` adds `season_type`, `round`, `event_name`,
+`home_seed` and `away_seed` to `games` and backfills NFL playoff history as postseason. It
+runs automatically on the API deploy (`railway.json` runs `alembic upgrade head` on boot).
+Merge outside the 09:00 to 10:00 UTC cron window and confirm the API deploy succeeded before
+the next cron runs. The first CFB cron after the deploy re-syncs the season and tags the
+conference championships.
+
+### Added
+- NFL playoffs, Wild Card through Super Bowl LXI, and the FBS postseason (non-CFP bowls and
+  every CFP round) are loaded, predicted, narrated and graded with no hand entry. Each game
+  carries its round and occasion ("AFC Wild Card", "Rose Bowl, CFP Quarterfinal", "Super
+  Bowl LXI") and, for CFP games, both teams' seeds. FCS, D-II, D-III, Celebration Bowl and
+  all-star games are not loaded.
+- CFB postseason games are stored at slate week 17, past any regular week CFBD has used. An
+  unknown CFP round (2027's new rounds, for example) is stored as `cfp_other`, never dropped.
+- Conference championships stay in the regular season as Week 14, labeled "Conference
+  Championships" (chip "Champ / 14"), with an event badge on each title game. From
+  2026-12-01 until they are played, `/cfb` opens on that week.
+- A Regular season / Postseason toggle below the banner, shown once a postseason slate
+  exists, with a gold dot on the Postseason side while it is inactive. The strip shows round
+  chips in the postseason (Wild Card, Divisional, Conference, Super Bowl; Bowls, CFP R1, QF,
+  SF, Title) and links `?week=N` or `?round=<slug>`.
+- The default slate opens on the postseason once one exists. A CFP round with a game inside
+  7 days beats the bowls; otherwise the soonest live slate wins.
+- Event badges on game cards, CFP seeds shown as "(5)" in place of the AP rank (bowls keep
+  "#N"), "vs" instead of "@" at neutral sites, and the occasion in the matchup hero, page
+  title, share image and back link ("Back to Wild Card").
+- `GET /api/slates?season=&sport=`: every regular week and postseason slate with its labels,
+  game count and kickoff span, cached 60 seconds like `/api/schedule`. `GET /api/games` takes
+  an optional `round` slug (`week=17&round=bowls`); an unknown slug is a 422. `GameSummary`
+  and `MatchupDetail` gain `season_type`, `round`, `event_name`, `home_seed` and `away_seed`,
+  and `GameSummary` gains `is_neutral_site`.
+- Booth: the fact sheet carries the occasion ("Super Bowl LXI, neutral site"), the stakes
+  ("Win and advance; lose and the season ends", "Winner wins the Super Bowl", "Winner is
+  the national champion"), each CFP team's own seed, and a separate postseason record. A
+  past postseason meeting reads "in the 2025 Rose Bowl" or "in the 2025 NFL postseason".
+  The template opens with the occasion ("In the Rose Bowl, ...", "In Super Bowl LXI, ...").
+- `check_narration` checks seed claims: "No. 5 seed", "5 seed" and "5-seed" must be a seed
+  on the sheet and belong to the team it is said of. NFL sheets carry no seeds, so any NFL
+  seed claim is rejected.
+- A short How It Works paragraph on postseason games: often at neutral sites, with bowl
+  opt-outs and coaching changes not modeled, so the market line sits beside every pick.
+- Every requirement in the postseason spec has an ID, and
+  `backend/tests/test_spec_traceability.py` fails the build if any ID has no test.
+
+### Changed
+- The CFB week strip is built from the data instead of a fixed 1 to 15, so 2025's week 16
+  (Army-Navy) is reachable and the default no longer sticks on week 15. Both sports now pick
+  their default from `/api/slates`.
+- Every published postseason game is predicted on every run, however far out, so none sits
+  at "Prediction pending". Claude narrates only games within 7 days (`LOOKAHEAD_DAYS`);
+  further-out games get the deterministic template and count as fallback until they enter
+  the window.
+- Postseason CFB games read the latest regular-season poll for ranks, the poll feature and
+  the booth. CFBD's postseason rankings (the final poll, published after the title game) are
+  never loaded. CFB `week_number` is clamped to 16 for postseason rows so the feature stays
+  inside the trained range.
+- The CFB stats refresh also pulls postseason PPA, so later CFP rounds see earlier results.
+- Records shown on the matchup page and in the booth are regular-season records; a playoff
+  team's playoff record is listed separately in the booth.
+- The NFL same-division badge reads "Division game" (it clashed with the Divisional round),
+  and the SHAP label reads "Division rivalry game".
+
+### Security
+- Feed event names are gated before they reach the fact sheet: digit-bearing words and
+  scores are dropped and the result must read like a Title Case name, or it is treated as
+  missing. This keeps feed digits out of the trusted sheet text and instruction-like prose
+  out of the prompt. "68 Ventures Bowl" therefore reads "Ventures Bowl" on the booth sheet;
+  the site still shows the stored name.
+- Stored event names pass `clean_event_name` (one rule, in `app/postseason.py`): sponsor
+  tails dropped, no links or ad words, no en or em dash, at most 2 digits, Title Case words
+  only (lowercase prose is rejected), else "Bowl game". A CFP name that would not fit the
+  64-character column falls back to the round name instead of failing the sync.
+- CFP seeds from the feed are kept only as whole numbers from 1 to 16.
+- The seed-claim rule and the rank rule cover every seed form ("seed", "seeds", "seeded",
+  "seeding"), so no ranked or seeded number in a draft can slip past both checks.
+
+### Fixed
+These also change regular-season behavior, on purpose:
+- Odds now match a neutral-site game when a book lists the teams in the reverse order, with
+  the spread sign and moneylines flipped to the stored home team. A non-neutral game never
+  matches reversed. Some neutral-site regular-season CFB games may now get odds where they
+  had none; the count was not measured before release.
+- The Super Bowl and other neutral NFL games at a known stadium link that stadium, so a dome
+  gets indoor weather instead of an outdoor forecast.
+- One bad NFL schedule row (unknown team, missing date, unknown game type) is logged and
+  skipped instead of aborting the whole sync.
+- Games with a TBD kickoff time now receive injury reports.
+
+### Known, not fixed
+- Elo still applies home-field advantage at neutral sites, and the 1.0 models have no
+  neutral-site feature. The posted market line, shown beside the model, dampens this.
+- Bowl opt-outs, interim coaches and motivation are not modeled. The CFB model never trained
+  on bowls, and NFL playoff rows are thin in training.
+- One indoor bowl venue (Ford Center at The Star) was missing its dome flag in a local
+  check, so its games may get an outdoor forecast.
+- "Neutral" games in a team's own stadium follow the feed's label.
+
 ## [1.2.6] — 2026-11-05
 
 A patch release. No change to the model or `MODEL_VERSION` (`1.0.0` / `cfb-1.0.0`).

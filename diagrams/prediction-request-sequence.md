@@ -32,7 +32,7 @@ sequenceDiagram
             A->>S: get_prediction_detail(db, game_id)
             S->>DB: SELECT game with teams and stadium
             S->>DB: newest prediction for the game, by predicted_at
-            S->>DB: weather, newest odds, poll ranks entering the week
+            S->>DB: weather, newest odds, poll ranks entering the week, the latest regular-season poll for a postseason game
             DB-->>S: rows
             S-->>A: PredictionOut
             A-->>C: 200 JSON
@@ -42,9 +42,20 @@ sequenceDiagram
     alt 404
         N-->>V: notFound() page
     else 200
-        N-->>V: HTML with probability, SHAP factors, narration, score and verdict
+        N-->>V: HTML with occasion, probability, SHAP factors, narration, score and verdict
     end
 ```
+
+**The slate page picks a week or a round first.** `/[sport]` (not drawn) fetches
+`GET /api/slates`, which lists every regular week and postseason slate with its labels, game count
+and kickoff span (cached 60 seconds on the API, built by one `build_slates` shared with mock mode).
+`resolveSlate` opens `?week=N` as a regular week and `?round=<slug>` as a postseason slate, and
+anything else, including a typed `?week=17` or the other sport's slug, falls back to
+`pickDefaultSlate`: postseason slates first once one exists, a CFP round with a game inside 7
+days ahead of the bowls, else the soonest kickoff. The page then calls
+`GET /api/games?week=N`, adding `round=<slug>` for a postseason slate (an unknown slug is a 422), and the Regular season / Postseason toggle and the round
+chips come from the same slate list. A matchup page's back link returns to the game's round
+("Back to Wild Card") or week.
 
 **Nothing is computed per request.** The probability, factors, and narration were written by the
 daily batch (see [`daily-refresh-sequence.md`](daily-refresh-sequence.md)); this path is reads
@@ -54,7 +65,8 @@ only. See "Batch-generated predictions, not per-request inference" in
 **Bad ids never leave the frontend.** `getMatchup` checks the id against
 `^[A-Za-z0-9_-]{1,32}$` (`isGameId`) and takes the normal not-found path without a fetch; the API
 applies the same rule to the `game_id` path parameter and answers 422 for anything else. The
-slate and record endpoints (not drawn here) keep a 60 second in-process cache on the API side.
+schedule, slates and record endpoints (not drawn here) keep a 60 second in-process cache on the
+API side.
 
 **A game with no prediction yet still renders.** The service returns
 `prediction_status: "pending"` with an empty factor list, so a newly scheduled game gets a real
@@ -72,4 +84,4 @@ reconstructed row with a label). And if Railway is unreachable, `api.ts` throws
 back to a plain "Matchup" title); `src/app/error.tsx` only handles other, unexpected errors.
 
 ---
-_Last updated: 2026-11-05 · reflects v1.2.6_
+_Last updated: 2026-11-19 · reflects v1.3.0_
