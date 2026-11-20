@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings, get_settings
-from app.routers import games, predictions, record, schedule, teams
+from app.routers import games, predictions, record, schedule, slates, teams
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -38,6 +38,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     app.include_router(teams.router)
     app.include_router(schedule.router)
+    app.include_router(slates.router)
     app.include_router(games.router)
     app.include_router(predictions.router)
     app.include_router(record.router)

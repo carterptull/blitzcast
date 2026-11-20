@@ -304,10 +304,10 @@ def test_mock_mode_cfb(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "blitzcast_mock", True)
     try:
         teams = client.get("/api/teams?sport=cfb").json()
-        assert len(teams) == 5
+        assert len(teams) == 9  # 5 regular-season mock teams + 4 for postseason fixtures
         assert all(t["sport"] == "CFB" for t in teams)
         body = client.get("/api/schedule?season=2026&sport=CFB").json()
-        assert [w["week"] for w in body["weeks"]] == [1, 2]
+        assert [w["week"] for w in body["weeks"]] == [1, 2, 14, 17]
         ranked = client.get("/api/predictions/cfb_401752873").json()
         assert ranked["sport"] == "CFB"
         assert ranked["prediction_status"] == "ready"
