@@ -239,3 +239,19 @@ def test_coverage_report_audits_the_given_clock_and_version(db, capsys):
     assert "WARNING: no prediction for 2026_01_PHI_DAL\n" in capsys.readouterr().out
     assert coverage_report(db, 2026, SPORT_NFL, None, now=NOW, version=LIVE) == 1
     assert "WARNING: no prediction for 2026_01_PHI_DAL, old_version" in capsys.readouterr().out
+
+
+def test_coverage_counts_postseason_games_beyond_window(db):
+    """PS-J3: a published postseason game weeks away still needs a prediction and a booth."""
+    from datetime import date
+
+    from app.models import Game
+
+    _add_game(db, "bowl_far", 17, datetime(2026, 10, 2, 20, 0, tzinfo=UTC))
+    db.query(Game).filter_by(game_id="bowl_far").one().season_type = "postseason"
+    db.commit()
+    gaps = _by_game(coverage_gaps(db, 2026, SPORT_NFL, now=NOW))
+    assert gaps.get("bowl_far") == "prediction"
+    _predict(db, "bowl_far", "A template booth line.")
+    assert "bowl_far" not in _by_game(coverage_gaps(db, 2026, SPORT_NFL, now=NOW))
+    assert date(2026, 10, 2) > NOW.date()

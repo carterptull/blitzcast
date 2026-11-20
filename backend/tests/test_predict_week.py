@@ -1509,3 +1509,60 @@ def test_main_never_touches_a_finished_game_with_a_stored_exact_tie(
     live = predict_week._stored_prediction(db, "2026_01_PHI_DAL", "1.0.0")
     assert live.home_win_prob == expected
     assert f"2026_01_PHI_DAL: exact tie broken toward {side}" in out
+
+
+def _bowl(db, game_id, kickoff, game_date=None):
+    _add_game(db, game_id, 17, kickoff, game_date=game_date)
+    db.query(Game).filter_by(game_id=game_id).one().season_type = "postseason"
+
+
+def test_postseason_games_beyond_window_are_predicted(db):
+    """PS-J1: every unplayed postseason game is targeted, even weeks beyond the window."""
+    from app.jobs.predict_week import select_target_ids
+
+    _lookahead_slate(db)
+    _bowl(db, "bowl_far", datetime(2026, 10, 2, 20, 0, tzinfo=UTC))
+    _bowl(db, "bowl_tbd_far", None, game_date=date(2026, 10, 9))
+    _bowl(db, "bowl_played", datetime(2026, 9, 10, 20, 0, tzinfo=UTC))
+    db.query(Game).filter_by(game_id="bowl_played").one().home_score = 21
+    db.query(Game).filter_by(game_id="bowl_played").one().away_score = 14
+    _bowl(db, "bowl_tbd_stale", None, game_date=date(2026, 9, 1))
+    db.commit()
+    ids = select_target_ids(db, 2026, SPORT_NFL, now=NOW)
+    assert {"bowl_far", "bowl_tbd_far"} <= ids
+    assert "bowl_played" not in ids and "bowl_tbd_stale" not in ids
+    assert "w2_sunday" not in ids  # regular season keeps the 7-day window
+
+
+def test_in_narration_window():
+    """PS-J2: only games kicking off within LOOKAHEAD_DAYS are narrated by Claude."""
+    from app.jobs.predict_week import in_narration_window
+
+    near = pd.Series({"kickoff": pd.Timestamp(NOW + timedelta(days=6))})
+    far = pd.Series({"kickoff": pd.Timestamp(NOW + timedelta(days=8))})
+    assert in_narration_window(near, NOW) is True
+    assert in_narration_window(far, NOW) is False
+    assert in_narration_window(pd.Series({"game_id": "x"}), NOW) is True
+
+
+def test_claude_not_called_outside_window(db, monkeypatch):
+    """PS-J2: a far-off game skips Claude and the kept step and gets the template."""
+    calls = []
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: calls.append(1) or "fresh")
+    result = narrate_safely(*_narrate_args(db), previous=GOOD_PREVIOUS, allow_claude=False)
+    assert calls == []
+    assert result.source == "fallback" and "Chiefs" in result.text
+
+
+def test_claude_called_inside_window(db, monkeypatch):
+    """PS-J2: inside the window the Claude draft path is unchanged."""
+    monkeypatch.setattr(predict_week, "narrate", lambda facts: "fresh")
+    assert narrate_safely(*_narrate_args(db), allow_claude=True) == Narration("fresh", "llm")
+
+
+def test_default_week_unchanged_for_regular_season(db):
+    """PS-J4: adding postseason games does not move the regular-season default week."""
+    _lookahead_slate(db)
+    _bowl(db, "bowl_far", datetime(2026, 10, 2, 20, 0, tzinfo=UTC))
+    db.commit()
+    assert default_week(db, 2026, SPORT_NFL, now=NOW) == 1

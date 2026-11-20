@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import session_scope
 from app.models import SPORT_NFL, Game, Prediction
-from app.postseason import CFB_POSTSEASON_WEEK
+from app.postseason import CFB_POSTSEASON_WEEK, SEASON_POSTSEASON
 from app.season import resolve_season
 from app.services.fact_sheet import (
     GameFacts,
@@ -246,6 +246,17 @@ def _minimal(db: Session, row: pd.Series, prob: float) -> Narration:
         return Narration(None, "none")
 
 
+def in_narration_window(
+    row: pd.Series, now: datetime | None = None, lookahead_days: int = LOOKAHEAD_DAYS
+) -> bool:
+    """Claude narrates only games kicking off within the look-ahead window."""
+    kickoff = row.get("kickoff")
+    if kickoff is None or pd.isna(kickoff):
+        return True
+    now = now or datetime.now(UTC)
+    return pd.Timestamp(kickoff) <= pd.Timestamp(now + timedelta(days=lookahead_days))
+
+
 def narrate_safely(
     db: Session,
     row: pd.Series,
@@ -255,6 +266,7 @@ def narrate_safely(
     prev_ranks: dict[int, int],
     previous: str | None = None,
     breaker: ClaudeBreaker | None = None,
+    allow_claude: bool = True,
 ) -> Narration:
     """Fact-sheet building and narration may fail for one game without costing
     that game, or the rest of the slate, its prediction. The chain: a fresh AI
@@ -271,7 +283,7 @@ def narrate_safely(
         _failed(db, game_id, "fact sheet", exc)
         return _minimal(db, row, prob)
     near_even = is_near_even(facts)
-    if not near_even:
+    if not near_even and allow_claude:
         text = _draft(db, game_id, facts, breaker)
         if text:
             return Narration(text, "llm")
@@ -304,10 +316,12 @@ def narrate_and_store(
     ranks: dict[int, int],
     prev_ranks: dict[int, int],
     breaker: ClaudeBreaker | None = None,
+    allow_claude: bool = True,
 ) -> Narration:
     previous = existing_narrative(db, row["game_id"], version)
     narration = narrate_safely(
-        db, row, prob, factors, ranks, prev_ranks, previous=previous, breaker=breaker
+        db, row, prob, factors, ranks, prev_ranks, previous=previous, breaker=breaker,
+        allow_claude=allow_claude,
     )
     upsert_prediction(db, row["game_id"], version, prob, factors, narration.text)
     return narration
@@ -375,8 +389,13 @@ def select_target_ids(
         return unplayed_game_ids(db, season, week, sport, now=now)
     base = default_week(db, season, sport, now=now)
     when = func.coalesce(Game.kickoff_time, Game.game_date)
-    in_window = (when <= now + timedelta(days=lookahead_days)) & (when > now - STALE_AFTER)
-    selected = in_window if base is None else (Game.week == base) | in_window
+    not_stale = when > now - STALE_AFTER
+    in_window = (when <= now + timedelta(days=lookahead_days)) & not_stale
+    # Every published postseason game gets a prediction, however far out it is.
+    postseason = (Game.season_type == SEASON_POSTSEASON) & not_stale
+    selected = in_window | postseason
+    if base is not None:
+        selected = selected | (Game.week == base)
     rows = db.scalars(
         select(Game.game_id).where(
             Game.season == season,
@@ -476,7 +495,8 @@ def predict_one(
             spread_available=bool(row["has_market_spread"]),
         )
         narration = narrate_and_store(
-            db, row, predictor.version, prob, factors, ranks, prev_ranks, breaker
+            db, row, predictor.version, prob, factors, ranks, prev_ranks, breaker,
+            allow_claude=in_narration_window(row),
         )
         # Commit per game: a full CFB slate is ~100 sequential Claude calls,
         # and the upsert is idempotent, so partial progress is safe to keep.
