@@ -65,6 +65,10 @@ def _setting(facts: GameFacts, venue: bool) -> str:
     else:
         where = f" at {facts.venue}" if venue and facts.venue else ""
         core = f"{away} {_verb(facts, 'visit', 'visits')} {home}{where}"
+    if facts.occasion:
+        lead = facts.occasion.split(",")[0].strip()
+        article = "" if lead.startswith("Super Bowl") else "the "
+        return f"In {article}{lead}, {core}."
     note = facts.matchup_note.split(",")[0].strip() if facts.matchup_note else ""
     tail = f" in this {note}" if note else ""
     if day and _variant(facts, 0):

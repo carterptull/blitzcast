@@ -344,7 +344,7 @@ at this volume and removes that dependency on manual upkeep.
 
 ## Root-caused the intermittent 503s: disable prefetch on the week selector, not a backend fix
 
-`WeekSelector`'s `<Link>`s now render with `prefetch={false}`. **Why:** reproduced live by
+`SlateSelector`'s `<Link>`s (the component was `WeekSelector` until v1.3.0) now render with `prefetch={false}`. **Why:** reproduced live by
 navigating the site while watching Vercel's dashboard: rapid week/sport switching triggered a
 burst of near-simultaneous RSC prefetch requests (several sharing the exact same `_rsc` cache
 token), and several came back 503. Vercel's Firewall showed the actual cause: its own automatic
@@ -956,3 +956,130 @@ so forcing it with an override could break the lint setup; `deepmerge` has no pa
 reached through lint and test tooling over our own files, not the shipped bundle or the API,
 so they are accepted and tracked. **Alternative:** pin to 16.4.1 for the smallest possible
 diff; rejected because the benefit is only a smaller diff and 16.4.5 passed the same checks.
+
+## Postseason stored at slate week 17, identity from `season_type` and `round` (v1.3.0)
+
+`games` gains `season_type` (`regular` or `postseason`), `round`, `event_name` and both seeds,
+with CHECK constraints on `season_type` and `round`. NFL playoff games keep weeks 19 to 22. CFB
+postseason games, which CFBD numbers as postseason week 1, are stored at slate week 17
+(`CFB_POSTSEASON_WEEK`), past any regular week CFBD has used (16 in 2025), and a regular row at
+week 17 or later is logged and skipped. Labels, slates, stakes and the booth read only
+`season_type` and `round`, and `app/postseason.py` is the one module that maps game types,
+rounds, slugs and labels or cleans event names; a test fails if another module derives a round
+from a week number. **Why:** every existing `(season, week)` query stays collision-free with no
+second key, and the round is a stored fact rather than arithmetic that differs by sport and by
+era (NFL playoffs started at week 18 before 2021). **Alternative:** keep CFBD's raw week 1 and
+add `season_type` to every week-keyed query: about 15 call sites, and one miss silently puts
+bowls in September's Week 1; rejected. A frontend-only week-to-round map was rejected too,
+because CFB rounds share a week and the API and the booth would stay blind to them.
+
+## A Regular season / Postseason toggle, and which slate opens first (v1.3.0)
+
+The slate page has a two-sided toggle below the banner that appears only once a postseason slate
+exists; each side lists its own chips (weeks, or rounds). `/api/slates` describes every slate,
+and `pickDefaultSlate` chooses the first one: once any postseason slate exists only postseason
+slates are candidates; among live ones a CFP round with a kickoff inside 7 days wins, else the
+soonest kickoff, with all-TBD slates last; if nothing is live, the last candidate. `?week=N` and
+`?round=<slug>` always open what they name. **Why:** in December the CFB postseason is a month
+of bowls with the CFP rounds inside it, and a visitor most likely wants this week's CFP game
+over the thirtieth bowl. Before any postseason slate exists the rule reduces to the old
+default-week rule, so the regular season does not change. **Alternative:** one combined CFB
+postseason slate; rejected by the maintainer in favor of the toggle and round chips.
+
+## Conference championships stay in the regular season (v1.3.0)
+
+FBS conference title games stay where CFBD puts them, in the regular season (Week 14 in 2026,
+Week 15 in 2025), tagged `round='conf_championship'` with the cleaned event name ("SEC
+Championship"). Their week is labeled "Conference Championships" with a "Champ" chip and stays
+reachable at `/cfb?week=14` after bowls appear. Detection is `notes` containing "championship"
+with both teams in the same conference, never CFBD's `conferenceGame` (False for every 2025
+title game), and a failed detection only loses the label: the game is still stored and shown in
+its week. **Why:** the maintainer wanted them visible as the end of the regular season; they are
+not playoff games and the feed files them as regular. **Alternative:** move them behind the
+Postseason toggle; rejected, because it would hide them during the week they are the whole slate.
+
+## Claude narrates only games within 7 days; far-off postseason games get the template (v1.3.0)
+
+`predict_week` now predicts every published, unplayed postseason game on every run, so a bowl
+three weeks out has a probability and a booth section the day it is announced. Claude is called
+only for games kicking off (or, when TBD, dated) within `LOOKAHEAD_DAYS` (7); games further out
+skip both the draft and the kept step and get the deterministic template, counted as fallback.
+**Why:** a month-long bowl slate would otherwise cost up to 3 Claude calls per game every
+morning for weeks, and the facts that make a booth worth reading (injuries, odds, form) keep
+changing until close to kickoff. The template passes the same guardrail, so nothing unverified
+is published. **Alternative:** narrate everything daily (rejected on cost) or leave far games at
+"Prediction pending" (rejected: the page would look broken for weeks).
+
+## Postseason games read the latest regular-season poll; CFBD postseason rankings are never loaded (v1.3.0)
+
+CFBD files the final AP and Coaches polls, published after the national title game, as
+postseason week 1. `load_rankings` is only ever called for the regular season (a test inspects
+every call site), and every poll read path ignores rows at week 17 or later, so a postseason
+game's rank display, `ranks_for_week` and the poll feature all use the season's latest
+regular-season poll. **Why:** the leakage rule. A feature for game G uses only data from before
+G's kickoff, and the final poll already knows the title game's result. **Alternative:** load the
+postseason polls and filter by publish date; rejected, because `PollRank` has no publish
+timestamp and the final poll offers a bowl nothing the last regular poll lacks.
+
+## No retrain for the postseason this season (v1.3.0)
+
+`MODEL_VERSION` stays `1.0.0` / `cfb-1.0.0`. The only feature change is that CFB `week_number`
+is clamped to 16 for postseason rows, keeping slate week 17 inside the trained range. **Why:**
+the season is live, a retrain would move stored probabilities and the backtest mid-season, and
+the parked P4 retrain is the place for neutral-site features and a CFB postseason backfill
+(2021 to 2025). **Known limits accepted:** Elo still applies home-field advantage at neutral
+sites, bowl opt-outs and interim coaches are not modeled, the CFB model never trained on bowls,
+and NFL playoff rows are thin in training. The market line is shown beside every pick, and How
+It Works says so. **Alternative:** a quick neutral-site retrain before bowls; rejected for the
+reasons in "No mid-season retrain for this release".
+
+## Feed event names are gated before the fact sheet; seeds sit on each team (v1.3.0)
+
+The stored `event_name` passes `clean_event_name` (sponsor tails dropped, dashes turned to
+commas, a strict character set, at most 2 digits, else "Bowl game"). The booth applies one more
+gate, `_event_text`, before an event name reaches the sheet: score patterns and every
+digit-bearing word are dropped, and the rest must read like a Title Case name (only function
+words such as "of", "at", "the", "to", "for" and "by" may be lowercase). CFP seeds go on each
+team's own sheet block ("Seed: No. 3"), not in the occasion line, and `check_narration` requires
+a cited seed to be on the sheet and to belong to the team it is said of. **Why:** the automated
+review of the booth work flagged feed digits landing in trusted sheet text (which backs number
+claims), feed text in the last-meeting line, and a prompt-injection path through event names.
+A combined "No. 3 seed versus No. 6 seed" phrase invited Claude to pin a seed on the wrong team
+while the check verified only the number. **Trade-off:** "68 Ventures Bowl" reads "Ventures
+Bowl" on the booth sheet; the site still shows the stored name. **Alternative:** reuse
+`_reads_like_a_name`; rejected because it rejects real bowl names with lowercase words ("IS4S
+Salute to Veterans Bowl").
+
+Follow-up from the code and push reviews: conference title games are named from our own
+`Team.conference` (the digit drop had turned "Big 12 Championship" into "Big Championship"),
+NFL round names are ours, and the only feed text left on the sheet is a CFB bowl name, which
+must end in "Bowl" or "Classic". **Known residual:** a Title Case, bowl-shaped feed string of up
+to 48 characters can still put words on the sheet. It is bounded by the prompt marking the sheet
+as data and by `check_narration` (numbers, names, pick and market wording must all check out).
+A curated bowl allowlist would close it but needs a yearly update as bowls are renamed; revisit
+if a feed ever abuses it.
+
+## Spec requirements carry IDs that tests must cite (v1.3.0)
+
+Every testable requirement in `docs/superpowers/specs/2026-11-19-postseason-design.md` has an
+ID (`PS-C4`, `PS-F1` and so on), and a test that proves one cites it in its docstring or its
+`it(...)` title. `backend/tests/test_spec_traceability.py` parses the spec and fails when an ID
+is cited by no backend or frontend test. During the build a `PENDING` set listed the IDs not yet
+implemented, and the test failed both when a pending ID already had a test and when a
+non-pending ID had none; it now asserts `PENDING` is empty. Manual checks (`MC-n`) are tracked
+in the plan instead. Product code carries no IDs, in line with the minimal-comments rule.
+**Why:** the feature spans loaders, features, jobs, API, UI and the booth, and the regular
+season must not regress; a mechanical link from each requirement to its test turns a dropped
+requirement into a red build rather than a review finding. **Alternative:** a checklist in the
+plan; rejected because nothing enforces it after the PR merges.
+
+## Both planned postseason releases ship as one v1.3.0 (v1.3.0)
+
+The plan split the work into v1.3.0 (data, API and UI, by 2026-12-03) and v1.3.1 (the booth,
+by 2026-12-12). Both landed on one branch and ship as v1.3.0 in one PR, with one code review,
+one security review and one production deploy. **Why:** the maintainer wanted as much as
+possible live before conference championship week, and one deploy means one production
+migration and one cron cycle to watch. **Trade-off:** a larger single review, offset by the
+full suites and the traceability test (no `PENDING` IDs left). **Alternative:** ship the data
+and UI first and the booth a week later; rejected because postseason games would have carried
+regular-season booth wording in between ("X at Y", seeds read as poll ranks).

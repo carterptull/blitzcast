@@ -8,7 +8,8 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import SPORT_NFL, Game, Team
+from app.models import SPORT_NFL, Game, Stadium, Team
+from app.postseason import NFL_GAME_TYPES, nfl_event_name, nfl_round
 from data_pipeline.team_names import to_abbr
 
 ET = ZoneInfo("America/New_York")
@@ -60,10 +61,23 @@ def upsert_games(db: Session, schedules: pd.DataFrame) -> int:
     existing = {g.game_id: g for g in db.scalars(select(Game))}
     placeholder_weeks = _placeholder_weeks(schedules)
 
+    stadium_by_name = {s.name: s.stadium_id for s in db.scalars(select(Stadium))}
+    conference_by_id = {t.team_id: t.conference for t in db.scalars(select(Team))}
+
     count = 0
     for row in schedules.itertuples(index=False):
-        home = to_abbr(row.home_team)
-        away = to_abbr(row.away_team)
+        try:
+            game_type = _opt(getattr(row, "game_type", None)) or "REG"
+            if game_type not in NFL_GAME_TYPES:
+                raise ValueError(f"unknown game_type {game_type}")
+            season_type, round_ = nfl_round(game_type)
+            home = to_abbr(row.home_team)
+            away = to_abbr(row.away_team)
+            home_id, away_id = ids[home], ids[away]
+            game_date = date.fromisoformat(row.gameday)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            print(f"skipped NFL row {row.game_id}: {exc!r}")
+            continue
         game = existing.get(row.game_id)
         if game is None:
             game = Game(game_id=row.game_id)
@@ -71,18 +85,27 @@ def upsert_games(db: Session, schedules: pd.DataFrame) -> int:
             existing[row.game_id] = game
         game.season = int(row.season)
         game.week = int(row.week)
-        game.game_date = date.fromisoformat(row.gameday)
+        game.game_date = game_date
         is_placeholder_week = (int(row.season), int(row.week)) in placeholder_weeks
         if is_placeholder_week:
             game.kickoff_time = None
         else:
             game.kickoff_time = _kickoff_utc(row.gameday, _opt(row.gametime))
-        game.home_team_id = ids[home]
-        game.away_team_id = ids[away]
+        game.home_team_id = home_id
+        game.away_team_id = away_id
         is_neutral = row.location != "Home"
-        game.stadium_id = None if is_neutral else stadium_by_team.get(ids[home])
+        venue = _opt(getattr(row, "stadium", None))
+        game.stadium_id = (
+            stadium_by_name.get(venue) if is_neutral else stadium_by_team.get(home_id)
+        )
         game.is_neutral_site = is_neutral
-        game.venue_name = _opt(getattr(row, "stadium", None))
+        game.venue_name = venue
+        game.season_type = season_type
+        game.round = round_
+        game.event_name = (
+            nfl_event_name(round_, conference_by_id.get(home_id), int(row.season))
+            if round_ else None
+        )
         game.is_primetime = False if is_placeholder_week else _is_primetime(_opt(row.gametime))
         game.is_divisional = bool(row.div_game)
         home_score = _opt(row.home_score)

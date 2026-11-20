@@ -12,12 +12,14 @@ function TeamRow({
   prob,
   favored,
   score,
+  seed,
 }: {
   team: GameTeamRef;
   cfb: boolean;
   prob: number | null;
   favored: boolean;
   score?: number | null;
+  seed: number | null;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -31,9 +33,9 @@ function TeamRow({
       <span className="font-display text-xl uppercase leading-none tracking-wide">
         {cfb ? team.abbr : displayAbbr(team.abbr)}
       </span>
-      {team.rank != null ? (
+      {seed != null || team.rank != null ? (
         <span className="-ml-1.5 font-mono text-[10px] font-semibold tabular-nums text-gold-text">
-          #{team.rank}
+          {seed != null ? `(${seed})` : `#${team.rank}`}
         </span>
       ) : null}
       <span className="truncate text-sm text-ink-soft">{team.name}</span>
@@ -83,7 +85,7 @@ export default function GameCard({
   return (
     // prefetch off: a slate page renders many of these at once, and letting
     // Next.js prefetch every visible card tripped Vercel's automatic DDoS
-    // mitigation (see WeekSelector.tsx and DECISIONS.md).
+    // mitigation (see SlateSelector.tsx and DECISIONS.md).
     <Link
       href={`/${sport}/matchup/${game.game_id}`}
       prefetch={false}
@@ -96,6 +98,7 @@ export default function GameCard({
           prob={awayProb}
           favored={awayFavored}
           score={final ? game.away_score : null}
+          seed={game.away_seed}
         />
         <TeamRow
           team={game.home}
@@ -103,6 +106,7 @@ export default function GameCard({
           prob={homeProb}
           favored={homeFavored}
           score={final ? game.home_score : null}
+          seed={game.home_seed}
         />
       </div>
 
@@ -129,6 +133,11 @@ export default function GameCard({
         ) : (
           <TbdBadge />
         )}
+        {game.event_name ? (
+          <span className="min-w-0 truncate rounded-sm border border-gold bg-gold/10 px-1.5 py-0.5 text-[9px] tracking-[0.15em] text-gold-text">
+            {game.event_name}
+          </span>
+        ) : null}
         {game.is_primetime ? (
           <span className="rounded-sm border border-gold/50 px-1.5 py-0.5 text-[9px] tracking-[0.15em] text-gold-text">
             Prime time

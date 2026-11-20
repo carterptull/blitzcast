@@ -4,8 +4,10 @@ against the real contract before the DB/model exist."""
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.models import SPORT_CFB, SPORT_NFL
+from app.postseason import round_for_slug
 from app.schemas import (
     FactorOut,
     GameSummary,
@@ -14,13 +16,14 @@ from app.schemas import (
     PredictionOut,
     RecordOut,
     ScheduleOut,
+    SlateOut,
     TeamDetail,
     TeamOut,
     VenueOut,
     WeatherOut,
     WeekOut,
 )
-from app.services.predictions import prediction_verdict
+from app.services.predictions import build_slates, prediction_verdict
 from data_pipeline.team_names import logo_url, nickname
 from ml.features import market_home_prob
 
@@ -93,7 +96,7 @@ _MOCK_GAMES = [
         "factors": [
             {"label": "Team rating (Elo) edge", "value": -0.11, "direction": "away"},
             {"label": "Betting-market win probability", "value": -0.05, "direction": "away"},
-            {"label": "Divisional rivalry game", "value": 0.02, "direction": "home"},
+            {"label": "Division rivalry game", "value": 0.02, "direction": "home"},
             {"label": "Kickoff temperature", "value": 0.01, "direction": "home"},
         ],
         "narrative": None,
@@ -121,6 +124,22 @@ _MOCK_CFB_TEAMS = {
     "MER": {
         "name": "Mercer", "conference": "SoCon", "tier": "FCS",
         "rank": None, "espn_id": 2382, "color": "#F76800", "alt_color": "#000000",
+    },
+    "IND": {
+        "name": "Indiana", "conference": "Big Ten", "tier": "FBS",
+        "rank": 3, "espn_id": 84, "color": "#990000", "alt_color": "#EEEDEB",
+    },
+    "ORE": {
+        "name": "Oregon", "conference": "Big Ten", "tier": "FBS",
+        "rank": 6, "espn_id": 2483, "color": "#154733", "alt_color": "#FEE123",
+    },
+    "ND": {
+        "name": "Notre Dame", "conference": "FBS Independents", "tier": "FBS",
+        "rank": 8, "espn_id": 87, "color": "#0C2340", "alt_color": "#C99700",
+    },
+    "BSU": {
+        "name": "Boise State", "conference": "Pac-12", "tier": "FBS",
+        "rank": 14, "espn_id": 68, "color": "#0033A0", "alt_color": "#D64309",
     },
 }
 
@@ -200,6 +219,63 @@ _MOCK_CFB_GAMES = [
         "factors": [],
         "narrative": None,
     },
+]
+
+
+
+def _post(game_id, week, kickoff, home, away, prob, event, round_, *, neutral, venue,
+          city=None, dome=False, seeds=(None, None), season_type="postseason", odds=None):
+    return {
+        "game_id": game_id, "week": week, "kickoff": kickoff, "home": home, "away": away,
+        "is_primetime": kickoff is not None and kickoff.hour >= 23,
+        "is_divisional": False, "home_win_prob": prob,
+        "venue": {"name": venue, "city": city, "is_dome": dome, "is_neutral_site": neutral},
+        "odds": odds, "weather": None, "factors": [], "narrative": None,
+        "season_type": season_type, "round": round_, "event_name": event,
+        "is_neutral_site": neutral, "home_seed": seeds[0], "away_seed": seeds[1],
+    }
+
+
+_MOCK_GAMES += [
+    _post("2026_19_HOU_LAC", 19, datetime(2027, 1, 16, 21, 30, tzinfo=UTC), "LAC", "HOU", 0.56,
+          "AFC Wild Card", "wild_card", neutral=False, venue="SoFi Stadium", city="Inglewood",
+          dome=True, odds={"spread_home": 2.5, "moneyline_home": -135, "moneyline_away": 115,
+                           "total": 44.5}),
+    _post("2026_19_GB_PHI", 19, datetime(2027, 1, 18, 1, 15, tzinfo=UTC), "PHI", "GB", 0.61,
+          "NFC Wild Card", "wild_card", neutral=False, venue="Lincoln Financial Field",
+          city="Philadelphia"),
+    _post("2026_20_LAC_KC", 20, None, "KC", "LAC", None, "AFC Divisional", "divisional",
+          neutral=False, venue="GEHA Field at Arrowhead Stadium", city="Kansas City"),
+    _post("2026_21_BUF_KC", 21, datetime(2027, 1, 31, 20, 0, tzinfo=UTC), "KC", "BUF", 0.52,
+          "AFC Championship", "conference", neutral=False,
+          venue="GEHA Field at Arrowhead Stadium", city="Kansas City"),
+    _post("2026_22_KC_PHI", 22, datetime(2027, 2, 14, 23, 30, tzinfo=UTC), "PHI", "KC", 0.53,
+          "Super Bowl LXI", "super_bowl", neutral=True, venue="SoFi Stadium", city="Inglewood",
+          dome=True, odds={"spread_home": 1.5, "moneyline_home": -120, "moneyline_away": 100,
+                           "total": 47.5}),
+]
+
+_MOCK_CFB_GAMES += [
+    _post("cfb_401900101", 14, datetime(2026, 12, 5, 21, 0, tzinfo=UTC), "UGA", "ALA", 0.55,
+          "SEC Championship", "conf_championship", neutral=True,
+          venue="Mercedes-Benz Stadium", city="Atlanta", dome=True, season_type="regular"),
+    _post("cfb_401900102", 14, datetime(2026, 12, 6, 1, 0, tzinfo=UTC), "OSU", "IND", 0.6,
+          "Big Ten Championship", "conf_championship", neutral=True,
+          venue="Lucas Oil Stadium", city="Indianapolis", dome=True, season_type="regular"),
+    _post("cfb_401900201", 17, datetime(2026, 12, 26, 19, 0, tzinfo=UTC), "ALA", "ND", 0.57,
+          "Duke's Mayo Bowl", "bowl", neutral=True, venue="Bank of America Stadium",
+          city="Charlotte"),
+    _post("cfb_401900202", 17, None, "BSU", "MER", None, "Famous Idaho Potato Bowl", "bowl",
+          neutral=False, venue="Albertsons Stadium", city="Boise"),
+    _post("cfb_401900301", 17, datetime(2026, 12, 19, 17, 0, tzinfo=UTC), "TEX", "BSU", 0.79,
+          "CFP First Round", "cfp_first_round", neutral=False,
+          venue="DKR-Texas Memorial Stadium", city="Austin", seeds=(5, 12)),
+    _post("cfb_401900302", 17, datetime(2026, 12, 20, 0, 30, tzinfo=UTC), "ORE", "ND", 0.58,
+          "CFP First Round", "cfp_first_round", neutral=False, venue="Autzen Stadium",
+          city="Eugene", seeds=(6, 11)),
+    _post("cfb_401900401", 17, datetime(2027, 1, 1, 21, 0, tzinfo=UTC), "IND", "TEX", 0.54,
+          "Rose Bowl, CFP Quarterfinal", "cfp_quarterfinal", neutral=True, venue="Rose Bowl",
+          city="Pasadena", seeds=(3, 5)),
 ]
 
 MOCK_SEASON = 2026
@@ -290,7 +366,32 @@ def _summary(g: dict, sport: str) -> GameSummary:
         home_score=home_score,
         away_score=away_score,
         prediction_correct=prediction_verdict(g["home_win_prob"], home_score, away_score),
+        **_occasion(g),
+        is_neutral_site=g.get("is_neutral_site", False),
     )
+
+
+def _occasion(g: dict) -> dict:
+    return {
+        "season_type": g.get("season_type", "regular"),
+        "round": g.get("round"),
+        "event_name": g.get("event_name"),
+        "home_seed": g.get("home_seed"),
+        "away_seed": g.get("away_seed"),
+    }
+
+
+def _slate_game(g: dict) -> SimpleNamespace:
+    return SimpleNamespace(
+        week=g["week"], kickoff_time=g["kickoff"], season_type=g.get("season_type", "regular"),
+        round=g.get("round"), home_score=g.get("home_score"), away_score=g.get("away_score"),
+    )
+
+
+def get_slates(season: int, sport: str = SPORT_NFL, now: datetime | None = None) -> list[SlateOut]:
+    if season != MOCK_SEASON:
+        return []
+    return build_slates([_slate_game(g) for g in _games_for(sport)], now or datetime.now(UTC))
 
 
 def _matches_status(g: dict, status: str) -> bool:
@@ -316,14 +417,17 @@ def get_schedule(season: int, sport: str = SPORT_NFL, status: str = "all") -> Sc
 
 
 def get_games(
-    season: int, week: int, sport: str = SPORT_NFL, status: str = "all"
+    season: int, week: int, sport: str = SPORT_NFL, status: str = "all",
+    round_slug: str | None = None,
 ) -> list[GameSummary]:
     if season != MOCK_SEASON:
         return []
+    round_ = None if round_slug is None else round_for_slug(round_slug)
     return [
         _summary(g, sport)
         for g in _games_for(sport)
         if g["week"] == week and _matches_status(g, status)
+        and (round_ is None or g.get("round") == round_)
     ]
 
 
@@ -410,4 +514,5 @@ def get_prediction_detail(game_id: str) -> PredictionOut | None:
         home_score=home_score,
         away_score=away_score,
         prediction_correct=prediction_verdict(prob, home_score, away_score),
+        **_occasion(g),
     )

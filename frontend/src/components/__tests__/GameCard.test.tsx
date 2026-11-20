@@ -3,6 +3,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import GameCard from "../GameCard";
+import { REGULAR_OCCASION } from "@/lib/occasion";
 import type { GameSummary } from "@/lib/types";
 
 // Mock Next.js Link, forwarding `prefetch` as a data attribute so tests
@@ -46,6 +47,8 @@ describe("GameCard", () => {
     home_score: null,
     away_score: null,
     prediction_correct: null,
+    ...REGULAR_OCCASION,
+    is_neutral_site: false,
   };
 
   test("renders team abbreviations", () => {
@@ -176,6 +179,8 @@ describe("GameCard", () => {
       home_score: null,
       away_score: null,
       prediction_correct: null,
+      ...REGULAR_OCCASION,
+      is_neutral_site: false,
     };
 
     render(<GameCard game={minimalGame} />);
@@ -236,6 +241,68 @@ describe("GameCard", () => {
     expect(screen.getByText("27")).toBeInTheDocument();
     expect(screen.queryByText(/prediction pending/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/called it|missed/i)).not.toBeInTheDocument();
+  });
+
+  describe("postseason occasion", () => {
+    const cfp: GameSummary = {
+      ...baseGame,
+      home: { abbr: "ORE", name: "Oregon", rank: 3 },
+      away: { abbr: "ND", name: "Notre Dame", rank: 7 },
+      season_type: "postseason",
+      round: "cfp_quarterfinal",
+      event_name: "Rose Bowl, CFP Quarterfinal",
+      home_seed: 4,
+      away_seed: 5,
+      is_neutral_site: true,
+    };
+
+    test("PS-F7: shows the event badge with the gold tint when event_name is set", () => {
+      render(<GameCard game={cfp} sport="cfb" />);
+      const badge = screen.getByText("Rose Bowl, CFP Quarterfinal");
+      expect(badge.className).toMatch(/border-gold\b/);
+      expect(badge.className).toMatch(/bg-gold\/10/);
+    });
+
+    test("PS-F7: a CFP seed shows as (5) in place of the AP rank", () => {
+      render(<GameCard game={cfp} sport="cfb" />);
+      expect(screen.getByText("(5)")).toBeInTheDocument();
+      expect(screen.getByText("(4)")).toBeInTheDocument();
+      expect(screen.queryByText("#7")).not.toBeInTheDocument();
+      expect(screen.queryByText("#3")).not.toBeInTheDocument();
+    });
+
+    test("PS-F7: a bowl keeps the AP rank", () => {
+      const bowl: GameSummary = {
+        ...cfp,
+        round: "bowl",
+        event_name: "Duke's Mayo Bowl",
+        home_seed: null,
+        away_seed: null,
+      };
+      render(<GameCard game={bowl} sport="cfb" />);
+      expect(screen.getByText("Duke's Mayo Bowl")).toBeInTheDocument();
+      expect(screen.getByText("#7")).toBeInTheDocument();
+      expect(screen.queryByText(/^\(\d+\)$/)).not.toBeInTheDocument();
+    });
+
+    test("PS-V3: a conference title game shows its event badge", () => {
+      const title: GameSummary = {
+        ...baseGame,
+        round: "conf_championship",
+        event_name: "SEC Championship",
+      };
+      render(<GameCard game={title} sport="cfb" />);
+      expect(screen.getByText("SEC Championship")).toBeInTheDocument();
+    });
+
+    test("PS-F7: a regular game renders no event badge and no seed", () => {
+      const { container } = render(
+        <GameCard game={{ ...baseGame, home: { ...baseGame.home, rank: 2 } }} />
+      );
+      expect(container.querySelector('[class*="bg-gold/10"]')).not.toBeInTheDocument();
+      expect(screen.getByText("#2")).toBeInTheDocument();
+      expect(screen.queryByText(/^\(\d+\)$/)).not.toBeInTheDocument();
+    });
   });
 
   test("verdict is not conveyed by color alone", () => {

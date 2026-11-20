@@ -8,13 +8,16 @@ choices.
 ## Architecture
 
 - **`frontend/`** — Next.js 16 + TypeScript + Tailwind v4 (App Router,
-  `src/`). Routes: `/` (redirects to `/nfl`), `/[sport]` (week slate for
-  `nfl`/`cfb`), `/[sport]/matchup/[gameId]`, `/how-it-works`. Typed API
+  `src/`). Routes: `/` (redirects to `/nfl`), `/[sport]` (slate for
+  `nfl`/`cfb`: `?week=N` for a regular week, `?round=<slug>` for a
+  postseason round), `/[sport]/matchup/[gameId]`, `/how-it-works`. Typed API
   client in `src/lib/api.ts`; contract types in `src/lib/types.ts`; mock
   fixtures in `src/lib/mock.ts` and `src/lib/mockCfb.ts`
   (`NEXT_PUBLIC_USE_MOCK=1`).
 - **`backend/app/`** — FastAPI. Contract endpoints: `/api/teams`,
-  `/api/schedule`, `/api/games`, `/api/predictions/{game_id}`. Predictions
+  `/api/schedule`, `/api/slates`, `/api/games` (optional `round` slug),
+  `/api/predictions/{game_id}`. `app/postseason.py` is the single home for
+  round rules (game types, rounds, slugs, labels, event names). Predictions
   are **cached rows** written by `app/jobs/predict_week.py` — never computed
   per-request. Narration: `app/services/fact_sheet.py` (pre-game facts),
   `narrate.py` (Claude plus the `check_narration` guardrail), and
@@ -47,8 +50,9 @@ Backend (from `backend/`, using `.venv\Scripts\python`):
 - Pipeline: `python -m data_pipeline.seed` / `.backfill` /
   `.refresh_week`; model: `python -m ml.train` / `ml.backtest`;
   predictions: `python -m app.jobs.predict_week` (default week plus any
-  game kicking off within 7 days; exits 1 on a failed game or a coverage
-  gap); coverage check: `python -m app.jobs.coverage --sport nfl|cfb`;
+  game kicking off within 7 days plus every published postseason game;
+  Claude narrates only inside the 7 days; exits 1 on a failed game or a
+  coverage gap); coverage check: `python -m app.jobs.coverage --sport nfl|cfb`;
   narration quality:
   `python -m app.jobs.narration_eval --sport nfl --week N --stored`
 
@@ -111,10 +115,22 @@ Full setup + env vars: [README.md](./README.md) and
   feature to `_MARKET_GROUND_TRUTH` if it has a similar independent truth
   to check against.
 - **Neutral-site games:** `Game.venue_name`/`is_neutral_site` hold the raw
-  nflverse or CFBD venue for games with no Team-derived stadium (`stadium_id`
-  NULL). `refresh_weather.py` fetches these by venue-name geocoding
-  instead of lat/lon; don't reintroduce a bare `stadium is None: skip`
+  nflverse or CFBD venue for neutral-site games. A neutral NFL game links
+  `stadium_id` when the venue name matches a known stadium (so the Super
+  Bowl at SoFi gets dome weather); one with no match keeps `stadium_id`
+  NULL, and `refresh_weather.py` fetches it by venue-name geocoding
+  instead of lat/lon. Don't reintroduce a bare `stadium is None: skip`
   check without also checking `venue_name`.
+- **Postseason identity** comes from `Game.season_type` / `Game.round`,
+  never from week arithmetic. CFB postseason games live at slate week 17
+  (`CFB_POSTSEASON_WEEK`), and `app/postseason.py` is the only place that
+  maps rounds.
+- **CFBD postseason rankings are never loaded:** the final poll, published
+  after the title game, is filed as postseason week 1. Postseason games
+  read the latest regular-season poll.
+- **Postseason spec:** `docs/superpowers/specs/2026-11-19-postseason-design.md`;
+  its requirement IDs are enforced by `backend/tests/test_spec_traceability.py`
+  (a test proving a requirement cites its ID).
 - **Game ids:** one rule on both sides, `^[A-Za-z0-9_-]{1,32}$`
   (backend `Path` in the predictions router, frontend `isGameId` in
   `api.ts`). Change them together.

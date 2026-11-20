@@ -49,7 +49,9 @@ def main() -> None:
             print(f"cfb stats refresh: no final games for {args.season} yet, skipping.")
             return
         try:
-            rows = backfill_team_game_stats(db, args.season)
+            rows = backfill_team_game_stats(
+                db, args.season, season_types=("regular", "postseason")
+            )
         except requests.RequestException as exc:
             print(f"cfb stats refresh failed: {exc}")
             sys.exit(1)

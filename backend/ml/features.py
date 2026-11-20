@@ -20,7 +20,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.market import plausible_moneylines
-from app.models import SPORT_NFL, Game, Injury, Odds, PollRank, Team, TeamGameStat, Weather
+from app.models import (
+    SPORT_CFB,
+    SPORT_NFL,
+    Game,
+    Injury,
+    Odds,
+    PollRank,
+    Team,
+    TeamGameStat,
+    Weather,
+)
+from app.postseason import CFB_POSTSEASON_WEEK, SEASON_POSTSEASON
 from ml import elo
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -136,7 +147,7 @@ def _load_frames(db: Session, sport: str = SPORT_NFL) -> dict[str, pd.DataFrame]
                 g.game_id, g.season, g.week, g.kickoff_time, g.game_date,
                 g.home_team_id, g.away_team_id, g.home_score, g.away_score,
                 g.is_divisional, g.is_primetime, g.spread_line, g.total_line,
-                g.home_moneyline, g.away_moneyline,
+                g.home_moneyline, g.away_moneyline, g.season_type,
             )
             for g in db.scalars(
                 select(Game)
@@ -148,7 +159,7 @@ def _load_frames(db: Session, sport: str = SPORT_NFL) -> dict[str, pd.DataFrame]
             "game_id", "season", "week", "kickoff", "game_date",
             "home_team_id", "away_team_id", "home_score", "away_score",
             "is_divisional", "is_primetime", "spread_line", "total_line",
-            "home_moneyline", "away_moneyline",
+            "home_moneyline", "away_moneyline", "season_type",
         ],
     )
     # TBD-kickoff (CFB) games get game_date at midnight UTC as a stand-in,
@@ -435,7 +446,11 @@ def build_features(
     df["injury_sev_diff"] = df["home_injury_sev"] - df["away_injury_sev"]
     df["is_divisional"] = df["is_divisional"].astype(float)
     df["is_primetime"] = df["is_primetime"].astype(float)
+    postseason = df["season_type"].eq(SEASON_POSTSEASON) if "season_type" in df else False
     df["week_number"] = df["week"].astype(float)
+    if sport == SPORT_CFB:
+        # Bowls sit at slate week 17; keep the feature inside the trained range.
+        df.loc[postseason, "week_number"] = df.loc[postseason, "week_number"].clip(upper=16.0)
 
     # Weather: neutral fill for domes / missing forecasts.
     df["temp_f"] = pd.to_numeric(df["temp_f"], errors="coerce").fillna(70.0)
@@ -480,15 +495,21 @@ def build_features(
 
     # Poll standing entering the game's week (exact season+week join is
     # leakage-safe: the week-W poll is published before week W's games).
+    # Postseason games join the latest regular-season poll; a poll stored at a
+    # postseason week is never read (the final poll comes after the title game).
     strength = _poll_strength(frames["polls"])
+    strength = strength[strength["week"] < CFB_POSTSEASON_WEEK]
     if strength.empty:
         df["poll_strength_diff"] = 0.0
     else:
+        latest = strength.groupby("season")["week"].max()
+        df["poll_week"] = df["week"].where(~postseason, df["season"].map(latest))
+        strength = strength.rename(columns={"week": "poll_week"})
         for side in ("home", "away"):
             side_poll = strength.rename(
                 columns={"team_id": f"{side}_team_id", "poll_strength": f"{side}_poll_strength"}
             )
-            df = df.merge(side_poll, on=["season", "week", f"{side}_team_id"], how="left")
+            df = df.merge(side_poll, on=["season", "poll_week", f"{side}_team_id"], how="left")
             df[f"{side}_poll_strength"] = df[f"{side}_poll_strength"].fillna(0.0)
         df["poll_strength_diff"] = df["home_poll_strength"] - df["away_poll_strength"]
 

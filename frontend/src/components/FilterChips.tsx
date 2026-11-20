@@ -7,7 +7,8 @@ interface Props {
   conferences: string[];
   activeConf: string | null;
   top25: boolean;
-  week: number;
+  /** The current slate, "week=5" or "round=bowls". */
+  slateQuery: string;
   /** Extra query params to preserve across conf/top25 changes, e.g. "&status=final". */
   query?: string;
 }
@@ -15,7 +16,7 @@ interface Props {
 /** Conference + Top-25 filter chips for the CFB slate. Filter state lives in
  *  the URL query, so a filtered slate is shareable. Clicking an active chip
  *  clears it. */
-export default function FilterChips({ conferences, activeConf, top25, week, query = "" }: Props) {
+export default function FilterChips({ conferences, activeConf, top25, slateQuery, query = "" }: Props) {
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -24,7 +25,7 @@ export default function FilterChips({ conferences, activeConf, top25, week, quer
   }, [activeConf, top25]);
 
   const href = (conf: string | null, top: boolean) =>
-    `/cfb?week=${week}${conf ? `&conf=${encodeURIComponent(conf)}` : ""}${top ? "&top25=1" : ""}${query}`;
+    `/cfb?${slateQuery}${conf ? `&conf=${encodeURIComponent(conf)}` : ""}${top ? "&top25=1" : ""}${query}`;
 
   const base =
     "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors";

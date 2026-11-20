@@ -1,4 +1,5 @@
 import { fmtKickoff, fmtPct } from "@/lib/format";
+import { occasionLabel } from "@/lib/matchup";
 import { displayAbbr, primaryColor } from "@/lib/teams";
 import type { MatchupDetail, PredictionTeam } from "@/lib/types";
 import TbdBadge from "./TbdBadge";
@@ -83,7 +84,7 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
     <section className="turf overflow-hidden rounded-2xl">
       <div className="px-5 py-8 sm:px-10 sm:py-12">
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[11px] uppercase tracking-[0.18em] text-chalk-soft sm:justify-start">
-          <span className="text-gold-turf">Week {m.week}</span>
+          <span className="text-gold-turf">{occasionLabel(m)}</span>
           <span aria-hidden="true">·</span>
           {m.kickoff !== null ? (
             <span className="tabular-nums">{fmtKickoff(m.kickoff)}</span>
@@ -100,7 +101,7 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
           </span>
           {m.venue.is_neutral_site ? <Badge>Neutral site</Badge> : null}
           {m.is_primetime ? <Badge>Prime time</Badge> : null}
-          {m.is_divisional ? <Badge>{cfb ? "Conference game" : "Divisional"}</Badge> : null}
+          {m.is_divisional ? <Badge>{cfb ? "Conference game" : "Division game"}</Badge> : null}
           {final ? <Badge>Final</Badge> : null}
         </div>
 
@@ -108,7 +109,9 @@ export default function MatchupHero({ matchup }: { matchup: MatchupDetail }) {
           <TeamColumn team={m.away} align="left" cfb={cfb} final={final} score={m.away_score} />
           {/* Center mark; hidden on mobile */}
           <div className="hidden flex-col items-center gap-1 sm:flex" aria-hidden="true">
-            <span className="font-display text-2xl uppercase text-chalk-soft">at</span>
+            <span className="font-display text-2xl uppercase text-chalk-soft">
+              {m.venue.is_neutral_site ? "vs" : "at"}
+            </span>
             <svg viewBox="0 0 12 12" className="size-2 text-gold-turf">
               <path d="M6 0 12 12 0 12z" fill="currentColor" />
             </svg>

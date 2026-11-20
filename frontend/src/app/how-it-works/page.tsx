@@ -135,6 +135,11 @@ export default function HowItWorksPage() {
             Each prediction ships with the top factors that moved the number, in plain language
             and pointed at the team they favor, not a bare percentage you have to take on faith.
           </p>
+          <p>
+            Postseason games are often played at neutral sites, with no real home crowd. Bowl
+            opt-outs and coaching changes aren&apos;t modeled, so the market line is shown beside
+            every pick.
+          </p>
         </Section>
 
         <Section label="The leakage rule" title="Nothing from the game leaks into the pick">

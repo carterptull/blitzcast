@@ -134,7 +134,11 @@ migrations.
 - `GET /health`
 - `GET /api/teams`
 - `GET /api/schedule?season=2026`
-- `GET /api/games?week=1&season=2026`
+- `GET /api/slates?season=2026`: every regular week and postseason round
+  (NFL Wild Card to Super Bowl; CFB bowls and each CFP round, all stored at
+  week 17) with labels, game count and kickoff span; cached 60 seconds
+- `GET /api/games?week=1&season=2026` (optional `round=<slug>`, e.g.
+  `week=17&round=bowls`; an unknown slug is a 422)
 - `GET /api/predictions/{game_id}` (404 unknown game; `prediction_status:
   "pending"` when a game exists but has no prediction yet)
 - `GET /api/record?sport=NFL|CFB&season=2026`: current-season accuracy
@@ -145,7 +149,7 @@ migrations.
   reconstructed (`backtest*`) predictions never count. `sufficient` is
   `false` below 10 graded games. Omitting `sport` combines both.
 
-`/api/teams`, `/api/schedule`, and `/api/games` take an optional
+`/api/teams`, `/api/schedule`, `/api/slates`, and `/api/games` take an optional
 `sport=NFL|CFB` query param (case-insensitive, default `NFL`; unknown values
 422). `/api/predictions/{game_id}` needs no sport: game ids are globally
 unique (CFB ids are prefixed `cfb_`) and the response carries `sport`.
@@ -177,8 +181,8 @@ nonzero) and a `WARNING:` line when any game has no narration.
 back to `all` silently rather than 422ing.
 
 `game_id` must match `^[A-Za-z0-9_-]{1,32}$`, `season` is 2000 to 2100 and
-`week` is 0 to 30; anything else is a 422. `/api/schedule` and
-`/api/record` are cached in-process for 60 seconds. CORS allows `GET` only,
+`week` is 0 to 30; anything else is a 422. `/api/schedule`, `/api/slates`
+and `/api/record` are cached in-process for 60 seconds. CORS allows `GET` only,
 without credentials.
 
 Interactive docs at `http://localhost:8000/docs` need `API_DOCS=1` in

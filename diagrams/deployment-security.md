@@ -21,7 +21,7 @@ flowchart LR
     end
 
     subgraph railway["Railway"]
-        api["FastAPI, public HTTPS URL<br/><small>read-only, no auth, no user data<br/>CORS allowlist from CORS_ORIGINS, GET only, no credentials<br/>nosniff on every response · docs and OpenAPI off unless API_DOCS=1<br/>game_id, season and week validated, 422 on bad input<br/>60 s in-process cache on schedule and record</small>"]
+        api["FastAPI, public HTTPS URL<br/><small>read-only, no auth, no user data<br/>CORS allowlist from CORS_ORIGINS, GET only, no credentials<br/>nosniff on every response · docs and OpenAPI off unless API_DOCS=1<br/>game_id, season, week and the round slug validated, 422 on bad input<br/>60 s in-process cache on schedule, slates and record</small>"]
         crons["nfl-cron · cfb-cron"]
         pg[("Postgres<br/><small>reached over Railway's private network</small>")]
         vars["Service variables<br/><small>DATABASE_URL · ODDS_API_KEY · CFBD_API_KEY<br/>VISUAL_CROSSING_API_KEY · ANTHROPIC_API_KEY</small>"]
@@ -65,9 +65,18 @@ origin and is overridden by `frame-ancestors` wherever both are supported.
 is a backstop rather than the main control, and it allows `GET` only, without credentials. The API
 is publicly reachable, but it's read-only, unauthenticated by design, and serves nothing the
 website doesn't already show. Its interactive docs and OpenAPI schema are off unless `API_DOCS=1`
-(local `.env` only), bad parameters get a 422, and the two season-wide endpoints
-(`/api/schedule`, `/api/record`) keep a 60 second in-process cache so a flood of identical
-requests does not reach Postgres each time.
+(local `.env` only), bad parameters get a 422 (including a `round` slug on `/api/games` that
+fails `^[a-z-]{1,24}$` or is not a known round), and the three season-wide endpoints
+(`/api/schedule`, `/api/slates`, `/api/record`) keep a 60 second in-process cache so a flood of
+identical requests does not reach Postgres each time.
+
+**Feed event names are untrusted twice over.** CFBD `notes` and `bowlName` are cleaned at ingest
+by `clean_event_name` (`app/postseason.py`: sponsor tails dropped, no links, ad words or dashes,
+a strict character set, at most 2 digits, else "Bowl game") before they are stored and shown.
+Before one reaches the narration fact sheet it is gated again (`_event_text`: scores and
+digit-bearing words dropped, Title Case names only), so feed digits never back a number claim
+and instruction-like prose never reaches the prompt. See
+[`llm-narration-boundary.md`](llm-narration-boundary.md).
 
 **The site adds headers beyond framing:** `nosniff`, a strict-origin-when-cross-origin referrer
 policy, a `Permissions-Policy` that turns off camera, microphone, geolocation, payment and USB, and
@@ -86,4 +95,4 @@ directly.
 [`SECURITY.md`](../SECURITY.md)).
 
 ---
-_Last updated: 2026-11-05 · reflects v1.2.6_
+_Last updated: 2026-11-19 · reflects v1.3.0_

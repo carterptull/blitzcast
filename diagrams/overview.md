@@ -65,4 +65,4 @@ at all, in which case the batch stores a deterministic template instead.
 | How is it hosted and secured? | [`deployment-security.md`](deployment-security.md) |
 
 ---
-_Last updated: 2026-11-05 · reflects v1.2.6_
+_Last updated: 2026-11-19 · reflects v1.3.0_

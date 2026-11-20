@@ -1,6 +1,7 @@
 """Pydantic response models -- the API contract the frontend builds against."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -41,11 +42,32 @@ class GameSummary(BaseModel):
     home_score: int | None = None
     away_score: int | None = None
     prediction_correct: bool | None = None
+    season_type: Literal["regular", "postseason"] = "regular"
+    round: str | None = None
+    event_name: str | None = None
+    is_neutral_site: bool = False
+    home_seed: int | None = None
+    away_seed: int | None = None
 
 
 class WeekOut(BaseModel):
     week: int
     games: list[GameSummary]
+
+
+class SlateOut(BaseModel):
+    key: str
+    phase: Literal["regular", "postseason"]
+    week: int
+    round: str | None
+    label: str | None
+    group_label: str
+    short_label: str
+    game_count: int
+    first_kickoff: datetime | None
+    next_kickoff: datetime | None
+    has_unscheduled: bool
+    last_kickoff: datetime | None
 
 
 class ScheduleOut(BaseModel):
@@ -122,3 +144,8 @@ class PredictionOut(BaseModel):
     home_score: int | None = None
     away_score: int | None = None
     prediction_correct: bool | None = None
+    season_type: Literal["regular", "postseason"] = "regular"
+    round: str | None = None
+    event_name: str | None = None
+    home_seed: int | None = None
+    away_seed: int | None = None

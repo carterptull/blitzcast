@@ -13,6 +13,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import SPORT_CFB, Game, Stadium, Team
+from app.postseason import (
+    CFB_POSTSEASON_WEEK,
+    SEASON_POSTSEASON,
+    SEASON_REGULAR,
+    cfb_playoff_round,
+    cfp_event_name,
+    clean_event_name,
+    generic_event_name,
+    is_conf_championship,
+)
 
 ET = ZoneInfo("America/New_York")
 
@@ -48,15 +58,77 @@ def _is_primetime(kickoff: datetime | None) -> bool:
     return kickoff is not None and kickoff.astimezone(ET).hour >= 19
 
 
+def _set_occasion(game: Game, row: dict, postseason: bool, unknown_rounds: set[str]) -> None:
+    """Season type, round, event name and seeds, overwritten on every sync."""
+    notes = field(row, "notes")
+    raw_round = field(row, "playoff.round")
+    game.home_seed = game.away_seed = None
+    if not postseason:
+        game.season_type = SEASON_REGULAR
+        if is_conf_championship(notes, field(row, "homeConference"),
+                                field(row, "awayConference")):
+            game.round = "conf_championship"
+            game.event_name = clean_event_name(notes) or generic_event_name(game.round)
+        else:
+            game.round = game.event_name = None
+        return
+    game.season_type = SEASON_POSTSEASON
+    if raw_round is None and field(row, "playoff.competition") is None:
+        game.round = "bowl"
+        game.event_name = clean_event_name(notes) or generic_event_name("bowl")
+        return
+    game.round = cfb_playoff_round(raw_round)
+    if game.round == "cfp_other" and str(raw_round) not in unknown_rounds:
+        unknown_rounds.add(str(raw_round))
+        print(f"cfb postseason: unknown playoff round {raw_round!r}, stored as cfp_other")
+    game.event_name = cfp_event_name(raw_round, field(row, "playoff.bowlName"))
+    game.home_seed = _seed(field(row, "playoff.homeSeed"))
+    game.away_seed = _seed(field(row, "playoff.awaySeed"))
+
+
+def _seed(value) -> int | None:
+    """A CFP seed from the feed: a whole number 1-16, else None (never fatal)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(number) if number.is_integer() and 1 <= number <= 16 else None
+
+
 def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
     """Idempotent upsert keyed on `cfb_<cfbd_id>`. Returns (written, skipped)."""
     teams = cfb_team_map(db)
     stadium_by_name = {s.name: s.stadium_id for s in db.scalars(select(Stadium))}
-    ids = [f"cfb_{int(i)}" for i in games["id"]]
+    ids = []
+    for raw_id in games["id"]:
+        try:
+            ids.append(f"cfb_{int(raw_id)}")
+        except (TypeError, ValueError):
+            continue
     existing = {g.game_id: g for g in db.scalars(select(Game).where(Game.game_id.in_(ids)))}
 
     written = skipped = 0
+    unknown_rounds: set[str] = set()
     for row in games.to_dict("records"):
+        try:
+            int(row["id"]), int(row["season"]), int(row["week"])
+            _start(row)
+        except (KeyError, TypeError, ValueError) as exc:
+            print(f"skipping cfb game {row.get('id')}: malformed row ({exc!r})")
+            skipped += 1
+            continue
+        postseason = field(row, "seasonType", "season_type") == SEASON_POSTSEASON
+        if postseason and not (
+            field(row, "homeClassification") == "fbs"
+            and field(row, "awayClassification") == "fbs"
+        ):
+            skipped += 1
+            continue
+        if not postseason and int(row["week"]) >= CFB_POSTSEASON_WEEK:
+            print(f"skipping cfb game {row.get('id')}: regular-season week {int(row['week'])} "
+                  f"collides with the postseason slate week {CFB_POSTSEASON_WEEK}")
+            skipped += 1
+            continue
         home_name = field(row, "homeTeam", "home_team")
         away_name = field(row, "awayTeam", "away_team")
         home = teams.get(home_name)
@@ -79,7 +151,8 @@ def upsert_games(db: Session, games: pd.DataFrame) -> tuple[int, int]:
             db.add(game)
             existing[gid] = game
         game.season = int(row["season"])
-        game.week = int(row["week"])
+        game.week = CFB_POSTSEASON_WEEK if postseason else int(row["week"])
+        _set_occasion(game, row, postseason, unknown_rounds)
         game.game_date = start.astimezone(ET).date()
         game.kickoff_time = None if tbd else start
         game.home_team_id = home.team_id

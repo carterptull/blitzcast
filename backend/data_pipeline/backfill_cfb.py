@@ -67,10 +67,14 @@ def backfill_lines(db: Session, season: int) -> int:
     return rows
 
 
-def backfill_team_game_stats(db: Session, season: int) -> int:
+def backfill_team_game_stats(
+    db: Session, season: int, season_types: tuple[str, ...] = ("regular",)
+) -> int:
     """PPA -> epa_offense/epa_defense; delete-then-insert scoped to the
     affected CFB game_ids only."""
-    ppa = cfbd.load_team_game_ppa(season)
+    frames = [cfbd.load_team_game_ppa(season, t) for t in season_types]
+    frames = [f for f in frames if not f.empty]
+    ppa = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     if ppa.empty:
         return 0
     teams = cfb_team_map(db)

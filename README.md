@@ -35,8 +35,10 @@ log: [DECISIONS.md](./DECISIONS.md) · Release history:
    of broadcast color. Every name, percentage, and betting claim is checked
    against the sheet before it is stored, and a deterministic template
    stands in if no draft passes. It can never change or invent the numbers.
-5. **Frontend** (`frontend/`): Next.js + Tailwind, with a week slate,
-   turf-hero matchup pages, light/dark themes, mobile-first.
+5. **Frontend** (`frontend/`): Next.js + Tailwind, with a week slate (and
+   a Regular season / Postseason toggle with round chips once the playoffs
+   and bowls are set), turf-hero matchup pages, light/dark themes,
+   mobile-first.
 
 The whole system in one picture: [diagrams/overview.md](./diagrams/overview.md).
 The guardrails around step 4 are drawn in
@@ -197,9 +199,12 @@ CI runs all of the above on every pull request and every push to `main`.
 
 ## Known limitations
 
-- **CFB postseason is never loaded.** `cfbd.load_games` hardcodes
-  `seasonType="regular"`, so bowl and playoff results never arrive.
-  Pre-existing, not addressed by the finished-games work.
+- **The postseason runs on the regular-season model.** Since v1.3.0 NFL
+  playoffs and FBS bowls and CFP games are loaded, predicted, narrated and
+  graded, but Elo still applies home-field advantage at neutral sites, bowl
+  opt-outs and coaching changes are not modeled, and the CFB model never
+  trained on bowls. The market line is shown beside every pick. No bracket
+  view yet.
 - **No live/in-progress game state.** A game is only ever `scheduled` or
   `final`; there's no in-progress score.
 - **No season selector.** The slate always shows the current season

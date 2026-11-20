@@ -118,3 +118,82 @@ def test_status_final_only_when_both_scores_exist(db):
     rows = db.query(Game).filter(Game.season == 2026, Game.week == 4)
     status = {g.game_id: g.status for g in rows}
     assert status == {"2026_04_A": "scheduled", "2026_04_B": "final"}
+
+
+def _playoff(game_id, game_type, week, home, away, location="Home", stadium=None):
+    row = _row(game_id, 2026, week, "2027-01-17", "16:30", home, away)
+    row.update(game_type=game_type, location=location, stadium=stadium)
+    return row
+
+
+def test_wild_card_row_gets_round_and_event(db):
+    """PS-N1: a WC row is a postseason wild_card game. PS-N2: named for the home conference."""
+    upsert_games(db, pd.DataFrame([_playoff("2026_19_BUF_KC", "WC", 19, "KC", "BUF")]))
+    game = db.get(Game, "2026_19_BUF_KC")
+    assert (game.season_type, game.round, game.event_name) == (
+        "postseason", "wild_card", "AFC Wild Card")
+
+
+def test_regular_row_without_game_type_stays_regular(db):
+    """PS-N1: rows with no game_type (or REG) are regular season with no round."""
+    upsert_games(db, pd.DataFrame([_row("2026_05_BUF_KC", 2026, 5, "2026-10-11", "13:00")]))
+    game = db.get(Game, "2026_05_BUF_KC")
+    assert (game.season_type, game.round, game.event_name) == ("regular", None, None)
+
+
+def test_super_bowl_is_neutral_and_named(db):
+    """PS-N2: Super Bowl LXI for 2026. PS-N3: a known neutral venue links its stadium."""
+    from app.models import Stadium
+
+    sofi = Stadium(name="SoFi Stadium", city="Inglewood", lat=33.95, lon=-118.34,
+                   is_dome=True, surface="turf")
+    db.add(sofi)
+    db.flush()
+    row = _playoff("2026_22_KC_PHI", "SB", 22, "PHI", "KC", "Neutral", "SoFi Stadium")
+    upsert_games(db, pd.DataFrame([row]))
+    game = db.get(Game, "2026_22_KC_PHI")
+    assert game.is_neutral_site is True
+    assert game.venue_name == "SoFi Stadium"
+    assert game.stadium_id == sofi.stadium_id
+    assert (game.round, game.event_name) == ("super_bowl", "Super Bowl LXI")
+
+
+def test_neutral_game_with_unknown_stadium_keeps_null_stadium(db):
+    """PS-N3: an unmatched neutral venue keeps stadium_id NULL and its raw name."""
+    row = _playoff("2026_22_KC_PHI", "SB", 22, "PHI", "KC", "Neutral", "Nowhere Field")
+    upsert_games(db, pd.DataFrame([row]))
+    game = db.get(Game, "2026_22_KC_PHI")
+    assert game.stadium_id is None and game.venue_name == "Nowhere Field"
+
+
+def test_unresolvable_team_row_is_skipped_not_fatal(db, capsys):
+    """PS-N4: one bad team row is logged and skipped; the others load."""
+    rows = [
+        _row("2026_05_BUF_KC", 2026, 5, "2026-10-11", "13:00"),
+        _row("2026_05_TBD_KC", 2026, 5, "2026-10-11", "16:25", "KC", "TBD"),
+        _row("2026_05_DAL_PHI", 2026, 5, "2026-10-11", "20:20", "PHI", "DAL"),
+    ]
+    assert upsert_games(db, pd.DataFrame(rows)) == 2
+    assert db.get(Game, "2026_05_TBD_KC") is None
+    assert "skipped NFL row 2026_05_TBD_KC" in capsys.readouterr().out
+
+
+def test_missing_gameday_row_is_skipped(db, capsys):
+    """PS-N4: a row without a gameday is skipped, not fatal."""
+    rows = [
+        _row("2026_05_BUF_KC", 2026, 5, None, None),
+        _row("2026_05_DAL_PHI", 2026, 5, "2026-10-11", "20:20", "PHI", "DAL"),
+    ]
+    assert upsert_games(db, pd.DataFrame(rows)) == 1
+    assert "skipped NFL row 2026_05_BUF_KC" in capsys.readouterr().out
+
+
+def test_unknown_game_type_row_is_skipped(db, capsys):
+    """PS-N1: a row with an unknown game_type (e.g. a Pro Bowl) is skipped and logged."""
+    rows = [
+        _playoff("2026_23_AFC_NFC", "PRO", 23, "KC", "PHI"),
+        _playoff("2026_19_BUF_KC", "WC", 19, "KC", "BUF"),
+    ]
+    assert upsert_games(db, pd.DataFrame(rows)) == 1
+    assert db.get(Game, "2026_23_AFC_NFC") is None
+    assert "skipped NFL row 2026_23_AFC_NFC" in capsys.readouterr().out

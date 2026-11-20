@@ -8,7 +8,7 @@ sport (NFL, CFB) runs the same shape with its own Elo configuration, model, and 
 flowchart LR
     hist[("Postgres history<br/><small>games · team_game_stats · odds<br/>weather · injuries · poll_ranks</small>")]
 
-    features["build_features()<br/><small>ml/features.py<br/>Elo replayed game by game<br/>rolling EPA and form as of each kickoff<br/>rest, injuries, weather, market<br/>market imputed from Elo when no line exists<br/>mostly home-minus-away differences</small>"]
+    features["build_features()<br/><small>ml/features.py<br/>Elo replayed game by game<br/>rolling EPA and form as of each kickoff<br/>rest, injuries, weather, market<br/>market imputed from Elo when no line exists<br/>CFB postseason: latest regular-season poll, week_number clamped to 16<br/>mostly home-minus-away differences</small>"]
 
     subgraph train["Train: python -m ml.train"]
         split["Train seasons 2022, 2023, 2024<br/>Calibration season 2025"]
@@ -27,6 +27,7 @@ flowchart LR
     end
 
     subgraph serve["Serve: daily, app/jobs/predict_week.py"]
+        select["Selected games<br/><small>default week, anything within 7 days,<br/>and every published postseason game</small>"]
         load["load_latest(sport)<br/><small>verifies the sha256 before loading</small>"]
         proba["predict_proba, then calibrator.transform<br/><small>an exactly even result is nudged 0.0001 toward<br/>the spread favorite, else the moneyline favorite, else home</small>"]
         shap["SHAP TreeExplainer<br/><small>top_factors, n=4</small>"]
@@ -41,6 +42,7 @@ flowchart LR
     bt -.->|"same method"| backfill --> btrows
     artifact --> load --> proba --> shap --> live
     features --> proba
+    select --> proba
 
     style train fill:transparent,stroke:#1565C0,stroke-width:2px
     style validate fill:transparent,stroke:#6A1B9A,stroke-width:2px
@@ -52,6 +54,19 @@ only from data strictly before that game's kickoff, and a dedicated test enforce
 `assert_temporally_disjoint` adds a second guard at training time, so that if the training window
 is ever widened, an overlap with the calibration season fails loudly instead of leaking. See
 "Anti-leakage as an explicit, tested property" and "No mid-season retrain" in
+[`DECISIONS.md`](../DECISIONS.md).
+
+**The postseason uses the same models, with two guards.** CFBD files its final AP and Coaches
+polls, published after the title game, as postseason week 1, so those rankings are never loaded
+and every poll read ignores rows at week 17 or later: a bowl or CFP game joins the season's
+latest regular-season poll. CFB postseason games sit at slate week 17, so their `week_number` is
+clamped to 16 to stay inside the trained range; NFL week numbers are unchanged. No other feature
+changed and the artifacts were not retrained (`MODEL_VERSION` stays `1.0.0` / `cfb-1.0.0`). Every
+published postseason game is predicted on every run, however far out, while Claude narrates only
+games within 7 days (see [`llm-narration-boundary.md`](llm-narration-boundary.md)). Known limits:
+Elo still applies home-field advantage at neutral sites, the models have no neutral-site
+feature, and the CFB model never trained on bowls. See "Postseason games read the latest
+regular-season poll" and "No retrain for the postseason this season" in
 [`DECISIONS.md`](../DECISIONS.md).
 
 **Games with no market line get Elo-imputed market features.** When a game has no real spread or
@@ -83,4 +98,4 @@ corrupted artifact, not a commit that changes both.
 calibrated on a held-out, most-recent season before a "70%" is ever shown to anyone.
 
 ---
-_Last updated: 2026-11-05 · reflects v1.2.6_
+_Last updated: 2026-11-19 · reflects v1.3.0_

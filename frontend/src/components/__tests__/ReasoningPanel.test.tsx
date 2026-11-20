@@ -4,6 +4,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import ReasoningPanel from "../ReasoningPanel";
+import { REGULAR_OCCASION } from "@/lib/occasion";
 import type { MatchupDetail } from "@/lib/types";
 
 const baseMatchup: MatchupDetail = {
@@ -39,6 +40,7 @@ const baseMatchup: MatchupDetail = {
   home_score: null,
   away_score: null,
   prediction_correct: null,
+  ...REGULAR_OCCASION,
 };
 
 describe("ReasoningPanel", () => {

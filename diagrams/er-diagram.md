@@ -1,6 +1,6 @@
 # ER diagram: the Postgres schema
 
-All ten tables from `backend/app/models.py` (managed by the four Alembic migrations in
+All ten tables from `backend/app/models.py` (managed by the five Alembic migrations in
 `backend/alembic/versions/`). NFL and CFB share every table, separated by a `sport` column
 rather than a second schema.
 
@@ -48,12 +48,17 @@ erDiagram
         string game_id PK "nflverse id, or cfb_ prefix"
         string sport
         int season
-        int week
+        int week "CFB postseason is slate week 17"
+        string season_type "regular or postseason, CHECK"
+        string round "NULL or a known round, CHECK"
+        string event_name "cleaned, e.g. Rose Bowl, CFP Quarterfinal"
+        smallint home_seed "CFP only"
+        smallint away_seed "CFP only"
         date game_date
         timestamptz kickoff_time "NULL means TBD"
         int home_team_id FK
         int away_team_id FK
-        int stadium_id FK "NULL for neutral-site NFL games"
+        int stadium_id FK "NULL for an unmatched neutral NFL venue"
         string venue_name "raw venue when there is no stadium row"
         bool is_neutral_site
         bool is_primetime
@@ -135,6 +140,18 @@ erDiagram
 the NFL loader still sets it from the home score alone. See "Completion keyed on scores,
 never on `Game.status`" in [`DECISIONS.md`](../DECISIONS.md).
 
+**Postseason identity lives in `season_type` and `round`, never in the week number.** Two CHECK
+constraints hold them to fixed sets: `ck_games_season_type` (`regular`, `postseason`) and
+`ck_games_round` (NULL, or one of `conf_championship`, `wild_card`, `divisional`, `conference`,
+`super_bowl`, `bowl`, `cfp_first_round`, `cfp_quarterfinal`, `cfp_semifinal`,
+`cfp_championship`, `cfp_other`), so an unknown value fails the write. NFL playoffs keep weeks
+19 to 22; CFB bowls and CFP games sit at slate week 17 (`CFB_POSTSEASON_WEEK`), past any regular
+week, and conference championships stay regular with `round='conf_championship'`. Migration
+`d5a1c7e3f9b2` added the five columns and backfilled NFL playoff history by week (19 to 22 from
+2021, 18 to 21 before). The round list lives in `app/postseason.py`, which the migration and
+`models.py` both import. See "Postseason stored at slate week 17" in
+[`DECISIONS.md`](../DECISIONS.md).
+
 **`predictions` is unique on `(game_id, model_version)`, and that constraint does real work.**
 Live rows carry `1.0.0` / `cfb-1.0.0`; walk-forward reconstructions of 2023-2025 carry
 `backtest-1.0.0` / `backtest-cfb-1.0.0`. The slate's probability and `/api/record` both filter
@@ -149,7 +166,9 @@ none (every historical game), the matchup page falls back to the closing lines s
 **`team_ratings` isn't on any serving path.** `ml.compute_ratings` writes Elo snapshots for
 inspection; `ml/features.py` replays Elo from game results itself whenever it builds features.
 CFB has no rows in `injuries` (there is no standardized CFB injury report), and NFL has none in
-`poll_ranks`.
+`poll_ranks`. `poll_ranks` holds regular-season polls only: CFBD's postseason rankings (the final
+poll, published after the title game) are never loaded, and readers ignore any row at week 17 or
+later.
 
 ---
-_Last updated: 2026-11-05 · reflects v1.2.6_
+_Last updated: 2026-11-19 · reflects v1.3.0_

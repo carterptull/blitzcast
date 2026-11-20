@@ -1,6 +1,6 @@
 """Read-side query helpers for the API routers."""
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 
 from sqlalchemy import select
@@ -8,6 +8,15 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.market import plausible_moneylines
 from app.models import SPORT_CFB, SPORT_NFL, Game, Odds, PollRank, Prediction, Team, Weather
+from app.postseason import (
+    CFB_POSTSEASON_WEEK,
+    ROUND_LABELS,
+    ROUND_SLUGS,
+    ROUNDS,
+    SEASON_POSTSEASON,
+    SEASON_REGULAR,
+    round_for_slug,
+)
 from app.schemas import (
     FactorOut,
     GameSummary,
@@ -16,6 +25,7 @@ from app.schemas import (
     PredictionOut,
     RecordOut,
     ScheduleOut,
+    SlateOut,
     TeamDetail,
     TeamOut,
     VenueOut,
@@ -43,18 +53,29 @@ def _display_name(team: Team) -> str:
 
 
 def poll_ranks_entering(db: Session, sport: str, season: int, week: int) -> dict[int, int]:
-    """team_id -> rank from the poll entering (season, week); AP preferred."""
+    """team_id -> rank from the poll entering (season, week); AP preferred.
+    Postseason games read the latest regular-season poll."""
+    if week >= CFB_POSTSEASON_WEEK:
+        return latest_regular_poll_ranks(db, sport, season)
     return _poll_ranks_by_week(db, sport, season, week=week).get(week, {})
+
+
+def latest_regular_poll_ranks(db: Session, sport: str, season: int) -> dict[int, int]:
+    return _poll_ranks_by_week(db, sport, season).get(CFB_POSTSEASON_WEEK, {})
 
 
 def _poll_ranks_by_week(
     db: Session, sport: str, season: int, week: int | None = None
 ) -> dict[int, dict[int, int]]:
-    """week -> {team_id: rank} from the poll entering each week; AP preferred."""
+    """week -> {team_id: rank} from the poll entering each week; AP preferred.
+    Polls at a postseason slate week are never read (the final poll comes after
+    the title game); the postseason slate maps to the latest regular-season poll."""
     if sport != SPORT_CFB:
         return {}
     query = select(PollRank.week, PollRank.poll, PollRank.team_id, PollRank.rank).where(
-        PollRank.sport == sport, PollRank.season == season
+        PollRank.sport == sport,
+        PollRank.season == season,
+        PollRank.week < CFB_POSTSEASON_WEEK,
     )
     if week is not None:
         query = query.where(PollRank.week == week)
@@ -65,6 +86,8 @@ def _poll_ranks_by_week(
     for wk, polls in by_week.items():
         ap = next((p for p in sorted(polls) if p.upper().startswith("AP")), None)
         ranks[wk] = polls[ap or sorted(polls)[0]]
+    if week is None and ranks:
+        ranks[CFB_POSTSEASON_WEEK] = ranks[max(ranks)]
     return ranks
 
 
@@ -158,6 +181,12 @@ def _game_summary(
         home_score=game.home_score,
         away_score=game.away_score,
         prediction_correct=prediction_verdict(home_win_prob, game.home_score, game.away_score),
+        season_type=game.season_type or SEASON_REGULAR,
+        round=game.round,
+        event_name=game.event_name,
+        is_neutral_site=bool(game.is_neutral_site),
+        home_seed=game.home_seed,
+        away_seed=game.away_seed,
     )
 
 
@@ -181,6 +210,7 @@ def _season_games(
     week: int | None = None,
     sport: str = SPORT_NFL,
     status: GameStatusFilter = "all",
+    round_: str | None = None,
 ) -> list[Game]:
     query = (
         select(Game)
@@ -190,6 +220,8 @@ def _season_games(
     )
     if week is not None:
         query = query.where(Game.week == week)
+    if round_ is not None:
+        query = query.where(Game.round == round_)
     query = _apply_status(query, status)
     return list(db.scalars(query))
 
@@ -219,9 +251,17 @@ def get_schedule(
 
 
 def get_games(
-    db: Session, season: int, week: int, sport: str = SPORT_NFL, status: GameStatusFilter = "all"
+    db: Session,
+    season: int,
+    week: int,
+    sport: str = SPORT_NFL,
+    status: GameStatusFilter = "all",
+    round_slug: str | None = None,
 ) -> list[GameSummary]:
-    games = _season_games(db, season, week, sport=sport, status=status)
+    round_ = None if round_slug is None else round_for_slug(round_slug)
+    if round_slug is not None and round_ is None:
+        raise ValueError(f"unknown round {round_slug!r}")
+    games = _season_games(db, season, week, sport=sport, status=status, round_=round_)
     probs = _prediction_probs(db, season, sport, week)
     ranks = poll_ranks_entering(db, sport, season, week)
     odds_by_game = latest_odds_by_game(db, {g.game_id: g for g in games})
@@ -229,6 +269,69 @@ def get_games(
         _game_summary(g, probs.get(g.game_id), ranks, _market_prob(g, odds_by_game.get(g.game_id)))
         for g in games
     ]
+
+
+SLATE_GRACE = timedelta(hours=12)
+
+
+def _as_aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+def build_slates(games, now: datetime) -> list[SlateOut]:
+    """Regular weeks ascending, then one postseason slate per round in round order.
+    `games` need week, kickoff_time, season_type, round, home_score, away_score."""
+    regular: dict[int, list] = {}
+    postseason: dict[str, list] = {}
+    for g in games:
+        if (g.season_type or SEASON_REGULAR) == SEASON_POSTSEASON:
+            postseason.setdefault(g.round or "cfp_other", []).append(g)
+        else:
+            regular.setdefault(g.week, []).append(g)
+
+    def window(items) -> dict:
+        kicks = sorted(k for k in (_as_aware(g.kickoff_time) for g in items) if k is not None)
+        upcoming = [k for k in kicks if k > now - SLATE_GRACE]
+        return {
+            "game_count": len(items),
+            "first_kickoff": kicks[0] if kicks else None,
+            "last_kickoff": kicks[-1] if kicks else None,
+            "next_kickoff": upcoming[0] if upcoming else None,
+            "has_unscheduled": any(
+                g.kickoff_time is None and g.home_score is None and g.away_score is None
+                for g in items
+            ),
+        }
+
+    slates = []
+    for week in sorted(regular):
+        items = regular[week]
+        champ = any(g.round == "conf_championship" for g in items)
+        slates.append(SlateOut(
+            key=f"w{week}", phase=SEASON_REGULAR, week=week, round=None,
+            label=ROUND_LABELS["conf_championship"][0] if champ else None,
+            group_label=ROUND_LABELS["conf_championship"][1] if champ else "Wk",
+            short_label=str(week), **window(items),
+        ))
+    for round_ in ROUNDS:
+        items = postseason.get(round_)
+        if not items or round_ not in ROUND_SLUGS:
+            continue
+        label, group, short = ROUND_LABELS[round_]
+        slates.append(SlateOut(
+            key=ROUND_SLUGS[round_], phase=SEASON_POSTSEASON, week=min(g.week for g in items),
+            round=round_, label=label, group_label=group, short_label=short or label,
+            **window(items),
+        ))
+    return slates
+
+
+def get_slates(
+    db: Session, season: int, sport: str = SPORT_NFL, now: datetime | None = None
+) -> list[SlateOut]:
+    return build_slates(_season_games(db, season, sport=sport), now or datetime.now(UTC))
 
 
 def season_games_before(db: Session, team_id: int, game: Game) -> list[Game]:
@@ -252,6 +355,18 @@ def season_games_before(db: Session, team_id: int, game: Game) -> list[Game]:
 
 
 def record_string(games: list[Game], team_id: int) -> str:
+    """Regular-season record from these games; playoff games are counted apart."""
+    return _record(
+        [g for g in games if (g.season_type or SEASON_REGULAR) != SEASON_POSTSEASON], team_id
+    )
+
+
+def postseason_record_string(games: list[Game], team_id: int) -> str | None:
+    played = [g for g in games if g.season_type == SEASON_POSTSEASON]
+    return _record(played, team_id) if played else None
+
+
+def _record(games: list[Game], team_id: int) -> str:
     wins = losses = ties = 0
     for g in games:
         own = g.home_score if g.home_team_id == team_id else g.away_score
@@ -381,6 +496,11 @@ def get_prediction_detail(db: Session, game_id: str) -> PredictionOut | None:
         home_score=game.home_score,
         away_score=game.away_score,
         prediction_correct=prediction_verdict(home_prob, game.home_score, game.away_score),
+        season_type=game.season_type or SEASON_REGULAR,
+        round=game.round,
+        event_name=game.event_name,
+        home_seed=game.home_seed,
+        away_seed=game.away_seed,
     )
 
 

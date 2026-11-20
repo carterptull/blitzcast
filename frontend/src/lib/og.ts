@@ -4,6 +4,7 @@
 // to exercise the ImageResponse/satori rendering pipeline.
 
 import { fmtPct } from "./format";
+import { matchupSeparator, occasionLabel } from "./matchup";
 import { displayAbbr } from "./teams";
 import type { MatchupDetail } from "./types";
 
@@ -29,6 +30,9 @@ export interface OgContent {
   /** Not final and no prediction yet. */
   pending: boolean;
   week: number;
+  /** event_name, or "Week N" for an ordinary game. */
+  occasion: string;
+  separator: "vs" | "@";
   season: number;
   league: string;
   cfb: boolean;
@@ -72,6 +76,8 @@ export function buildOgContent(m: MatchupDetail): OgContent {
     verdictHit: m.prediction_correct,
     pending: !final && !hasProbs,
     week: m.week,
+    occasion: occasionLabel(m),
+    separator: matchupSeparator(m.venue.is_neutral_site),
     season: m.season,
     league,
     cfb,

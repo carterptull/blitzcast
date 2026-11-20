@@ -1,16 +1,33 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ApiUnreachableError, getGames, getRecord, getSchedule, type StatusFilterValue } from "@/lib/api";
-import { CFB_WEEKS, fmtDayHeading, pickCfbDefaultWeek, pickDefaultWeek } from "@/lib/format";
+import type { ReactNode } from "react";
+import {
+  ApiUnreachableError,
+  NotFoundError,
+  getGames,
+  getRecord,
+  getSchedule,
+  getSlates,
+  type StatusFilterValue,
+} from "@/lib/api";
+import {
+  eyebrowText,
+  fmtDayHeading,
+  pickDefaultSlate,
+  resolveSlate,
+  slateHref,
+  slateQuery,
+} from "@/lib/format";
 import { isSportSlug } from "@/lib/sport";
-import type { GameSummary, Record, Schedule } from "@/lib/types";
+import type { GameSummary, Record, Schedule, Slate } from "@/lib/types";
 import BackendDown from "@/components/BackendDown";
 import Disagreements from "@/components/Disagreements";
 import FilterChips from "@/components/FilterChips";
 import GameCard from "@/components/GameCard";
+import PhaseToggle from "@/components/PhaseToggle";
 import RecordBanner from "@/components/RecordBanner";
 import StatusFilter from "@/components/StatusFilter";
-import WeekSelector from "@/components/WeekSelector";
+import SlateSelector from "@/components/SlateSelector";
 
 /** The record is secondary to the slate — never let its fetch failing take
  *  down the page. */
@@ -26,6 +43,7 @@ interface Props {
   params: Promise<{ sport: string }>;
   searchParams: Promise<{
     week?: string | string[];
+    round?: string | string[];
     conf?: string | string[];
     top25?: string | string[];
     status?: string | string[];
@@ -97,12 +115,12 @@ function groupByDay(games: GameSummary[]): [string, GameSummary[]][] {
   return [...groups.entries()];
 }
 
-function Banner({ season, week }: { season: number; week: number }) {
+function Banner({ eyebrow }: { eyebrow: string }) {
   return (
     <section className="turf overflow-hidden rounded-2xl">
       <div className="px-6 py-10 sm:px-10 sm:py-14">
         <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-gold-turf">
-          {season} Season · Week {week}
+          {eyebrow}
         </p>
         <h1 className="mt-2 max-w-2xl font-display text-4xl uppercase leading-[0.95] tracking-wide text-chalk sm:text-6xl">
           Every matchup, called before kickoff
@@ -116,11 +134,25 @@ function Banner({ season, week }: { season: number; week: number }) {
   );
 }
 
-function Slate({ games, sport, filtered }: { games: GameSummary[]; sport: "nfl" | "cfb"; filtered: boolean }) {
+function SlateGames({
+  games,
+  sport,
+  filtered,
+  postseason,
+}: {
+  games: GameSummary[];
+  sport: "nfl" | "cfb";
+  filtered: boolean;
+  postseason: boolean;
+}) {
   if (games.length === 0) {
     return (
       <p className="py-16 text-center italic text-ink-soft">
-        {filtered ? "No games match these filters." : "No games scheduled for this week."}
+        {filtered
+          ? "No games match these filters."
+          : postseason
+            ? "Matchups are set as each round is decided."
+            : "No games scheduled for this week."}
       </p>
     );
   }
@@ -143,88 +175,166 @@ function Slate({ games, sport, filtered }: { games: GameSummary[]; sport: "nfl" 
   );
 }
 
-async function NflSlate({
-  requestedWeek,
-  status,
+/** Banner, phase toggle and slate strip shared by both sports. The strip
+ *  lists only the active phase's slates. */
+function SlateHeader({
+  sport,
+  season,
+  slates,
+  slate,
+  record,
+  counter,
+  query,
+  statusQuery,
+  children,
 }: {
-  requestedWeek: number;
-  status: StatusFilterValue;
+  sport: "nfl" | "cfb";
+  season: number;
+  slates: Slate[];
+  slate: Slate | undefined;
+  record: Record | null;
+  counter: ReturnType<typeof weekCounter>;
+  query: string;
+  statusQuery: string;
+  children: ReactNode;
 }) {
-  const recordPromise = fetchRecordSafely("NFL");
-  let schedule: Schedule;
-  try {
-    schedule = await getSchedule(2026, "NFL", status);
-  } catch (e) {
-    if (e instanceof ApiUnreachableError) return <BackendDown />;
-    throw e;
-  }
-  const record = await recordPromise;
-
-  const weeks = schedule.weeks.map((w) => w.week);
-  const selected = weeks.includes(requestedWeek) ? requestedWeek : pickDefaultWeek(schedule);
-  const games = schedule.weeks.find((w) => w.week === selected)?.games ?? [];
-  const counter = weekCounter(games);
-  const filterQuery = status !== "all" ? `&status=${status}` : "";
+  const basePath = `/${sport}`;
+  const phase = slate?.phase ?? "regular";
+  const regular = slates.filter((s) => s.phase === "regular");
+  const post = slates.filter((s) => s.phase === "postseason");
+  const regularDefault = pickDefaultSlate(regular);
+  const postDefault = pickDefaultSlate(post);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <>
       {record && <RecordBanner record={record} />}
-      <Banner season={schedule.season} week={selected} />
+      <Banner eyebrow={slate ? eyebrowText(season, slate) : `${season} Season`} />
+      <PhaseToggle
+        phase={phase}
+        regularHref={regularDefault ? slateHref(basePath, regularDefault, statusQuery) : basePath}
+        postseasonHref={postDefault ? slateHref(basePath, postDefault, statusQuery) : null}
+      />
 
       <div className="mt-8">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-            Select a week
+            {phase === "postseason" ? "Select a round" : "Select a week"}
           </h2>
           <span className="font-mono text-[11px] tabular-nums text-ink-soft">
             {counter.count}/{counter.total} {counter.label}
           </span>
         </div>
-        <WeekSelector weeks={weeks} selected={selected} basePath="/nfl" query={filterQuery} />
-        <StatusFilter sport="nfl" active={status} week={selected} />
+        <SlateSelector
+          slates={phase === "postseason" ? post : regular}
+          selectedKey={slate?.key ?? ""}
+          basePath={basePath}
+          query={query}
+        />
+        {children}
       </div>
+    </>
+  );
+}
+
+async function NflSlate({
+  requested,
+  status,
+}: {
+  requested: { week?: string; round?: string };
+  status: StatusFilterValue;
+}) {
+  const recordPromise = fetchRecordSafely("NFL");
+  let slates: Slate[];
+  let schedule: Schedule;
+  try {
+    [slates, schedule] = await Promise.all([getSlates(2026, "NFL"), getSchedule(2026, "NFL", status)]);
+  } catch (e) {
+    // A 404 means the API predates /api/slates (deploy gap or a failed migration).
+    if (e instanceof ApiUnreachableError || e instanceof NotFoundError) return <BackendDown />;
+    throw e;
+  }
+  const record = await recordPromise;
+
+  const slate = resolveSlate(slates, requested);
+  const games = slate ? (schedule.weeks.find((w) => w.week === slate.week)?.games ?? []) : [];
+  const statusQuery = status !== "all" ? `&status=${status}` : "";
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <SlateHeader
+        sport="nfl"
+        season={schedule.season}
+        slates={slates}
+        slate={slate}
+        record={record}
+        counter={weekCounter(games)}
+        query={statusQuery}
+        statusQuery={statusQuery}
+      >
+        <StatusFilter sport="nfl" active={status} slateQuery={slate ? slateQuery(slate) : ""} />
+      </SlateHeader>
 
       <div className="mt-8 space-y-8">
         <Disagreements games={games} sport="nfl" />
-        <Slate games={games} sport="nfl" filtered={status !== "all"} />
+        <SlateGames
+          games={games}
+          sport="nfl"
+          filtered={status !== "all"}
+          postseason={slate?.phase === "postseason"}
+        />
       </div>
     </div>
   );
 }
 
 async function CfbSlate({
-  requestedWeek,
+  requested,
   conf,
-  top25,
+  top25: wantTop25,
   status,
 }: {
-  requestedWeek: number;
+  requested: { week?: string; round?: string };
   conf?: string;
   top25: boolean;
   status: StatusFilterValue;
 }) {
-  const weeks = Array.from({ length: CFB_WEEKS }, (_, i) => i + 1);
-  const selected = weeks.includes(requestedWeek) ? requestedWeek : pickCfbDefaultWeek();
-
   const recordPromise = fetchRecordSafely("CFB");
-  // Per-week fetch — the CFB slate is 60+ games/week, never the whole season.
+  let slate: Slate | undefined;
+  let slates: Slate[];
+  // Per-slate fetch: the CFB slate is 60+ games a week, never the whole season.
   let games: GameSummary[];
   try {
-    games = await getGames(selected, 2026, "CFB", status);
+    slates = await getSlates(2026, "CFB");
+    slate = resolveSlate(slates, requested);
+    games = slate
+      ? await getGames(
+          slate.week,
+          2026,
+          "CFB",
+          status,
+          slate.phase === "postseason" ? slate.key : undefined
+        )
+      : [];
   } catch (e) {
-    if (e instanceof ApiUnreachableError) return <BackendDown />;
+    // A 404 means the API predates /api/slates (deploy gap or a failed migration).
+    if (e instanceof ApiUnreachableError || e instanceof NotFoundError) return <BackendDown />;
     throw e;
   }
   const record = await recordPromise;
 
-  const conferences = [
-    ...new Set(
-      games
-        .flatMap((g) => [g.home.conference, g.away.conference])
-        .filter((c): c is string => !!c)
-    ),
-  ].sort();
+  // Conference and Top 25 chips apply to regular weeks and bowls only.
+  const showChips = !slate || slate.phase === "regular" || slate.key === "bowls";
+  const conferences = showChips
+    ? [
+        ...new Set(
+          games
+            .flatMap((g) => [g.home.conference, g.away.conference])
+            .filter((c): c is string => !!c)
+        ),
+      ].sort()
+    : [];
   const activeConf = conf && conferences.includes(conf) ? conf : null;
+  const top25 = showChips && wantTop25;
 
   const filtered = games.filter((g) => {
     if (activeConf && g.home.conference !== activeConf && g.away.conference !== activeConf)
@@ -232,39 +342,42 @@ async function CfbSlate({
     if (top25 && g.home.rank == null && g.away.rank == null) return false;
     return true;
   });
-  const counter = weekCounter(filtered);
   const confQuery = `${activeConf ? `&conf=${encodeURIComponent(activeConf)}` : ""}${top25 ? "&top25=1" : ""}`;
   const statusQuery = status !== "all" ? `&status=${status}` : "";
-  const filterQuery = `${confQuery}${statusQuery}`;
+  const current = slate ? slateQuery(slate) : "";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      {record && <RecordBanner record={record} />}
-      <Banner season={2026} week={selected} />
-
-      <div className="mt-8">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-soft">
-            Select a week
-          </h2>
-          <span className="font-mono text-[11px] tabular-nums text-ink-soft">
-            {counter.count}/{counter.total} {counter.label}
-          </span>
-        </div>
-        <WeekSelector weeks={weeks} selected={selected} basePath="/cfb" query={filterQuery} />
-        <FilterChips
-          conferences={conferences}
-          activeConf={activeConf}
-          top25={top25}
-          week={selected}
-          query={statusQuery}
-        />
-        <StatusFilter sport="cfb" active={status} week={selected} query={confQuery} />
-      </div>
+      <SlateHeader
+        sport="cfb"
+        season={2026}
+        slates={slates}
+        slate={slate}
+        record={record}
+        counter={weekCounter(filtered)}
+        query={`${confQuery}${statusQuery}`}
+        statusQuery={statusQuery}
+      >
+        {showChips && (
+          <FilterChips
+            conferences={conferences}
+            activeConf={activeConf}
+            top25={top25}
+            slateQuery={current}
+            query={statusQuery}
+          />
+        )}
+        <StatusFilter sport="cfb" active={status} slateQuery={current} query={confQuery} />
+      </SlateHeader>
 
       <div className="mt-8 space-y-8">
         <Disagreements games={games} sport="cfb" />
-        <Slate games={filtered} sport="cfb" filtered={!!activeConf || top25 || status !== "all"} />
+        <SlateGames
+          games={filtered}
+          sport="cfb"
+          filtered={!!activeConf || top25 || status !== "all"}
+          postseason={slate?.phase === "postseason"}
+        />
       </div>
     </div>
   );
@@ -275,18 +388,18 @@ export default async function SlatePage({ params, searchParams }: Props) {
   if (!isSportSlug(sport)) notFound();
 
   const sp = await searchParams;
-  const requestedWeek = Number(one(sp.week));
+  const requested = { week: one(sp.week), round: one(sp.round) };
   const status = validStatus(one(sp.status));
 
   if (sport === "cfb") {
     return (
       <CfbSlate
-        requestedWeek={requestedWeek}
+        requested={requested}
         conf={one(sp.conf)}
         top25={one(sp.top25) === "1"}
         status={status}
       />
     );
   }
-  return <NflSlate requestedWeek={requestedWeek} status={status} />;
+  return <NflSlate requested={requested} status={status} />;
 }

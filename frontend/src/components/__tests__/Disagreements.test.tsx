@@ -4,6 +4,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import Disagreements from "../Disagreements";
+import { REGULAR_OCCASION } from "@/lib/occasion";
 import type { GameSummary } from "@/lib/types";
 
 // Mock Next.js Link, forwarding `prefetch` as a data attribute so tests
@@ -40,6 +41,8 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
     home_score: null,
     away_score: null,
     prediction_correct: null,
+    ...REGULAR_OCCASION,
+    is_neutral_site: false,
     ...overrides,
   };
 }
@@ -101,6 +104,17 @@ describe("Disagreements", () => {
     const games = [game({ game_id: "2026_01_XYZ", home_win_prob: 0.75, market_home_prob: 0.4 })];
     render(<Disagreements games={games} sport="cfb" />);
     expect(screen.getByRole("link")).toHaveAttribute("href", "/cfb/matchup/2026_01_XYZ");
+  });
+
+  test("PS-F8: a neutral-site game reads vs, a home game keeps @", () => {
+    const games = [
+      game({ game_id: "g1", home: { abbr: "NEU", name: "Neutral" }, home_win_prob: 0.8, market_home_prob: 0.4, is_neutral_site: true }),
+      game({ game_id: "g2", home: { abbr: "HOM", name: "Home" }, home_win_prob: 0.7, market_home_prob: 0.5 }),
+    ];
+    render(<Disagreements games={games} sport="nfl" />);
+    const links = screen.getAllByRole("link");
+    expect(links[0]).toHaveTextContent("AWY vs NEU");
+    expect(links[1]).toHaveTextContent("AWY @ HOM");
   });
 
   test("does not prefetch", () => {

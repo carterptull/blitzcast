@@ -1,5 +1,5 @@
 import { displayAbbr } from "./teams";
-import type { MatchupDetail, Schedule } from "./types";
+import type { MatchupDetail, Slate } from "./types";
 
 const ET = "America/New_York";
 
@@ -67,36 +67,62 @@ export function fmtSpread(m: MatchupDetail): string {
   return `${abbr} -${Math.abs(s)}`;
 }
 
+const CFP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+const nextKickoffMs = (s: Slate) =>
+  s.next_kickoff !== null ? Date.parse(s.next_kickoff) : Number.POSITIVE_INFINITY;
+
+const soonest = (slates: Slate[]) =>
+  slates.reduce((best, s) => (nextKickoffMs(s) < nextKickoffMs(best) ? s : best));
+
 /**
- * Default week: the first week that still has an upcoming (or in-progress)
- * game. Before the 2026 season starts this resolves to Week 1; after the
- * finale it sticks to the last week.
+ * Default slate on first load. Once any postseason slate exists only those
+ * are candidates. A CFP round kicking off within 7 days wins; otherwise the
+ * live slate with the soonest kickoff, with unscheduled-only slates last;
+ * otherwise the last candidate.
  */
-export function pickDefaultWeek(schedule: Schedule, now: Date = new Date()): number {
-  // 12h past the last kickoff. An NFL week ends with Monday Night Football, so
-  // this keeps the finished slate up overnight and rolls it Tuesday morning.
-  const cutoff = now.getTime() - 12 * 60 * 60 * 1000;
-  for (const w of schedule.weeks) {
-    const dated = w.games.filter((g) => g.kickoff !== null);
-    if (dated.some((g) => new Date(g.kickoff as string).getTime() > cutoff)) return w.week;
-    // Every dated game has kicked off, so a leftover TBD does not hold the
-    // week open. A week with nothing dated yet is still ahead of us.
-    if (dated.length === 0 && w.games.length > 0) return w.week;
-  }
-  return schedule.weeks[schedule.weeks.length - 1]?.week ?? 1;
+export function pickDefaultSlate(slates: Slate[], now: Date = new Date()): Slate | undefined {
+  const post = slates.filter((s) => s.phase === "postseason");
+  const candidates = post.length > 0 ? post : slates;
+  const live = candidates.filter((s) => s.next_kickoff !== null || s.has_unscheduled);
+  const cfpSoon = live.filter(
+    (s) => s.round?.startsWith("cfp_") && nextKickoffMs(s) - now.getTime() <= CFP_WINDOW_MS
+  );
+  if (cfpSoon.length > 0) return soonest(cfpSoon);
+  if (live.length > 0) return soonest(live);
+  return candidates[candidates.length - 1];
 }
 
-export const CFB_WEEKS = 15;
+/** `?week=N` opens a regular week, `?round=slug` a postseason slate; anything
+ *  else falls back to the default. */
+export function resolveSlate(
+  slates: Slate[],
+  params: { week?: string; round?: string },
+  now: Date = new Date()
+): Slate | undefined {
+  const { week, round } = params;
+  const byRound = round
+    ? slates.find((s) => s.phase === "postseason" && s.key === round)
+    : undefined;
+  if (byRound) return byRound;
+  const byWeek =
+    week && /^\d{1,2}$/.test(week)
+      ? slates.find((s) => s.phase === "regular" && s.week === Number(week))
+      : undefined;
+  return byWeek ?? pickDefaultSlate(slates, now);
+}
 
-/**
- * Default CFB week from the calendar (weeks roll over on Monday; Week 1 is
- * Labor Day weekend 2026). Resolves to Week 1 before the season, the finale
- * after it. Calendar-based because the CFB slate is fetched per-week.
- */
-export function pickCfbDefaultWeek(now: Date = new Date()): number {
-  // 04:00 UTC is Monday 00:00 ET; anchoring at plain UTC rolled the week over
-  // on Sunday evening.
-  const week1Monday = Date.UTC(2026, 7, 31, 4);
-  const wk = Math.floor((now.getTime() - week1Monday) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  return Math.min(Math.max(wk, 1), CFB_WEEKS);
+/** "week=5" or "round=bowls". */
+export function slateQuery(slate: Slate): string {
+  return slate.phase === "postseason" ? `round=${slate.key}` : `week=${slate.week}`;
+}
+
+export function slateHref(basePath: string, slate: Slate, query = ""): string {
+  return `${basePath}?${slateQuery(slate)}${query}`;
+}
+
+/** "2026 Season · Week 12" or "2026 Postseason · Wild Card". */
+export function eyebrowText(season: number, slate: Slate): string {
+  if (slate.phase === "postseason") return `${season} Postseason · ${slate.label ?? slate.short_label}`;
+  return `${season} Season · ${slate.label ?? `Week ${slate.week}`}`;
 }

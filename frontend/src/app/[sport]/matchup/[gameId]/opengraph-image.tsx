@@ -87,7 +87,7 @@ function TeamBlock({
   );
 }
 
-/** Static two-color split, no animation — mirrors WinProbabilitySplit's
+/** Static two-color split, no animation; mirrors WinProbabilitySplit's
  *  team-color fill without the client-side mount transition. */
 function ProbabilityBar({ m, cfb }: { m: MatchupDetail; cfb: boolean }) {
   const awayProb = m.away.win_prob ?? 0.5;
@@ -167,7 +167,7 @@ export default async function Image({ params }: Props) {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
             <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 48 }}>
               <TeamBlock abbr={c.away.abbr} value={c.away.value} sub={c.sub} highlight={c.away.highlight} />
-              <div style={{ display: "flex", fontSize: 36, color: CHALK_SOFT }}>@</div>
+              <div style={{ display: "flex", fontSize: 36, color: CHALK_SOFT }}>{c.separator}</div>
               <TeamBlock abbr={c.home.abbr} value={c.home.value} sub={c.sub} highlight={c.home.highlight} />
             </div>
 
@@ -194,7 +194,7 @@ export default async function Image({ params }: Props) {
 
           <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
             <div style={{ display: "flex", fontSize: 20, textTransform: "uppercase", letterSpacing: 3, color: CHALK_SOFT }}>
-              Week {c.week} &middot; {c.season}
+              {c.occasion} &middot; {c.season}
             </div>
             <div style={{ display: "flex", fontSize: 20, textTransform: "uppercase", letterSpacing: 3, color: CHALK_SOFT }}>
               {c.league}

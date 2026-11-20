@@ -2,6 +2,33 @@
 
 export type Sport = "NFL" | "CFB";
 
+export type SeasonType = "regular" | "postseason";
+
+/** Mirrors backend app/postseason.py ROUNDS. */
+export type Round =
+  | "conf_championship"
+  | "wild_card"
+  | "divisional"
+  | "conference"
+  | "super_bowl"
+  | "bowl"
+  | "cfp_first_round"
+  | "cfp_quarterfinal"
+  | "cfp_semifinal"
+  | "cfp_championship"
+  | "cfp_other";
+
+/** Postseason identity shared by GameSummary and MatchupDetail. */
+export interface Occasion {
+  season_type: SeasonType;
+  round: Round | null;
+  /** Display name, e.g. "Rose Bowl, CFP Quarterfinal" or "Super Bowl LXI". */
+  event_name: string | null;
+  /** CFP seeds only; null everywhere else. */
+  home_seed: number | null;
+  away_seed: number | null;
+}
+
 export interface Team {
   id: number;
   abbr: string;
@@ -24,7 +51,7 @@ export interface GameTeamRef {
   color?: string | null;
 }
 
-export interface GameSummary {
+export interface GameSummary extends Occasion {
   game_id: string;
   kickoff: string | null; // ISO-8601 UTC; null = kickoff TBD
   home: GameTeamRef;
@@ -42,6 +69,23 @@ export interface GameSummary {
   home_score: number | null;
   away_score: number | null;
   prediction_correct: boolean | null;
+  is_neutral_site: boolean;
+}
+
+/** One chip on the week strip: a regular week ("w14") or a postseason round ("bowls"). */
+export interface Slate {
+  key: string;
+  phase: SeasonType;
+  week: number;
+  round: Round | null;
+  label: string | null;
+  group_label: string;
+  short_label: string;
+  game_count: number;
+  first_kickoff: string | null;
+  next_kickoff: string | null;
+  has_unscheduled: boolean;
+  last_kickoff: string | null;
 }
 
 // Mirrors the backend's RecordOut. `sport` is null when a record spans both
@@ -112,7 +156,7 @@ export interface Factor {
 
 export type PredictionStatus = "ready" | "pending";
 
-export interface MatchupDetail {
+export interface MatchupDetail extends Occasion {
   game_id: string;
   season: number;
   week: number;

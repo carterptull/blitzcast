@@ -3,13 +3,17 @@
 // Sport-keyed dispatch: CFB fixtures live in mockCfb.ts.
 
 import { cfbMockGames, cfbMockMatchup, cfbMockSchedule, cfbMockTeams } from "./mockCfb";
+import { roundForSlug, slatesFromSchedule } from "./mockSlates";
+import { REGULAR_OCCASION } from "./occasion";
 import { TEAMS, TEAM_ABBRS, logoUrl } from "./teams";
 import type {
   Factor,
   GameSummary,
   MatchupDetail,
   Odds,
+  Round,
   Schedule,
+  Slate,
   Sport,
   Team,
   Weather,
@@ -330,6 +334,103 @@ const WEEK1: Week1Spec[] = [
   },
 ];
 
+// --- Postseason (Wild Card through Super Bowl LXI) -------------------------
+
+interface PostSpec {
+  week: number;
+  away: string;
+  home: string;
+  kickoff: number | null;
+  homeProb: number | null;
+  round: Round;
+  event: string;
+  neutral?: boolean;
+  primetime?: boolean;
+  odds?: Odds | null;
+}
+
+const POSTSEASON: PostSpec[] = [
+  { week: 19, away: "HOU", home: "LAC", kickoff: Date.UTC(2027, 0, 16, 21, 30), homeProb: 0.56,
+    round: "wild_card", event: "AFC Wild Card",
+    odds: { spread_home: 2.5, moneyline_home: -135, moneyline_away: 115, total: 44.5 } },
+  { week: 19, away: "GB", home: "PHI", kickoff: Date.UTC(2027, 0, 18, 1, 15), homeProb: 0.61,
+    round: "wild_card", event: "NFC Wild Card", primetime: true },
+  { week: 20, away: "LAC", home: "KC", kickoff: null, homeProb: null,
+    round: "divisional", event: "AFC Divisional" },
+  { week: 21, away: "BUF", home: "KC", kickoff: Date.UTC(2027, 0, 31, 20, 0), homeProb: 0.52,
+    round: "conference", event: "AFC Championship" },
+  { week: 22, away: "KC", home: "PHI", kickoff: Date.UTC(2027, 1, 14, 23, 30), homeProb: 0.53,
+    round: "super_bowl", event: "Super Bowl LXI", neutral: true, primetime: true,
+    odds: { spread_home: 1.5, moneyline_home: -120, moneyline_away: 100, total: 47.5 } },
+];
+
+function postseasonGames(week: number): GameSummary[] {
+  return POSTSEASON.filter((p) => p.week === week).map((p) => ({
+    game_id: gameId(p.week, p.away, p.home),
+    kickoff: p.kickoff === null ? null : iso(p.kickoff),
+    home: { abbr: p.home, name: TEAMS[p.home].nickname },
+    away: { abbr: p.away, name: TEAMS[p.away].nickname },
+    is_primetime: !!p.primetime,
+    status: "scheduled",
+    has_prediction: p.homeProb !== null,
+    sport: "NFL",
+    home_win_prob: p.homeProb,
+    market_home_prob: marketHomeProb(p.odds ?? null),
+    home_score: null,
+    away_score: null,
+    prediction_correct: null,
+    season_type: "postseason",
+    round: p.round,
+    event_name: p.event,
+    home_seed: null,
+    away_seed: null,
+    is_neutral_site: !!p.neutral,
+  }));
+}
+
+function postseasonMatchup(id: string): MatchupDetail | null {
+  const p = POSTSEASON.find((x) => gameId(x.week, x.away, x.home) === id);
+  if (!p) return null;
+  const home = TEAMS[p.home];
+  const venue = p.neutral
+    ? { name: "SoFi Stadium", city: "Inglewood", is_dome: true, is_neutral_site: true }
+    : { name: home.stadium.name, city: home.stadium.city, is_dome: home.stadium.isDome, is_neutral_site: false };
+  const ready = p.homeProb !== null;
+  return {
+    game_id: id,
+    season: SEASON,
+    week: p.week,
+    kickoff: p.kickoff === null ? null : iso(p.kickoff),
+    venue,
+    is_primetime: !!p.primetime,
+    is_divisional: false,
+    home: { abbr: p.home, name: home.nickname, record: "0-0", logo_url: logoUrl(p.home), win_prob: p.homeProb },
+    away: {
+      abbr: p.away,
+      name: TEAMS[p.away].nickname,
+      record: "0-0",
+      logo_url: logoUrl(p.away),
+      win_prob: p.homeProb === null ? null : Math.round((1 - p.homeProb) * 100) / 100,
+    },
+    odds: p.odds ?? null,
+    weather: null,
+    factors: [],
+    narrative: null,
+    model_version: ready ? "0.1.0" : null,
+    predicted_at: ready ? iso(Date.UTC(2027, 0, 12, 12, 0)) : null,
+    prediction_status: ready ? "ready" : "pending",
+    sport: "NFL",
+    home_score: null,
+    away_score: null,
+    prediction_correct: null,
+    season_type: "postseason",
+    round: p.round,
+    event_name: p.event,
+    home_seed: null,
+    away_seed: null,
+  };
+}
+
 // --- Builders ------------------------------------------------------------
 
 function week1Games(): GameSummary[] {
@@ -347,6 +448,8 @@ function week1Games(): GameSummary[] {
     home_score: s.homeScore ?? null,
     away_score: s.awayScore ?? null,
     prediction_correct: verdict(s.homeProb, s.homeScore, s.awayScore),
+    ...REGULAR_OCCASION,
+    is_neutral_site: false,
   }));
 }
 
@@ -396,6 +499,8 @@ function generatedWeekGames(week: number): GameSummary[] {
       home_score: null,
       away_score: null,
       prediction_correct: null,
+      ...REGULAR_OCCASION,
+      is_neutral_site: false,
     });
   }
   games.sort((x, y) => (x.kickoff ?? "").localeCompare(y.kickoff ?? ""));
@@ -421,14 +526,20 @@ export function mockSchedule(sport: Sport = "NFL"): Schedule {
   if (sport === "CFB") return cfbMockSchedule();
   const weeks = [{ week: 1, games: week1Games() }];
   for (let w = 2; w <= 18; w++) weeks.push({ week: w, games: generatedWeekGames(w) });
+  for (let w = 19; w <= 22; w++) weeks.push({ week: w, games: postseasonGames(w) });
   return { season: SEASON, weeks, sport: "NFL" };
 }
 
-export function mockGames(week: number, sport: Sport = "NFL"): GameSummary[] {
-  if (sport === "CFB") return cfbMockGames(week);
+export function mockGames(week: number, sport: Sport = "NFL", round?: string): GameSummary[] {
+  if (sport === "CFB") return cfbMockGames(week, round);
   if (week === 1) return week1Games();
   if (week >= 2 && week <= 18) return generatedWeekGames(week);
-  return [];
+  const wanted = round ? roundForSlug(round) : null;
+  return postseasonGames(week).filter((g) => !round || g.round === wanted);
+}
+
+export function mockSlates(sport: Sport = "NFL", now: Date = new Date()): Slate[] {
+  return slatesFromSchedule(mockSchedule(sport), now);
 }
 
 export function mockMatchup(id: string): MatchupDetail | null {
@@ -472,6 +583,7 @@ export function mockMatchup(id: string): MatchupDetail | null {
       home_score: spec.homeScore ?? null,
       away_score: spec.awayScore ?? null,
       prediction_correct: verdict(spec.homeProb, spec.homeScore, spec.awayScore),
+      ...REGULAR_OCCASION,
     };
   }
 
@@ -502,7 +614,8 @@ export function mockMatchup(id: string): MatchupDetail | null {
       home_score: null,
       away_score: null,
       prediction_correct: null,
+      ...REGULAR_OCCASION,
     };
   }
-  return null;
+  return postseasonMatchup(id);
 }
