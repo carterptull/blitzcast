@@ -13,7 +13,6 @@ PENDING: set[str] = {
     "PS-B1", "PS-B2", "PS-B3", "PS-B4", "PS-B5", "PS-B6", "PS-B7",
     "PS-C1", "PS-C2", "PS-C3", "PS-C4", "PS-C6", "PS-C7", "PS-C8", "PS-C9",
     "PS-C10", "PS-C11",
-    "PS-D1", "PS-D2", "PS-D3",
     "PS-F1", "PS-F2", "PS-F3", "PS-F4", "PS-F5", "PS-F6", "PS-F7", "PS-F8", "PS-F9",
     "PS-F10", "PS-F11", "PS-F12", "PS-F13",
     "PS-J1", "PS-J2", "PS-J3", "PS-J4",

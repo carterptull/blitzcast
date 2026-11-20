@@ -5,11 +5,13 @@ from datetime import date, datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -17,10 +19,15 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.postseason import ROUNDS, SEASON_POSTSEASON, SEASON_REGULAR
+
 JsonType = JSON().with_variant(JSONB(), "postgresql")
 
 SPORT_NFL = "NFL"
 SPORT_CFB = "CFB"
+
+SEASON_TYPE_CHECK = f"season_type IN ('{SEASON_REGULAR}', '{SEASON_POSTSEASON}')"
+ROUND_CHECK = "round IS NULL OR round IN (" + ", ".join(f"'{r}'" for r in ROUNDS) + ")"
 
 
 class Base(DeclarativeBase):
@@ -93,6 +100,18 @@ class Game(Base):
     total_line: Mapped[float | None] = mapped_column(Float)
     home_moneyline: Mapped[int | None] = mapped_column(Integer)
     away_moneyline: Mapped[int | None] = mapped_column(Integer)
+    season_type: Mapped[str] = mapped_column(
+        String(12), default=SEASON_REGULAR, server_default=SEASON_REGULAR
+    )
+    round: Mapped[str | None] = mapped_column(String(24))
+    event_name: Mapped[str | None] = mapped_column(String(64))
+    home_seed: Mapped[int | None] = mapped_column(SmallInteger)
+    away_seed: Mapped[int | None] = mapped_column(SmallInteger)
+
+    __table_args__ = (
+        CheckConstraint(SEASON_TYPE_CHECK, name="ck_games_season_type"),
+        CheckConstraint(ROUND_CHECK, name="ck_games_round"),
+    )
 
     home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])
     away_team: Mapped[Team] = relationship(foreign_keys=[away_team_id])

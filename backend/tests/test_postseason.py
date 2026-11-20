@@ -176,3 +176,96 @@ def test_no_label_or_generic_name_contains_a_dash():
     texts += [generic_event_name(r) for r in ROUNDS]
     for text in texts:
         assert "–" not in text and "—" not in text
+
+
+def _any_game_teams(db):
+    from app.models import SPORT_NFL, Team
+
+    teams = db.query(Team).filter(Team.sport == SPORT_NFL).limit(2).all()
+    return teams[0].team_id, teams[1].team_id
+
+
+def test_game_defaults_to_regular_season(db):
+    """PS-D1: a new game is regular season with no round, event or seeds."""
+    from datetime import date
+
+    from app.models import Game
+
+    home, away = _any_game_teams(db)
+    db.add(Game(game_id="t_default", season=2026, week=3, game_date=date(2026, 9, 20),
+                home_team_id=home, away_team_id=away))
+    db.commit()
+    g = db.get(Game, "t_default")
+    assert g.season_type == "regular"
+    assert g.round is None and g.event_name is None
+    assert g.home_seed is None and g.away_seed is None
+
+
+@pytest.mark.parametrize("field,value", [("round", "bogus"), ("season_type", "playoffs")])
+def test_round_check_rejects_unknown_value(db, field, value):
+    """PS-D2: the database rejects an unknown round or season type."""
+    from datetime import date
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models import Game
+
+    home, away = _any_game_teams(db)
+    db.add(Game(game_id="t_bad", season=2026, week=3, game_date=date(2026, 9, 20),
+                home_team_id=home, away_team_id=away, **{field: value}))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def _migration():
+    import importlib.util
+
+    path = (Path(__file__).resolve().parents[1] / "alembic" / "versions"
+            / "d5a1c7e3f9b2_add_game_postseason_fields.py")
+    spec = importlib.util.spec_from_file_location("postseason_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_migration_backfills_nfl_history(db):
+    """PS-D3: NFL history becomes postseason by week, with old and new numbering."""
+    from datetime import date
+
+    from sqlalchemy import text
+
+    from app.models import SPORT_CFB, Game, Team
+
+    home, away = _any_game_teams(db)
+    cfb = [t.team_id for t in db.query(Team).filter(Team.sport == SPORT_CFB).limit(2)]
+    rows = [
+        ("n25_18", "NFL", 2025, 18), ("n25_19", "NFL", 2025, 19), ("n25_20", "NFL", 2025, 20),
+        ("n25_21", "NFL", 2025, 21), ("n25_22", "NFL", 2025, 22),
+        ("n20_17", "NFL", 2020, 17), ("n20_18", "NFL", 2020, 18), ("n20_21", "NFL", 2020, 21),
+        ("c25_19", "CFB", 2025, 19),
+    ]
+    for gid, sport, season, week in rows:
+        h, a = (cfb[0], cfb[1]) if sport == "CFB" else (home, away)
+        db.add(Game(game_id=gid, sport=sport, season=season, week=week,
+                    game_date=date(season, 12, 1), home_team_id=h, away_team_id=a))
+    db.commit()
+
+    for statement in _migration().backfill_statements(seasons=[2020, 2025]):
+        db.execute(text(statement))
+    db.commit()
+
+    def got(gid):
+        g = db.execute(text("SELECT season_type, round, event_name FROM games WHERE game_id=:g"),
+                       {"g": gid}).one()
+        return tuple(g)
+
+    assert got("n25_18") == ("regular", None, None)
+    assert got("n25_19") == ("postseason", "wild_card", None)
+    assert got("n25_20") == ("postseason", "divisional", None)
+    assert got("n25_21") == ("postseason", "conference", None)
+    assert got("n25_22") == ("postseason", "super_bowl", "Super Bowl LX")
+    assert got("n20_17") == ("regular", None, None)
+    assert got("n20_18") == ("postseason", "wild_card", None)
+    assert got("n20_21") == ("postseason", "super_bowl", "Super Bowl LV")
+    assert got("c25_19") == ("regular", None, None)
