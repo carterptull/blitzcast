@@ -355,6 +355,18 @@ def season_games_before(db: Session, team_id: int, game: Game) -> list[Game]:
 
 
 def record_string(games: list[Game], team_id: int) -> str:
+    """Regular-season record from these games; playoff games are counted apart."""
+    return _record(
+        [g for g in games if (g.season_type or SEASON_REGULAR) != SEASON_POSTSEASON], team_id
+    )
+
+
+def postseason_record_string(games: list[Game], team_id: int) -> str | None:
+    played = [g for g in games if g.season_type == SEASON_POSTSEASON]
+    return _record(played, team_id) if played else None
+
+
+def _record(games: list[Game], team_id: int) -> str:
     wins = losses = ties = 0
     for g in games:
         own = g.home_score if g.home_team_id == team_id else g.away_score

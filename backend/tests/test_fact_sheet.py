@@ -265,7 +265,11 @@ def test_prose_like_injury_name_drops_the_row(db, name):
 def test_postseason_last_meeting_wording(db):
     _add_game(db, "2025_19_BUF_KC", "KC", "BUF", season=2025, week=19,
               when=datetime(2026, 1, 25, 20, 0, tzinfo=UTC), scores=(27, 20))
-    assert _build(db, "2026_01_BUF_KC").last_meeting == "Chiefs won 27-20 in the 2025 postseason"
+    prior = db.get(Game, "2025_19_BUF_KC")
+    prior.season_type, prior.round = "postseason", "wild_card"
+    db.flush()
+    assert _build(db, "2026_01_BUF_KC").last_meeting == (
+        "Chiefs won 27-20 in the 2025 NFL postseason")
 
 
 # Result phrases

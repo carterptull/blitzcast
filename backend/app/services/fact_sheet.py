@@ -12,7 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import SPORT_CFB, SPORT_NFL, Game, Injury, Team, Weather
-from app.services.predictions import latest_odds_by_game, record_string, season_games_before
+from app.postseason import SEASON_POSTSEASON
+from app.services.predictions import (
+    latest_odds_by_game,
+    postseason_record_string,
+    record_string,
+    season_games_before,
+)
 from data_pipeline.team_names import nickname
 from ml.features import DEFAULT_POSITION_WEIGHT, POSITION_WEIGHTS
 
@@ -64,6 +70,8 @@ class TeamFacts:
     rank_note: str | None
     rest: str | None
     injuries: tuple[str, ...]
+    seed: int | None = None
+    postseason_record: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +90,8 @@ class GameFacts:
     weather: str | None
     factor_lines: tuple[str, ...]
     poll_available: bool = False
+    occasion: str | None = None
+    stakes: str | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -303,6 +313,8 @@ def _team_facts(db, game, team, ranks, prev_ranks) -> TeamFacts:
         abbr=_team_text(team.abbr, 16) or name,
         mascot=nickname(name) if is_nfl else mascot,
         record=record_string(games, team.team_id),
+        postseason_record=postseason_record_string(games, team.team_id),
+        seed=game.home_seed if team.team_id == game.home_team_id else game.away_seed,
         games_this_season=len(games),
         last_game=_result_phrase(games[-1], team.team_id) if games else None,
         streak=_streak(games, team.team_id),
@@ -331,7 +343,58 @@ def _venue(game: Game) -> str | None:
     return _place(game.venue_name, 80)
 
 
+_CFP_ROUND_WORDS = {
+    "cfp_first_round": "first round",
+    "cfp_quarterfinal": "quarterfinal",
+    "cfp_semifinal": "semifinal",
+    "cfp_championship": "national championship",
+}
+_ADVANCE = "Win and advance; lose and the season ends"
+_STAKES = {
+    "wild_card": _ADVANCE, "divisional": _ADVANCE, "conference": _ADVANCE,
+    "cfp_first_round": _ADVANCE, "cfp_quarterfinal": _ADVANCE, "cfp_semifinal": _ADVANCE,
+    "cfp_other": _ADVANCE,
+    "super_bowl": "Winner wins the Super Bowl",
+    "cfp_championship": "Winner is the national champion",
+}
+
+
+def _bowl_part(raw_event: str | None) -> str | None:
+    """'Rose Bowl' from 'Rose Bowl, CFP Quarterfinal'; None when the name is not a bowl.
+    Split before cleaning: _clean() turns the comma into a space."""
+    if not raw_event:
+        return None
+    head = _clean(raw_event.split(",")[0], 64)
+    return head if head and head.endswith("Bowl") else None
+
+
+def _occasion(game: Game) -> str | None:
+    """Built only from our own round and cleaned event fields."""
+    event = _clean(game.event_name, 64)
+    round_ = game.round
+    if not round_ or not event and round_ not in _CFP_ROUND_WORDS:
+        return None
+    if round_ in ("wild_card", "divisional"):
+        text = f"{event} playoff game"
+    elif round_ == "conference":
+        text = f"{event} game"
+    elif round_ in _CFP_ROUND_WORDS or round_ == "cfp_other":
+        words = _CFP_ROUND_WORDS.get(round_)
+        cfp = "College Football Playoff" + (f" {words}" if words else "")
+        bowl = _bowl_part(game.event_name)
+        text = f"{bowl}, {cfp}" if bowl else cfp
+    else:
+        text = event
+    return f"{text}, neutral site" if game.is_neutral_site else text
+
+
+def _stakes(game: Game) -> str | None:
+    return _STAKES.get(game.round or "")
+
+
 def _matchup_note(game: Game) -> str | None:
+    if game.season_type == SEASON_POSTSEASON:
+        return _occasion(game)
     home_conf = _place(game.home_team.conference, 40)
     away_conf = _place(game.away_team.conference, 40)
     division = _place(game.home_team.division, 10)
@@ -368,10 +431,14 @@ def _last_meeting(db: Session, game: Game) -> str | None:
     if prior is None:
         return None
     hs, as_ = prior.home_score, prior.away_score
-    # Only CFB regular-season games are loaded, and CFBD numbers some of them
-    # (Army-Navy) week 16, so a CFB meeting is never called postseason.
-    if prior.sport == SPORT_NFL and prior.week > 18:
-        when = f"in the {prior.season} postseason"
+    event = _clean(prior.event_name, 64)
+    if prior.season_type == SEASON_POSTSEASON and prior.sport == SPORT_NFL:
+        when = f"in the {prior.season} NFL postseason"
+    elif prior.season_type == SEASON_POSTSEASON:
+        name = _bowl_part(prior.event_name) or event
+        when = f"in the {prior.season} {name}" if name else f"in the {prior.season} postseason"
+    elif prior.round == "conf_championship" and event:
+        when = f"in the {prior.season} {event}"
     else:
         when = f"in Week {prior.week} of {prior.season}"
     if hs == as_:
@@ -449,6 +516,8 @@ def build_game_facts(
         venue=_venue(game),
         is_neutral_site=bool(game.is_neutral_site),
         matchup_note=_matchup_note(game),
+        occasion=_occasion(game),
+        stakes=_stakes(game),
         last_meeting=_last_meeting(db, game),
         weather=_weather(db, game),
         factor_lines=_factor_lines(factors, home, away, game.sport, spread_home),
@@ -503,6 +572,10 @@ def _team_block(t: TeamFacts, sport: str, poll_available: bool, trusted: bool) -
             f", also called the {t.mascot}" if t.mascot else ""
         )
     rows = [head, f"- Record this season: {t.record}"]
+    if t.postseason_record:
+        rows.append(f"- Postseason: {t.postseason_record} in the postseason")
+    if t.seed:
+        rows.append(f"- Seed: No. {t.seed}")
     if t.rank:
         rows.append(f"- AP rank: #{t.rank}" + (f", {t.rank_note}" if t.rank_note else ""))
     elif sport == SPORT_CFB and poll_available:
@@ -536,6 +609,10 @@ def _sheet_lines(facts: GameFacts, trusted: bool) -> list[str]:
     note = _without_scores(facts.matchup_note) if trusted else facts.matchup_note
     if note:
         lines.append(f"Game type: {note}")
+    if facts.occasion and facts.occasion != facts.matchup_note:
+        lines.append(f"Occasion: {facts.occasion}")
+    if facts.stakes:
+        lines.append(f"Stakes: {facts.stakes}")
     lines.append(
         f"Model: {model_fav.name} {p:.0%} to win, {model_dog.name} {1 - p:.0%}"
     )

@@ -9,7 +9,7 @@ ID_RE = re.compile(r"\bPS-[A-Z]+\d+\b")
 
 # Requirements not implemented yet. Each task removes its IDs as its tests land.
 PENDING: set[str] = {
-    "PS-B1", "PS-B2", "PS-B3", "PS-B4", "PS-B5", "PS-B6", "PS-B7",
+    "PS-B6", "PS-B7",
     "PS-F1", "PS-F2", "PS-F3", "PS-F4", "PS-F5", "PS-F6", "PS-F7", "PS-F8", "PS-F9",
     "PS-F10", "PS-F11", "PS-F12", "PS-F13",
     "PS-V1", "PS-V2", "PS-V3",
