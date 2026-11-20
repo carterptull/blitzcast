@@ -96,7 +96,7 @@ _MOCK_GAMES = [
         "factors": [
             {"label": "Team rating (Elo) edge", "value": -0.11, "direction": "away"},
             {"label": "Betting-market win probability", "value": -0.05, "direction": "away"},
-            {"label": "Divisional rivalry game", "value": 0.02, "direction": "home"},
+            {"label": "Division rivalry game", "value": 0.02, "direction": "home"},
             {"label": "Kickoff temperature", "value": 0.01, "direction": "home"},
         ],
         "narrative": None,

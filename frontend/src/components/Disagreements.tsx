@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fmtPct } from "@/lib/format";
+import { matchupSeparator } from "@/lib/matchup";
 import { displayAbbr } from "@/lib/teams";
 import type { SportSlug } from "@/lib/sport";
 import type { GameSummary } from "@/lib/types";
@@ -66,7 +67,7 @@ export default function Disagreements({
             className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-edge px-3 py-2 text-sm transition-colors hover:border-gold/60"
           >
             <span className="font-mono uppercase tracking-wide">
-              {abbr(game.away.abbr)} @ {abbr(game.home.abbr)}
+              {abbr(game.away.abbr)} {matchupSeparator(game.is_neutral_site)} {abbr(game.home.abbr)}
             </span>
             <span className="font-mono text-xs tabular-nums text-ink-soft">
               Model {fmtPct(homeProb)} <span className="mx-1 text-edge">&middot;</span> Market{" "}

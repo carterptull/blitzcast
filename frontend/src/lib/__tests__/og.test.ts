@@ -17,6 +17,8 @@ const base = (overrides: Partial<MatchupDetail> = {}): MatchupDetail =>
     season: 2026,
     week: 1,
     sport: "NFL",
+    venue: { name: "Arrowhead", city: "Kansas City", is_dome: false, is_neutral_site: false },
+    event_name: null,
     home: { abbr: "KC", name: "Chiefs", record: "0-0", logo_url: null, win_prob: 0.58 },
     away: { abbr: "BUF", name: "Bills", record: "0-0", logo_url: null, win_prob: 0.42 },
     home_score: null,
@@ -126,5 +128,27 @@ describe("buildOgContent", () => {
     const c = buildOgContent(base({ home_score: 20, away_score: 20, prediction_correct: null }));
     expect(c.away.highlight).toBe(false);
     expect(c.home.highlight).toBe(false);
+  });
+
+  test("PS-F8: a regular game's footer occasion is Week N and the separator is @", () => {
+    const c = buildOgContent(base({ week: 5 }));
+    expect(c.occasion).toBe("Week 5");
+    expect(c.separator).toBe("@");
+    expect(`${c.occasion} · ${c.season}`).toBe("Week 5 · 2026");
+  });
+
+  test("PS-F8: a neutral Super Bowl's footer reads Super Bowl LXI and the separator is vs", () => {
+    const c = buildOgContent(
+      base({
+        week: 22,
+        season_type: "postseason",
+        round: "super_bowl",
+        event_name: "Super Bowl LXI",
+        venue: { name: "SoFi Stadium", city: "Inglewood", is_dome: true, is_neutral_site: true },
+      })
+    );
+    expect(c.occasion).toBe("Super Bowl LXI");
+    expect(c.separator).toBe("vs");
+    expect(`${c.occasion} · ${c.season}`).toBe("Super Bowl LXI · 2026");
   });
 });

@@ -80,3 +80,16 @@ def test_market_factors_default_to_available():
     assert [f["feature"] for f in factors] == [
         "market_spread_home", "market_home_prob", "elo_diff",
     ]
+
+
+def test_division_factor_label():
+    """PS-F9: the NFL same-division SHAP label reads "Division rivalry game"
+    so it never clashes with the Divisional playoff round; CFB keeps its own."""
+    from app.mock_data import _MOCK_GAMES
+    from ml.explain import feature_labels
+
+    assert feature_labels("NFL")["is_divisional"] == "Division rivalry game"
+    assert feature_labels("CFB")["is_divisional"] == "Conference clash"
+    mock_labels = {f["label"] for g in _MOCK_GAMES for f in g["factors"]}
+    assert "Division rivalry game" in mock_labels
+    assert "Divisional rivalry game" not in mock_labels

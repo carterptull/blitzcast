@@ -114,6 +114,68 @@ describe("MatchupHero", () => {
     expect(screen.getByText("27")).toBeInTheDocument();
   });
 
+  test("PS-F8: the eyebrow falls back to Week N for a regular game", () => {
+    render(<MatchupHero matchup={baseMatchup} />);
+    expect(screen.getByText("Week 1")).toBeInTheDocument();
+  });
+
+  test("PS-F8: the eyebrow is the event name for a postseason game", () => {
+    render(
+      <MatchupHero
+        matchup={{
+          ...baseMatchup,
+          week: 22,
+          season_type: "postseason",
+          round: "super_bowl",
+          event_name: "Super Bowl LXI",
+        }}
+      />
+    );
+    expect(screen.getByText("Super Bowl LXI")).toBeInTheDocument();
+    expect(screen.queryByText("Week 22")).not.toBeInTheDocument();
+  });
+
+  test("PS-V3: a conference title game's hero names the game", () => {
+    render(
+      <MatchupHero
+        matchup={{
+          ...baseMatchup,
+          sport: "CFB",
+          week: 14,
+          round: "conf_championship",
+          event_name: "SEC Championship",
+        }}
+      />
+    );
+    expect(screen.getByText("SEC Championship")).toBeInTheDocument();
+  });
+
+  test("PS-F8: the center mark reads vs at a neutral site and at otherwise", () => {
+    const { rerender } = render(<MatchupHero matchup={baseMatchup} />);
+    expect(screen.getByText("at")).toBeInTheDocument();
+    rerender(
+      <MatchupHero
+        matchup={{
+          ...baseMatchup,
+          venue: { name: "SoFi Stadium", city: "Inglewood", is_dome: true, is_neutral_site: true },
+        }}
+      />
+    );
+    expect(screen.getByText("vs")).toBeInTheDocument();
+    expect(screen.queryByText("at")).not.toBeInTheDocument();
+  });
+
+  test("PS-F9: the NFL same-division badge reads Division game", () => {
+    render(<MatchupHero matchup={{ ...baseMatchup, is_divisional: true }} />);
+    expect(screen.getByText("Division game")).toBeInTheDocument();
+    expect(screen.queryByText("Divisional")).not.toBeInTheDocument();
+  });
+
+  test("PS-F9: CFB keeps Conference game", () => {
+    render(<MatchupHero matchup={{ ...baseMatchup, sport: "CFB", is_divisional: true }} />);
+    expect(screen.getByText("Conference game")).toBeInTheDocument();
+  });
+
   test("verdict is conveyed by text, not color alone", () => {
     render(<MatchupHero matchup={finalMatchup(false)} />);
     // A screen reader user must get the verdict as text content.

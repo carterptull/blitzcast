@@ -106,6 +106,17 @@ describe("Disagreements", () => {
     expect(screen.getByRole("link")).toHaveAttribute("href", "/cfb/matchup/2026_01_XYZ");
   });
 
+  test("PS-F8: a neutral-site game reads vs, a home game keeps @", () => {
+    const games = [
+      game({ game_id: "g1", home: { abbr: "NEU", name: "Neutral" }, home_win_prob: 0.8, market_home_prob: 0.4, is_neutral_site: true }),
+      game({ game_id: "g2", home: { abbr: "HOM", name: "Home" }, home_win_prob: 0.7, market_home_prob: 0.5 }),
+    ];
+    render(<Disagreements games={games} sport="nfl" />);
+    const links = screen.getAllByRole("link");
+    expect(links[0]).toHaveTextContent("AWY vs NEU");
+    expect(links[1]).toHaveTextContent("AWY @ HOM");
+  });
+
   test("does not prefetch", () => {
     const games = [game({ game_id: "2026_01_XYZ", home_win_prob: 0.75, market_home_prob: 0.4 })];
     render(<Disagreements games={games} sport="nfl" />);

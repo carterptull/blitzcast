@@ -19,7 +19,7 @@ FEATURE_LABELS = {
     "b2b_road_diff": "Back-to-back road games",
     "qb_out_diff": "Starting QB availability",
     "injury_sev_diff": "Overall injury burden",
-    "is_divisional": "Divisional rivalry game",
+    "is_divisional": "Division rivalry game",
     "is_primetime": "Primetime spotlight",
     "week_number": "Point in the season",
     "temp_f": "Kickoff temperature",
