@@ -184,6 +184,11 @@ _SCORE_RE = re.compile(r"(?<![\w.-])\d{1,3}-\d{1,3}(?:-\d{1,3})?(?![\w-]|\.\d)")
 _RANK_RE = re.compile(r"(?:\bNo\.\s?|#|\bnumber\s+)(\d{1,3})(?![\w-]|\.\d)", re.IGNORECASE)
 _STREAK_RE = re.compile(r"(?:\b(?:won|lost)\s+)?\b\d{1,2}\s+straight\b", re.IGNORECASE)
 _PREV_RANK_RE = re.compile(r"(?:up|down) from #(\d+)")
+# A CFP seed claim: "No. 5 seed", "the 5 seed", "5-seed", "No. 5 seeded".
+_SEED_RE = re.compile(
+    r"(?:\bNo\.\s?|#|\bnumber\s+)?\b(\d{1,2})[\s-]seed(?:ed)?\b", re.IGNORECASE
+)
+_SEED_AFTER_RE = re.compile(r"[\s-]seed", re.IGNORECASE)
 _FROM_RE = re.compile(r"\bfrom\s+$", re.IGNORECASE)
 # Hyphenated pairs that are not scores or records.
 _NOT_A_SCORE_RE = re.compile(
@@ -1030,6 +1035,8 @@ def _numeric_facts_reason(text: str, sheet: str, facts: GameFacts | None = None)
         if not re.search(rf"(?<![\w.-]){re.escape(m.group(0))}(?![\w-]|\.\d)", sheet):
             return f"cites {m.group(0)} but the fact sheet has no such score or record"
     for m in _RANK_RE.finditer(text):
+        if _SEED_AFTER_RE.match(text, m.end()):
+            continue
         if facts is None:
             ranks = {int(n) for n in re.findall(r"#(\d+)", sheet)}
         elif _FROM_RE.search(text, 0, m.start()):
@@ -1038,6 +1045,10 @@ def _numeric_facts_reason(text: str, sheet: str, facts: GameFacts | None = None)
             ranks = set(_current_ranks(facts).values())
         if int(m.group(1)) not in ranks:
             return f"cites {m.group(0)} but the fact sheet has no such rank"
+    seeds = {t.seed for t in (facts.home, facts.away) if t.seed} if facts else set()
+    for m in _SEED_RE.finditer(text):
+        if int(m.group(1)) not in seeds:
+            return f"cites {m.group(0).strip()} but the fact sheet has no such seed"
     for m in _STREAK_RE.finditer(text):
         if not re.search(rf"\b{re.escape(m.group(0).lower())}", sheet.lower()):
             return f"cites {m.group(0)} but the fact sheet has no such streak"
@@ -1067,8 +1078,13 @@ def _ownership_reason(s: _Sentence, facts: GameFacts) -> str | None:
         checks.append((m, [k for k, v in records.items() if v == m.group(0)], "record"))
     current, previous = _current_ranks(facts), _previous_ranks(facts)
     for m in _RANK_RE.finditer(s.text):
+        if _SEED_AFTER_RE.match(s.text, m.end()):
+            continue
         ranks = previous if _FROM_RE.search(s.text, 0, m.start()) else current
         checks.append((m, [k for k, v in ranks.items() if v == int(m.group(1))], "rank"))
+    seeds = {side: _team(facts, side).seed for side in ("home", "away")}
+    for m in _SEED_RE.finditer(s.text):
+        checks.append((m, [k for k, v in seeds.items() if v == int(m.group(1))], "seed"))
     for m in _STREAK_RE.finditer(s.text):
         claim = m.group(0).lower()
         owners = [

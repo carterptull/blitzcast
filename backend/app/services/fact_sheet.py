@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import SPORT_CFB, SPORT_NFL, Game, Injury, Team, Weather
-from app.postseason import SEASON_POSTSEASON
+from app.postseason import CFP_ROUND_WORDS, SEASON_POSTSEASON
 from app.services.predictions import (
     latest_odds_by_game,
     postseason_record_string,
@@ -343,12 +343,6 @@ def _venue(game: Game) -> str | None:
     return _place(game.venue_name, 80)
 
 
-_CFP_ROUND_WORDS = {
-    "cfp_first_round": "first round",
-    "cfp_quarterfinal": "quarterfinal",
-    "cfp_semifinal": "semifinal",
-    "cfp_championship": "national championship",
-}
 _ADVANCE = "Win and advance; lose and the season ends"
 _STAKES = {
     "wild_card": _ADVANCE, "divisional": _ADVANCE, "conference": _ADVANCE,
@@ -396,14 +390,14 @@ def _occasion(game: Game) -> str | None:
     """Built only from our own round and cleaned event fields."""
     event = _event_text(game.event_name)
     round_ = game.round
-    if not round_ or not event and round_ not in _CFP_ROUND_WORDS:
+    if not round_ or not event and round_ not in CFP_ROUND_WORDS:
         return None
     if round_ in ("wild_card", "divisional"):
         text = f"{event} playoff game"
     elif round_ == "conference":
         text = f"{event} game"
-    elif round_ in _CFP_ROUND_WORDS or round_ == "cfp_other":
-        words = _CFP_ROUND_WORDS.get(round_)
+    elif round_ in CFP_ROUND_WORDS or round_ == "cfp_other":
+        words = CFP_ROUND_WORDS.get(round_)
         cfp = "College Football Playoff" + (f" {words}" if words else "")
         bowl = _bowl_part(game.event_name)
         text = f"{bowl}, {cfp}" if bowl else cfp

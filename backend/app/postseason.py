@@ -60,6 +60,14 @@ _GENERIC_NAMES: dict[Round, str] = {
     "cfp_other": "College Football Playoff",
 }
 
+# Plain words for a CFP round in a sentence ("College Football Playoff quarterfinal").
+CFP_ROUND_WORDS: dict[Round, str] = {
+    "cfp_first_round": "first round",
+    "cfp_quarterfinal": "quarterfinal",
+    "cfp_semifinal": "semifinal",
+    "cfp_championship": "national championship",
+}
+
 _NFL_ROUNDS: dict[str, Round] = {
     "WC": "wild_card", "DIV": "divisional", "CON": "conference", "SB": "super_bowl",
 }
