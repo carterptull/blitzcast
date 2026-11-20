@@ -7,10 +7,10 @@ Usage: python -m data_pipeline.refresh_injuries [--season 2026]
 """
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import requests
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
@@ -23,13 +23,27 @@ from data_pipeline.team_names import to_abbr
 ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
 
 
+def _starts_at(game: Game) -> datetime:
+    """Kickoff in UTC; a TBD-time game sorts after every dated game on its day."""
+    if game.kickoff_time is not None:
+        k = game.kickoff_time
+        return k.replace(tzinfo=UTC) if k.tzinfo is None else k.astimezone(UTC)
+    return datetime.combine(game.game_date, datetime.min.time(), tzinfo=UTC) + timedelta(days=1)
+
+
 def _next_game_by_team(db: Session, season: int) -> dict[int, str]:
+    """Each team's next game; a TBD-time game counts from its date."""
     now = datetime.now(UTC)
     games = db.scalars(
-        select(Game)
-        .where(Game.season == season, Game.kickoff_time >= now)
-        .order_by(Game.kickoff_time)
+        select(Game).where(
+            Game.season == season,
+            or_(
+                Game.kickoff_time >= now,
+                and_(Game.kickoff_time.is_(None), Game.game_date >= now.date()),
+            ),
+        )
     ).all()
+    games = sorted(games, key=_starts_at)
     next_game: dict[int, str] = {}
     for g in games:
         next_game.setdefault(g.home_team_id, g.game_id)

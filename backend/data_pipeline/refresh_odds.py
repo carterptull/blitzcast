@@ -32,10 +32,27 @@ def book_spread_to_home(point: float) -> float:
     return -float(point)
 
 
-def _consensus(event: dict, home_abbr: str, away_abbr: str) -> dict:
-    """Take the first bookmaker that carries each market."""
+def match_event(by_matchup: dict, home_id, away_id) -> tuple[Game | None, bool]:
+    """The game an odds event belongs to, and whether the book lists it reversed.
+
+    Only a neutral-site game may match reversed: the book's home side there is
+    arbitrary, while a real home game listed backwards is a different game."""
+    game = by_matchup.get((home_id, away_id))
+    if game is not None:
+        return game, False
+    game = by_matchup.get((away_id, home_id))
+    if game is not None and game.is_neutral_site:
+        return game, True
+    return None, False
+
+
+def _consensus(event: dict, home_abbr: str, away_abbr: str, swapped: bool = False) -> dict:
+    """Take the first bookmaker that carries each market, oriented to the stored
+    home team (the book's away side when swapped)."""
     out: dict = {}
     home_name, away_name = event["home_team"], event["away_team"]
+    if swapped:
+        home_name, away_name = away_name, home_name
     for book in event.get("bookmakers", []):
         for market in book.get("markets", []):
             key = market["key"]
@@ -118,11 +135,11 @@ def main() -> None:
             except KeyError as exc:
                 print(f"skipping event, unknown team: {exc}")
                 continue
-            game = by_matchup.get((ids.get(home), ids.get(away)))
+            game, swapped = match_event(by_matchup, ids.get(home), ids.get(away))
             if game is None:
                 unmatched += 1
                 continue
-            markets = _consensus(event, home, away)
+            markets = _consensus(event, home, away, swapped=swapped)
             odds = db.scalar(
                 select(Odds).where(Odds.game_id == game.game_id, Odds.source == SOURCE)
             )

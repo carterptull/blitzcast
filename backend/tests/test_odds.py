@@ -133,3 +133,41 @@ def test_odds_http_error_is_redacted_and_exits_nonzero(monkeypatch, capsys):
     out = capsys.readouterr()
     assert "SECRETKEY" not in out.out + out.err
     assert "HTTPError" in out.out
+
+
+class _G:
+    def __init__(self, gid, neutral):
+        self.game_id, self.is_neutral_site = gid, neutral
+
+
+def test_neutral_game_matches_in_swapped_orientation():
+    """PS-O1: a neutral game listed the other way round by the book still matches."""
+    by_matchup = {(1, 2): _G("sb", True)}
+    game, swapped = refresh_odds.match_event(by_matchup, home_id=2, away_id=1)
+    assert game.game_id == "sb" and swapped is True
+
+
+def test_swapped_orientation_ignored_for_home_games():
+    """PS-O2: a non-neutral game never matches in swapped orientation."""
+    by_matchup = {(1, 2): _G("home", False)}
+    assert refresh_odds.match_event(by_matchup, home_id=2, away_id=1) == (None, False)
+
+
+def test_exact_orientation_preferred_over_swap():
+    """PS-O3: when both orientations exist, the exact one wins."""
+    by_matchup = {(1, 2): _G("a", True), (2, 1): _G("b", True)}
+    game, swapped = refresh_odds.match_event(by_matchup, home_id=2, away_id=1)
+    assert game.game_id == "b" and swapped is False
+
+
+def test_swapped_consensus_reorients_prices_to_stored_home():
+    """PS-O1: on a swap, moneylines swap and the spread is read for the stored home team."""
+    # Book lists KC at home, favored by 3 (-3), KC -150 / BUF +130. We store BUF as home.
+    event = _event(-3.0, -150, 130)
+    straight = _consensus(event, "KC", "BUF")
+    swapped = _consensus(event, "BUF", "KC", swapped=True)
+    assert straight["h2h"] == (-150, 130)
+    assert swapped["h2h"] == (130, -150)
+    assert book_spread_to_home(straight["spreads"]) == 3.0
+    assert book_spread_to_home(swapped["spreads"]) == -3.0
+    assert swapped["totals"] == straight["totals"]
